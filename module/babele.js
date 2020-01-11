@@ -50,6 +50,7 @@ class DecoratedCompendium extends Compendium {
         this.decorated = true;
         this.pack = pack;
         this.metadata = pack.metadata;
+        this.public = pack.public;
     }
 
     get title() {

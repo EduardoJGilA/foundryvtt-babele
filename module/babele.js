@@ -22,7 +22,7 @@ Hooks.on('ready', () => {
 class Babele {
 
     constructor() {
-        this.init();   
+        this.init();
     }
 
     init() {
@@ -30,36 +30,26 @@ class Babele {
         if(directory && directory.trim()) {
             game.packs.forEach((pack, idx) => {
                 fetch(`${directory}/${pack.collection}.json`)
-                .then(response => response.json())
-                .then(translations => this.decorate(pack, idx, translations))
-                .catch(reason => this.undecorate(pack, idx));
+                    .then(response => response.json())
+                    .then(translations => this.decorate(pack, idx, translations))
+                    .catch(reason => this.decorate(pack, idx));
             });
         }
     }
 
     decorate(pack, idx, translations) {
-        game.packs[idx] = new TranslatedCompendium(pack, translations);
-    }
-
-    undecorate(pack, idx) {
-        if(game.packs[idx].decorated) {
-            game.packs[idx] = game.packs[idx].pack;
-        }    
+        game.packs[idx] = translations ? new TranslatedCompendium(pack, translations) : new DecoratedCompendium(pack);
     }
 
 }
 
-class TranslatedCompendium extends Compendium {
+class DecoratedCompendium extends Compendium {
 
-    constructor(pack, translations) {
+    constructor(pack) {
         super();
         this.decorated = true;
         this.pack = pack;
-        this.metadata = mergeObject(pack.metadata, { label: translations.label });
-        this.translations = [];
-        translations.entries.forEach(t => {
-            this.translations[t.id] = { name: t.name, description: t.description };
-        });
+        this.metadata = pack.metadata;
     }
 
     get title() {
@@ -74,6 +64,55 @@ class TranslatedCompendium extends Compendium {
         return this.pack.entity;
     }
 
+    _getHeaderButtons() {
+        let buttons = super._getHeaderButtons();
+        buttons.unshift({
+            label: "translations",
+            class: "import",
+            icon: "fas fa-download",
+            onclick: ev => {
+                this.exportTranslationsFile();
+            }
+        });
+        return buttons;
+    }
+
+    async exportTranslationsFile() {
+        let file = {
+            label: this.metadata.label,
+            entries: []
+        };
+
+        let index = await this.pack.getIndex();
+        Promise.all(index.map(entry => this.getEntity(entry.id))).then(entities => {
+            entities.forEach((entity, idx) => {
+                file.entries.push({ id: index[idx].name, name: entity.name, description: entity.data.data.description.value});
+            });
+
+            let dataStr = JSON.stringify(file, null, '\t');
+            let dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+
+            let exportFileDefaultName = this.collection + '.json';
+
+            let link = document.createElement('a');
+            link.setAttribute('href', dataUri);
+            link.setAttribute('download', exportFileDefaultName);
+            link.click();
+        });
+    }
+}
+
+class TranslatedCompendium extends DecoratedCompendium {
+
+    constructor(pack, translations) {
+        super(pack);
+        this.metadata = mergeObject(pack.metadata, { label: translations.label });
+        this.translations = [];
+        translations.entries.forEach(t => {
+            this.translations[t.id] = { name: t.name, description: t.description };
+        });
+    }
+
     i18nName(name) {
         return this.translations[name] ? this.translations[name].name : name;
     }
@@ -86,14 +125,14 @@ class TranslatedCompendium extends Compendium {
         return new Promise((resolve, reject) => {
             this.pack.getIndex().then(index => {
                 this.index = index
-                                .map(idx => mergeObject(idx, { name: this.i18nName(idx.name) }))
-                                .sort((a, b) => {
-                                    if (a.name < b.name)
-                                        return -1;
-                                    if (a.name > b.name)
-                                        return 1;
-                                    return 0;         
-                                });
+                    .map(idx => mergeObject(idx, { name: this.i18nName(idx.name) }))
+                    .sort((a, b) => {
+                        if (a.name < b.name)
+                            return -1;
+                        if (a.name > b.name)
+                            return 1;
+                        return 0;
+                    });
                 resolve(this.index);
             });
         });
@@ -127,7 +166,7 @@ class TranslatedCompendium extends Compendium {
                     details: {
                         biography: {
                             value: this.i18Description(entryData.name, entryData.data.details.biography.value)
-                        }    
+                        }
                     }
                 }
             })

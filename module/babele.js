@@ -6,7 +6,7 @@ Hooks.on('init', () => {
         hint: 'Enter the directory where translation files for compendiums are located',
         type: window.Azzu.SettingsTypes.DirectoryPicker,
         default: ' ',
-        scope: 'client',
+        scope: 'world',
         config: true,
         onChange: directory => {
             window.location.reload();
@@ -16,41 +16,130 @@ Hooks.on('init', () => {
 
 Hooks.on('ready', () => {
 
-    game.babele = new Babele();
+    Babele.get().init();
 });
+
 
 class Babele {
 
+    static SUPPORTED_PACKS = ['Actor', 'Item', 'JournalEntry'];
+
+    static DEFAULT_MAPPINGS = {
+        "Actor": {
+            "name": "name",
+            "bio": "data.details.biography.value"
+        },
+        "Item": {
+            "name": "name",
+            "description": "data.description.value"
+        },
+        "JournalEntry": {
+            "name": "name",
+            "content": "content"
+        }
+    };
+
+    static instance = new Babele();
+
+    static get() {
+        return this.instance;
+    }
+
     constructor() {
-        this.init();
+        this.modules = [];
+    }
+
+    register(module) {
+        this.modules.push(module);
+    }
+
+    supported(pack) {
+        return Babele.SUPPORTED_PACKS.includes(pack.entity);
     }
 
     init() {
+        const lang = game.settings.get('core', 'language');
         const directory = game.settings.get('babele', 'directory');
+        const directories = this.modules.filter(module => module.lang === lang).map(module => `modules/${module.module}/${module.dir}`);
+
         if(directory && directory.trim()) {
-            game.packs.forEach((pack, idx) => {
-                fetch(`${directory}/${pack.collection}.json`)
-                    .then(response => response.json())
-                    .then(translations => this.decorate(pack, idx, translations))
-                    .catch(reason => this.decorate(pack, idx));
-            });
+            directories.push(`${directory}/${lang}`);
         }
+
+        game.packs.forEach((pack, idx) => {
+            if(this.supported(pack)) {
+                let translations;
+                Promise.all(directories.map(directory =>
+                    fetch(`${directory}/${pack.collection}.json`)
+                        .then(response => response.json())
+                        .catch(error => console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`))
+                ))
+                    .then(translations => {
+                        let translation;
+                        translations.forEach(t => {
+                            if(t) {
+                                translation = t; // the last valid
+                            }
+                        });
+
+                        if(translation) {
+                            game.packs[idx] = new TranslatedCompendium(pack, translation);
+                        } else {
+                            game.packs[idx] = new DecoratedCompendium(pack);
+                        }
+                    });
+            }
+        });
+    }
+}
+
+class CompendiumMapping {
+
+    constructor(entityType, mapping) {
+        this.mapping = mergeObject(mapping || {}, Babele.DEFAULT_MAPPINGS[entityType]);
     }
 
-    decorate(pack, idx, translations) {
-        game.packs[idx] = translations ? new TranslatedCompendium(pack, translations) : new DecoratedCompendium(pack);
+    map(data) {
+        let mapped = {};
+        Object.keys(this.mapping).forEach(key => {
+            mapped = mergeObject(mapped, this.mapField(this.mapping[key], data[key]));
+        });
+        return mapped;
+    }
+
+    mapField(path, value) {
+        var map = {};
+        if(value) {
+            path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);
+        }
+        return map;
+    }
+
+    extract(entity) {
+        let data = {};
+        Object.keys(this.mapping).forEach(key => {
+            data = mergeObject(data, this.extractField(key, entity.data));
+        });
+        return data;
+    }
+
+    extractField(key, data) {
+        let field = {};
+        field[key] = this.mapping[key].split('.').reduce((o, k) => {return o && o[k]; }, data);
+        return field;
     }
 
 }
 
 class DecoratedCompendium extends Compendium {
 
-    constructor(pack) {
+    constructor(pack, mapping) {
         super();
         this.decorated = true;
         this.pack = pack;
         this.metadata = pack.metadata;
         this.public = pack.public;
+        this.mapping = new CompendiumMapping(pack.entity, mapping);
     }
 
     get title() {
@@ -78,6 +167,7 @@ class DecoratedCompendium extends Compendium {
         return buttons;
     }
 
+
     async exportTranslationsFile() {
         let file = {
             label: this.metadata.label,
@@ -87,18 +177,19 @@ class DecoratedCompendium extends Compendium {
         let index = await this.pack.getIndex();
         Promise.all(index.map(entry => this.getEntity(entry.id))).then(entities => {
             entities.forEach((entity, idx) => {
-                file.entries.push({ id: index[idx].name, name: entity.name, description: entity.data.data.description.value});
+                let entry = mergeObject({ id: index[idx].name }, this.mapping.extract(entity));
+                file.entries.push(entry);
             });
 
             let dataStr = JSON.stringify(file, null, '\t');
-            let dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-
             let exportFileDefaultName = this.collection + '.json';
 
-            let link = document.createElement('a');
-            link.setAttribute('href', dataUri);
-            link.setAttribute('download', exportFileDefaultName);
-            link.click();
+            var zip = new JSZip();
+            zip.file(exportFileDefaultName, dataStr);
+            zip.generateAsync({type:"blob"})
+                .then(content => {
+                    saveAs(content, this.collection + ".zip");
+                });
         });
     }
 }
@@ -106,20 +197,16 @@ class DecoratedCompendium extends Compendium {
 class TranslatedCompendium extends DecoratedCompendium {
 
     constructor(pack, translations) {
-        super(pack);
+        super(pack, translations.mapping);
         this.metadata = mergeObject(pack.metadata, { label: translations.label });
         this.translations = [];
         translations.entries.forEach(t => {
-            this.translations[t.id] = { name: t.name, description: t.description };
+            this.translations[t.id] = t;
         });
     }
 
     i18nName(name) {
         return this.translations[name] ? this.translations[name].name : name;
-    }
-
-    i18Description(name, description) {
-        return this.translations[name] ? this.translations[name].description : description;
     }
 
     getIndex() {
@@ -139,39 +226,9 @@ class TranslatedCompendium extends DecoratedCompendium {
         });
     }
 
-    _toEntity(entryData) {
-        switch(entryData.type) {
-            case 'npc': return this.toNpc(entryData);
-            default: return this.toItem(entryData);
-        }
-    }
-
-    toItem(entryData) {
-        return this.pack._toEntity(
-            mergeObject(entryData, {
-                name: this.i18nName(entryData.name),
-                data: {
-                    description: {
-                        value: this.i18Description(entryData.name, entryData.data.description.value)
-                    }
-                }
-            })
-        )
-    }
-
-    toNpc(entryData) {
-        return this.pack._toEntity(
-            mergeObject(entryData, {
-                name: this.i18nName(entryData.name),
-                data: {
-                    details: {
-                        biography: {
-                            value: this.i18Description(entryData.name, entryData.data.details.biography.value)
-                        }
-                    }
-                }
-            })
-        )
+    _toEntity(data) {
+        let translatedData = this.mapping.map(this.translations[data.name] || {});
+        return this.pack._toEntity(mergeObject(data, translatedData));
     }
 
 }

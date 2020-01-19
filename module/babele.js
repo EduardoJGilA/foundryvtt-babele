@@ -27,7 +27,7 @@ class Babele {
     static DEFAULT_MAPPINGS = {
         "Actor": {
             "name": "name",
-            "bio": "data.details.biography.value"
+            "description": "data.details.biography.value"
         },
         "Item": {
             "name": "name",
@@ -35,7 +35,7 @@ class Babele {
         },
         "JournalEntry": {
             "name": "name",
-            "content": "content"
+            "description": "content"
         }
     };
 

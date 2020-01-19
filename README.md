@@ -96,6 +96,8 @@ Directories and modules can be used simultaneously. If the same compendium is pr
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
 [https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)
 
+In order not to start from scratch, the translation file can also be extracted directly from the compendium interface by using the button on the window header
+
 ## Compatibility
 
 Tested on 0.4.5 version.

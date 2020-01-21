@@ -47,10 +47,15 @@ class Babele {
 
     constructor() {
         this.modules = [];
+        this.converters = {};
     }
 
     register(module) {
         this.modules.push(module);
+    }
+
+    registerConverters(converters) {
+        this.converters = mergeObject(this.converters, converters);
     }
 
     supported(pack) {
@@ -74,22 +79,49 @@ class Babele {
                         .then(response => response.json())
                         .catch(error => console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`))
                 ))
-                    .then(translations => {
-                        let translation;
-                        translations.forEach(t => {
-                            if(t) {
-                                translation = t; // the last valid
-                            }
-                        });
-
-                        if(translation) {
-                            game.packs[idx] = new TranslatedCompendium(pack, translation);
-                        } else {
-                            game.packs[idx] = new DecoratedCompendium(pack);
+                .then(translations => {
+                    let translation;
+                    translations.forEach(t => {
+                        if(t) {
+                            translation = t; // the last valid
                         }
                     });
+
+                    if(translation) {
+                        game.packs[idx] = new TranslatedCompendium(pack, translation);
+                    } else {
+                        game.packs[idx] = new DecoratedCompendium(pack);
+                    }
+                });
             }
         });
+    }
+}
+
+class FieldMapping {
+
+    constructor(field, mapping) {
+        this.field = field;
+        if(typeof mapping === "object") {
+            this.path = mapping["path"];
+            this.converter = Babele.get().converters[mapping["converter"]];
+        } else {
+            this.path = mapping;
+            this.converter = null;
+        }
+    }
+
+    map(data, translations) {
+        let map = {};
+        let value = this.converter ? this.converter(this.extract(data), translations) : translations[this.field];
+        if(value) {
+            this.path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);    
+        }
+        return map;    
+    }
+
+    extract(data) {
+        return this.path.split('.').reduce((o, k) => {return o && o[k]; }, data); 
     }
 }
 
@@ -99,34 +131,22 @@ class CompendiumMapping {
         this.mapping = mergeObject(mapping || {}, Babele.DEFAULT_MAPPINGS[entityType]);
     }
 
-    map(data) {
+    map(originalData, translatedData) {
         let mapped = {};
         Object.keys(this.mapping).forEach(key => {
-            mapped = mergeObject(mapped, this.mapField(this.mapping[key], data[key]));
+            let field = new FieldMapping(key, this.mapping[key]);
+            mapped = mergeObject(mapped, field.map(originalData, translatedData));
         });
         return mapped;
-    }
-
-    mapField(path, value) {
-        var map = {};
-        if(value) {
-            path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);
-        }
-        return map;
     }
 
     extract(entity) {
         let data = {};
         Object.keys(this.mapping).forEach(key => {
-            data = mergeObject(data, this.extractField(key, entity.data));
+            let field = new FieldMapping(key, this.mapping[key]);
+            data[key] = field.extract(entity.data);
         });
         return data;
-    }
-
-    extractField(key, data) {
-        let field = {};
-        field[key] = this.mapping[key].split('.').reduce((o, k) => {return o && o[k]; }, data);
-        return field;
     }
 
 }
@@ -227,7 +247,7 @@ class TranslatedCompendium extends DecoratedCompendium {
     }
 
     _toEntity(data) {
-        let translatedData = this.mapping.map(this.translations[data.name] || {});
+        let translatedData = this.mapping.map(data, this.translations[data.name] || {});
         return this.pack._toEntity(mergeObject(data, translatedData));
     }
 

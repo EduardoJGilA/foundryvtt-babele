@@ -27,7 +27,7 @@ To work properly, the module needs translation files formatted in this way:
 }]
 ```
 
-where id must contain the name of the original entity while "name" and "description" are the translations and and will be used to overwrite the original property through a mapping config.
+Where id must contain the name of the original entity while "name" and "description" are the translations and and will be used to overwrite the original property through a mapping config.\
 This mapping configuration depends on the type of the entity and by default takes these values:
 
 ```json
@@ -47,7 +47,7 @@ This mapping configuration depends on the type of the entity and by default take
 }
 ```
 
-This configuration is provided by default but can also be inserted in the translation files, in order to expand or overwrite the supported properties.
+This configuration is provided by default but can also be inserted in the translation files, in order to expand or overwrite the supported properties.\
 Mapppigs could be added like this (ex. spells):
 ```json
 {
@@ -73,7 +73,6 @@ Since version 1.1, Babele applies the translation files _according to the langua
 It is also possible to distribute translation files within other modules using a provided registration API.
 Registration should be done like this:
 ```javascript
-
 Hooks.on('init', () => {
 
     if(typeof Babele !== 'undefined') {
@@ -84,14 +83,47 @@ Hooks.on('init', () => {
         });
     }
 });
-
 ```
+
 where:
 * **module**: must be the name of the module (the same inside the module.js file).
 * **lang**: the language used for the translation.
 * **dir**: the directory inside the module containing the translation files.
 
 Directories and modules can be used simultaneously. If the same compendium is present on both places, the directory will take precedence over the module.
+
+**Since version 1.2**, it is possible to map a property value using a `converter`, a function that allows to change the original data dynamically, instead of using static text.\
+A converter is a standard javascript function with the following signature:
+```javascript
+function converter(value, translations) {
+    ...
+}
+```
+
+where: 
+* **value**: the original untranslated propery value.
+* **translations**: the full entry list of the translation file.
+
+Converters must be registered in this way:
+```javascript
+Babele.get().registerConverters({
+    "lbToKg": (value) => { return parseInt(value)/2 }
+});
+```
+
+and they can be referenced in the mapping:
+```json
+{    
+    "label": "Oggetti (SRD)",
+    "mapping": {
+        "flavor": "data.chatFlavor",
+        "weight": {
+            "path": "data.weight",
+            "converter": "lbToKg"
+        }
+    }
+}
+```
 
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
 [https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)

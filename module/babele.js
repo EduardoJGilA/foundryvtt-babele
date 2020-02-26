@@ -43,12 +43,11 @@ class Babele {
         }
     }
 
-    static get instance() {
-        return new Babele();
-    }
-
     static get() {
-        return this.instance;
+        if(Babele.instance === null) {
+            Babele.instance = new Babele();
+        }
+        return Babele.instance;
     }
 
     constructor() {

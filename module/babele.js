@@ -22,22 +22,26 @@ Hooks.on('ready', () => {
 
 class Babele {
 
-    static SUPPORTED_PACKS = ['Actor', 'Item', 'JournalEntry'];
+    static get SUPPORTED_PACKS() {
+        return ['Actor', 'Item', 'JournalEntry'];
+    }
 
-    static DEFAULT_MAPPINGS = {
-        "Actor": {
-            "name": "name",
-            "description": "data.details.biography.value"
-        },
-        "Item": {
-            "name": "name",
-            "description": "data.description.value"
-        },
-        "JournalEntry": {
-            "name": "name",
-            "description": "content"
+    static get DEFAULT_MAPPINGS() {
+        return {
+                "Actor": {
+                "name": "name",
+                "description": "data.details.biography.value"
+            },
+                "Item": {
+                "name": "name",
+                "description": "data.description.value"
+            },
+                "JournalEntry": {
+                "name": "name",
+                "description": "content"
+            }
         }
-    };
+    }
 
     static instance = new Babele();
 

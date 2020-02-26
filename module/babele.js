@@ -44,10 +44,10 @@ class Babele {
     }
 
     static get() {
-        if(Babele.instance === null) {
-            Babele.instance = new Babele();
+        if(typeof game.babele === 'undefined') {
+            game.babele = new Babele();
         }
-        return Babele.instance;
+        return game.babele;
     }
 
     constructor() {

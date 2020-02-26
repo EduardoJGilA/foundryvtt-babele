@@ -43,7 +43,9 @@ class Babele {
         }
     }
 
-    static instance = new Babele();
+    static get instance() {
+        return new Babele();
+    }
 
     static get() {
         return this.instance;

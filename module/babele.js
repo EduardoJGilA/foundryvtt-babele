@@ -101,6 +101,37 @@ class Babele {
             }
         });
     }
+
+    importCompendium(folderName, compendiumName) {
+        let compendium = game.packs.find(p => p.collection === compendiumName);
+        let folder = game.folders.entities.filter((f) => f.data.name === folderName)[0];
+        if (compendium && folder) {
+            compendium.getIndex().then(index => {
+                index.forEach(entity => {
+                    compendium.getEntity(entity.id)
+                        .then(entity => {
+                            console.log(entity.data);
+                            if (!entity.data.translated) {
+                                entity.constructor.create(
+                                    mergeObject(entity.data, {
+                                        folder: folder.id
+                                    }),
+                                    {displaySheet: false}
+                                ).then(
+                                    e => {
+                                        e.setFlag('world', 'name', entity.data.name);
+                                        console.log(e);
+                                    }
+                                );
+                            }
+                        })
+                        .catch(err => {
+                            console.error(`Unable import entity... ${err}`);
+                        });
+                });
+            });
+        }
+    }
 }
 
 class FieldMapping {
@@ -253,7 +284,8 @@ class TranslatedCompendium extends DecoratedCompendium {
 
     _toEntity(data) {
         let translatedData = this.mapping.map(data, this.translations[data.name] || {});
-        return this.pack._toEntity(mergeObject(data, translatedData));
+        let translated = !!this.translations[data.name];
+        return this.pack._toEntity(mergeObject(data, mergeObject(translatedData, { translated: translated })));
     }
 
 }

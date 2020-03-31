@@ -190,7 +190,7 @@ class CompendiumMapping {
 class DecoratedCompendium extends Compendium {
 
     constructor(pack, mapping) {
-        super();
+        super(pack.metadata, pack.options);
         this.decorated = true;
         this.pack = pack;
         this.metadata = pack.metadata;

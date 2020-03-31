@@ -254,11 +254,16 @@ class TranslatedCompendium extends DecoratedCompendium {
 
     constructor(pack, translations) {
         super(pack, translations.mapping);
-        this.metadata = mergeObject(pack.metadata, { label: translations.label });
+        this.label = translations.label;
         this.translations = [];
         translations.entries.forEach(t => {
             this.translations[t.id] = t;
         });
+    }
+
+    /** @override */
+    get title() {
+        return [this.label, this.locked ? "[Locked]" : null].filterJoin(" ");
     }
 
     i18nName(name) {

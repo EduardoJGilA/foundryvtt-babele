@@ -1,5 +1,5 @@
 
-Hooks.on('init', () => {
+Hooks.once('init', () => {
 
     game.settings.register('babele', 'directory', {
         name: 'Translations Files Directory',
@@ -14,11 +14,18 @@ Hooks.on('init', () => {
     });
 });
 
-Hooks.on('ready', () => {
+Hooks.once('setup', () => {
 
-    Babele.get().init();
+    CONFIG.ui.compendium = BabeleCompendiumDirectory;
 });
 
+class BabeleCompendiumDirectory extends CompendiumDirectory {
+
+    async getData(options) {
+        await Babele.get().init();
+        return super.getData(options);
+    }
+}
 
 class Babele {
 
@@ -68,37 +75,49 @@ class Babele {
     }
 
     init() {
-        const lang = game.settings.get('core', 'language');
-        const directory = game.settings.get('babele', 'directory');
-        const directories = this.modules.filter(module => module.lang === lang).map(module => `modules/${module.module}/${module.dir}`);
+        return new Promise((resolve, reject )=> {
 
-        if(directory && directory.trim()) {
-            directories.push(`${directory}/${lang}`);
-        }
+            const lang = game.settings.get('core', 'language');
+            const directory = game.settings.get('babele', 'directory');
+            const directories = this.modules
+                .filter(module => module.lang === lang)
+                .map(module => `modules/${module.module}/${module.dir}`);
 
-        game.packs.forEach((pack, idx) => {
-            if(this.supported(pack)) {
-                let translations;
-                Promise.all(directories.map(directory =>
-                    fetch(`${directory}/${pack.collection}.json`)
-                        .then(response => response.json())
-                        .catch(error => console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`))
-                ))
-                .then(translations => {
-                    let translation;
-                    translations.forEach(t => {
-                        if(t) {
-                            translation = t; // the last valid
+            if(directory && directory.trim()) {
+                directories.push(`${directory}/${lang}`);
+            }
+
+            let allTranslations = [];
+            game.packs.forEach((pack, idx) => {
+                if(this.supported(pack)) {
+                    let translations;
+                    Promise.all(directories.map(directory =>
+                        fetch(`${directory}/${pack.collection}.json`)
+                            .then(response => response.json())
+                            .catch(error => console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`))
+                    ))
+                    .then(translations => {
+                        let translation;
+                        translations.forEach(t => {
+                            if(t) {
+                                translation = t; // the last valid
+                            }
+                        });
+
+                        if(translation) {
+                            game.packs[idx] = new TranslatedCompendium(pack, translation);
+                            allTranslations.push(mergeObject(translation, { collection: pack.collection }));
+                        } else {
+                            game.packs[idx] = new DecoratedCompendium(pack);
+                        }
+
+                        if(idx === game.packs.length -1) {
+                            resolve(allTranslations);
                         }
                     });
+                }
+            });
 
-                    if(translation) {
-                        game.packs[idx] = new TranslatedCompendium(pack, translation);
-                    } else {
-                        game.packs[idx] = new DecoratedCompendium(pack);
-                    }
-                });
-            }
         });
     }
 
@@ -254,16 +273,11 @@ class TranslatedCompendium extends DecoratedCompendium {
 
     constructor(pack, translations) {
         super(pack, translations.mapping);
-        this.label = translations.label;
+        pack.metadata = mergeObject(pack.metadata, { label: translations.label });
         this.translations = [];
         translations.entries.forEach(t => {
             this.translations[t.id] = t;
         });
-    }
-
-    /** @override */
-    get title() {
-        return [this.label, this.locked ? "[Locked]" : null].filterJoin(" ");
     }
 
     i18nName(name) {

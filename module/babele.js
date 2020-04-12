@@ -3,7 +3,7 @@ Hooks.once('init', () => {
 
     game.settings.register('babele', 'directory', {
         name: 'Translations Files Directory',
-        hint: 'Enter the directory where translation files for compendiums are located',
+        hint: 'Enter the directory where the compendium\'s translation files are located',
         type: window.Azzu.SettingsTypes.DirectoryPicker,
         default: ' ',
         scope: 'world',
@@ -12,18 +12,33 @@ Hooks.once('init', () => {
             window.location.reload();
         }
     });
+
+    game.babele = new Babele();
 });
 
-Hooks.once('setup', () => {
+/**
+ *
+ */
+class Converters {
 
-    CONFIG.ui.compendium = BabeleCompendiumDirectory;
-});
+    static fromPack(mapping, entityType = 'Item') {
+        let dynamicMapping = new CompendiumMapping(entityType, mapping);
+        return function(items, translations) {
+            return items.map(data => {
 
-class BabeleCompendiumDirectory extends CompendiumDirectory {
+                let translation = translations ? translations.find(t => t.id === data._id || t.id === data.name) : null;
+                if(translation) {
+                    let translatedData = dynamicMapping.map(data, translation);
+                    return mergeObject(data, mergeObject(translatedData, { translated: true }));
+                }
 
-    async getData(options) {
-        await Babele.get().init();
-        return super.getData(options);
+                let pack = game.packs.find(pack => pack.translated && pack.hasTranslation(data));
+                if(pack) {
+                    return pack.translate(data);
+                }
+                return data;
+            });
+        }
     }
 }
 
@@ -37,7 +52,11 @@ class Babele {
         return {
                 "Actor": {
                 "name": "name",
-                "description": "data.details.biography.value"
+                "description": "data.details.biography.value",
+                "items": {
+                    "path": "items",
+                    "converter": "fromPack"
+                }
             },
                 "Item": {
                 "name": "name",
@@ -51,74 +70,121 @@ class Babele {
     }
 
     static get() {
-        if(typeof game.babele === 'undefined') {
-            game.babele = new Babele();
-        }
         return game.babele;
     }
 
     constructor() {
         this.modules = [];
         this.converters = {};
+        this.translations = null;
+        this.registerDefaultConverters();
+        this.instrument();
     }
 
+    /**
+     * Register the default provided converters.
+     */
+    registerDefaultConverters() {
+        this.registerConverters({
+            "fromPack": Converters.fromPack()
+        })
+    }
+
+    /**
+     * Apply the aspects on the necessary game pointcuts.
+     */
+    instrument() {
+        game.initializePacks = this.initializePacks();
+    }
+
+    /**
+     *
+     * @param module
+     */
     register(module) {
         this.modules.push(module);
     }
 
+    /**
+     *
+     * @param converters
+     */
     registerConverters(converters) {
         this.converters = mergeObject(this.converters, converters);
     }
 
+    /**
+     *
+     * @param pack
+     * @returns {boolean}
+     */
     supported(pack) {
         return Babele.SUPPORTED_PACKS.includes(pack.entity);
     }
 
-    init() {
-        return new Promise((resolve, reject )=> {
-
-            const lang = game.settings.get('core', 'language');
-            const directory = game.settings.get('babele', 'directory');
-            const directories = this.modules
-                .filter(module => module.lang === lang)
-                .map(module => `modules/${module.module}/${module.dir}`);
-
-            if(directory && directory.trim()) {
-                directories.push(`${directory}/${lang}`);
+    /**
+     * Decoration (aspect) of the original initializePacks.
+     * Decorate the original compendiums with the Babele translated compendiums after downloading the translated files.
+     *
+     * @returns {function(*=): *}
+     */
+    initializePacks() {
+        let original = game.initializePacks;
+        let me = this;
+        return async function () {
+            await original.apply(game, arguments);
+            if(!me.translations) {
+                me.translations = await me.loadTranslations();
             }
-
-            let allTranslations = [];
             game.packs.forEach((pack, idx) => {
-                if(this.supported(pack)) {
-                    let translations;
-                    Promise.all(directories.map(directory =>
-                        fetch(`${directory}/${pack.collection}.json`)
-                            .then(response => response.json())
-                            .catch(error => console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`))
-                    ))
-                    .then(translations => {
-                        let translation;
-                        translations.forEach(t => {
-                            if(t) {
-                                translation = t; // the last valid
-                            }
-                        });
-
-                        if(translation) {
-                            game.packs[idx] = new TranslatedCompendium(pack, translation);
-                            allTranslations.push(mergeObject(translation, { collection: pack.collection }));
-                        } else {
-                            game.packs[idx] = new DecoratedCompendium(pack);
-                        }
-
-                        if(idx === game.packs.length -1) {
-                            resolve(allTranslations);
-                        }
-                    });
+                let translation = me.translations.find(t => t.collection === pack.collection);
+                if(translation) {
+                    game.packs[idx] = new TranslatedCompendium(pack, translation);
+                } else {
+                    game.packs[idx] = new DecoratedCompendium(pack);
                 }
             });
+        }
+    }
 
-        });
+    /**
+     *
+     * @returns {Promise<[]>}
+     */
+    async loadTranslations() {
+        const lang = game.settings.get('core', 'language');
+        const directory = game.settings.get('babele', 'directory');
+        const directories = this.modules
+            .filter(module => module.lang === lang)
+            .map(module => `modules/${module.module}/${module.dir}`);
+
+        if(directory && directory.trim()) {
+            directories.push(`${directory}/${lang}`);
+        }
+
+        let allTranslations = [];
+        for (let i = 0; i < game.packs.length; i++) {
+            let pack = game.packs[i];
+            if(this.supported(pack)) {
+                const urls = directories.map(directory => `${directory}/${pack.collection}.json`);
+                const [translations] = await Promise.all(
+                    [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {})))]
+                );
+
+                let translation;
+                translations.forEach(t => {
+                    if(t) {
+                        translation = t; // the last valid
+                    }
+                });
+                if(translation) {
+                    console.log(`Babele | Translation for ${pack.collection} pack successfully loaded`);
+                    allTranslations.push(mergeObject(translation, { collection: pack.collection }));
+                }
+                //console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`)
+            }
+        }
+        return allTranslations;
     }
 
     importCompendium(folderName, compendiumName) {
@@ -168,7 +234,7 @@ class FieldMapping {
 
     map(data, translations) {
         let map = {};
-        let value = this.converter ? this.converter(this.extract(data), translations) : translations[this.field];
+        let value = this.converter ? this.converter(this.extract(data), translations[this.field]) : translations[this.field];
         if(value) {
             this.path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);    
         }
@@ -213,7 +279,8 @@ class DecoratedCompendium extends Compendium {
         this.decorated = true;
         this.pack = pack;
         this.metadata = pack.metadata;
-        this.public = pack.public;
+        this.locked = pack.locked;
+        this.private = pack.private;
         this.mapping = new CompendiumMapping(pack.entity, mapping);
     }
 
@@ -275,20 +342,22 @@ class TranslatedCompendium extends DecoratedCompendium {
         super(pack, translations.mapping);
         pack.metadata = mergeObject(pack.metadata, { label: translations.label });
         this.translations = [];
+        this.translated = true;
         translations.entries.forEach(t => {
             this.translations[t.id] = t;
         });
     }
 
-    i18nName(name) {
-        return this.translations[name] ? this.translations[name].name : name;
+    i18nName(idx) {
+        let translation = this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
+        return translation.name;
     }
 
     getIndex() {
         return new Promise((resolve, reject) => {
             this.pack.getIndex().then(index => {
                 this.index = index
-                    .map(idx => mergeObject(idx, { name: this.i18nName(idx.name) }))
+                    .map(idx => mergeObject(idx, { name: this.i18nName(idx) }))
                     .sort((a, b) => {
                         if (a.name < b.name)
                             return -1;
@@ -301,10 +370,17 @@ class TranslatedCompendium extends DecoratedCompendium {
         });
     }
 
+    hasTranslation(data) {
+        return !!this.translations[data._id] || !!this.translations[data.name];
+    }
+
+    translate(data) {
+        let translatedData = this.mapping.map(data, this.translations[data._id] || this.translations[data.name] || {});
+        return mergeObject(data, mergeObject(translatedData, { translated: this.hasTranslation(data) }));
+    }
+
     _toEntity(data) {
-        let translatedData = this.mapping.map(data, this.translations[data.name] || {});
-        let translated = !!this.translations[data.name];
-        return this.pack._toEntity(mergeObject(data, mergeObject(translatedData, { translated: translated })));
+        return this.pack._toEntity(this.translate(data));
     }
 
 }

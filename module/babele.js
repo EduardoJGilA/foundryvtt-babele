@@ -317,7 +317,7 @@ class DecoratedCompendium extends Compendium {
         };
 
         let index = await this.pack.getIndex();
-        Promise.all(index.map(entry => this.getEntity(entry.id))).then(entities => {
+        Promise.all(index.map(entry => this.getEntity(entry._id))).then(entities => {
             entities.forEach((entity, idx) => {
                 let entry = mergeObject({ id: index[idx].name }, this.mapping.extract(entity));
                 file.entries.push(entry);

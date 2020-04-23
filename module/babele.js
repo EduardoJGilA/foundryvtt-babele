@@ -12,8 +12,12 @@ Hooks.once('init', () => {
             window.location.reload();
         }
     });
+});
 
-    game.babele = new Babele();
+Hooks.once('setup', () => {
+
+    Babele.get().instrument();
+    game.babele = Babele.get();
 });
 
 /**
@@ -70,7 +74,10 @@ class Babele {
     }
 
     static get() {
-        return game.babele;
+        if(!Babele.instance) {
+            Babele.instance = new Babele();
+        }
+        return Babele.instance;
     }
 
     constructor() {
@@ -78,7 +85,6 @@ class Babele {
         this.converters = {};
         this.translations = null;
         this.registerDefaultConverters();
-        this.instrument();
     }
 
     /**
@@ -137,11 +143,13 @@ class Babele {
                 me.translations = await me.loadTranslations();
             }
             game.packs.forEach((pack, idx) => {
-                let translation = me.translations.find(t => t.collection === pack.collection);
-                if(translation) {
-                    game.packs[idx] = new TranslatedCompendium(pack, translation);
-                } else {
-                    game.packs[idx] = new DecoratedCompendium(pack);
+                if(me.supported(pack)) {
+                    let translation = me.translations.find(t => t.collection === pack.collection);
+                    if(translation) {
+                        game.packs[idx] = new TranslatedCompendium(pack, translation);
+                    } else {
+                        game.packs[idx] = new DecoratedCompendium(pack);
+                    }
                 }
             });
         }
@@ -249,7 +257,7 @@ class FieldMapping {
 class CompendiumMapping {
 
     constructor(entityType, mapping) {
-        this.mapping = mergeObject(mapping || {}, Babele.DEFAULT_MAPPINGS[entityType]);
+        this.mapping = mergeObject(Babele.DEFAULT_MAPPINGS[entityType], mapping || {});
     }
 
     map(originalData, translatedData) {

@@ -142,16 +142,20 @@ class Babele {
             if(!me.translations) {
                 me.translations = await me.loadTranslations();
             }
+            let newpack = [];
             game.packs.forEach((pack, idx) => {
+                let new_compendium = pack;
                 if(me.supported(pack)) {
                     let translation = me.translations.find(t => t.collection === pack.collection);
                     if(translation) {
-                        game.packs[idx] = new TranslatedCompendium(pack, translation);
+                      new_compendium = new TranslatedCompendium(pack, translation);
                     } else {
-                        game.packs[idx] = new DecoratedCompendium(pack);
+                      new_compendium = new DecoratedCompendium(pack);
                     }
                 }
+                newpack.push( [idx, new_compendium] );
             });
+            game.packs = new Collection(newpack);
         }
     }
 
@@ -171,27 +175,29 @@ class Babele {
         }
 
         let allTranslations = [];
-        for (let i = 0; i < game.packs.length; i++) {
-            let pack = game.packs[i];
-            if(this.supported(pack)) {
-                const urls = directories.map(directory => `${directory}/${pack.collection}.json`);
-                const [translations] = await Promise.all(
-                    [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {})))]
-                );
+        const keys = game.packs.keys()
+        for (const key of keys) {
+          let pack = game.packs.get( key );
+          if(this.supported(pack)) {
+              console.log("Translation loaded", key, pack);
+              const urls = directories.map(directory => `${directory}/${pack.collection}.json`);
+              const [translations] = await Promise.all(
+                  [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {})))]
+              );
 
-                let translation;
-                translations.forEach(t => {
-                    if(t) {
-                        translation = t; // the last valid
-                    }
-                });
-                if(translation) {
-                    console.log(`Babele | Translation for ${pack.collection} pack successfully loaded`);
-                    allTranslations.push(mergeObject(translation, { collection: pack.collection }));
+              let translation;
+              translations.forEach(t => {
+                if(t) {
+                  translation = t; // the last valid
                 }
-                //console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`)
+              });
+              if(translation) {
+                console.log(`Babele | Translation for ${pack.collection} pack successfully loaded`);
+                allTranslations.push(mergeObject(translation, { collection: pack.collection }));
+              }
+              //console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`)
             }
-        }
+        };
         return allTranslations;
     }
 
@@ -352,13 +358,13 @@ class TranslatedCompendium extends DecoratedCompendium {
         this.translations = [];
         this.translated = true;
         translations.entries.forEach(t => {
-            this.translations[t.id] = t;
+          this.translations[t.id] = t;
         });
     }
 
     i18nName(idx) {
-        let translation = this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
-        return translation.name;
+      let translation = this.translations[idx._id] || this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
+      return translation.name;
     }
 
     getIndex() {

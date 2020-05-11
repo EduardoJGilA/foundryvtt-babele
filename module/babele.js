@@ -358,13 +358,13 @@ class TranslatedCompendium extends DecoratedCompendium {
         this.translations = [];
         this.translated = true;
         translations.entries.forEach(t => {
-            this.translations[t.id] = t;
+          this.translations[t.id] = t;
         });
     }
 
     i18nName(idx) {
-        let translation = this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
-        return translation.name;
+      let translation = this.translations[idx._id] || this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
+      return translation.name;
     }
 
     getIndex() {

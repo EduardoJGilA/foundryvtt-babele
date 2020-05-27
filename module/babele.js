@@ -401,8 +401,4 @@ class TranslatedCompendium extends DecoratedCompendium {
         return mergeObject(data, mergeObject(translatedData, { translated: this.hasTranslation(data) }));
     }
 
-    _toEntity(data) {
-        return this.pack._toEntity(this.translate(data));
-    }
-
 }

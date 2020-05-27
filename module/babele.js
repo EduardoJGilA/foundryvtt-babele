@@ -54,7 +54,7 @@ class Babele {
 
     static get DEFAULT_MAPPINGS() {
         return {
-                "Actor": {
+            "Actor": {
                 "name": "name",
                 "description": "data.details.biography.value",
                 "items": {
@@ -62,11 +62,11 @@ class Babele {
                     "converter": "fromPack"
                 }
             },
-                "Item": {
+            "Item": {
                 "name": "name",
                 "description": "data.description.value"
             },
-                "JournalEntry": {
+            "JournalEntry": {
                 "name": "name",
                 "description": "content"
             }
@@ -175,9 +175,9 @@ class Babele {
         }
 
         let allTranslations = [];
-        const keys = game.packs.keys()
+        const keys = game.packs.keys();
         for (const key of keys) {
-          let pack = game.packs.get( key );
+          let pack = game.packs.get(key);
           if(this.supported(pack)) {
               console.log("Translation loaded", key, pack);
               const urls = directories.map(directory => `${directory}/${pack.collection}.json`);
@@ -197,7 +197,7 @@ class Babele {
               }
               //console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`)
             }
-        };
+        }
         return allTranslations;
     }
 
@@ -380,6 +380,14 @@ class TranslatedCompendium extends DecoratedCompendium {
                         return 0;
                     });
                 resolve(this.index);
+            });
+        });
+    }
+
+    getEntry(entryId) {
+        return new Promise((resolve, reject) => {
+            this.pack.getEntry(entryId).then(data => {
+                resolve(this.translate(data));
             });
         });
     }

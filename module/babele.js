@@ -170,7 +170,7 @@ class Babele {
             .filter(module => module.lang === lang)
             .map(module => `modules/${module.module}/${module.dir}`);
 
-        if(directory && directory.trim()) {
+        if(directory && directory.trim && directory.trim()) {
             directories.push(`${directory}/${lang}`);
         }
 

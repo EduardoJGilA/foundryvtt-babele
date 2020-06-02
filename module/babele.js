@@ -397,8 +397,20 @@ class TranslatedCompendium extends DecoratedCompendium {
     }
 
     translate(data) {
+        if(data.translated) {
+            return data;
+        }
         let translatedData = this.mapping.map(data, this.translations[data._id] || this.translations[data.name] || {});
-        return mergeObject(data, mergeObject(translatedData, { translated: this.hasTranslation(data) }));
+        return mergeObject(
+            data,
+            mergeObject(
+            translatedData, {translated: this.hasTranslation(data), originalName: data.name}, {inplace: false}),
+            { inplace: false }
+        );
+    }
+
+    _toEntity(data) {
+        return this.pack._toEntity(this.translate(data));
     }
 
 }

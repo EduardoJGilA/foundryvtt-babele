@@ -404,7 +404,7 @@ class TranslatedCompendium extends DecoratedCompendium {
         return mergeObject(
             data,
             mergeObject(
-            translatedData, {translated: this.hasTranslation(data), originalName: data.name}, {inplace: false}),
+            translatedData, {translated: true, hasTranslation: this.hasTranslation(data), originalName: data.name}, {inplace: false}),
             { inplace: false }
         );
     }

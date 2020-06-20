@@ -8,29 +8,11 @@ Since version 1.1 it is possible to provide a mapping of the translated fields, 
 
 ## Installation
 
-Option 1: Use [FoundryGet](https://github.com/cswendrowski/foundryget) for automatic dependency installation: `foundryget install "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json"`
-
-Option 2:
+To install, follow these instructions:
 
 1.  Inside Foundry, select the Game Modules tab in the Configuration and Setup menu.
 2.  Click the Install Module button and enter the following URL: https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json
 3.  Click Install and wait for installation to complete.
-4.  Do the same with the dependency Settings-Extender at https://gitlab.com/foundry-azzurite/settings-extender/module.json
-
-## Upstream Module instructions
-
-Declare a manifest dependency such as:
-```json
-"dependencies": [
-    {
-        "name": "babele",
-        "manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",
-        "version": "1.19.0"
-    }
-]
-```
-Then have your users install your module via [FoundryGet](https://github.com/cswendrowski/foundryget): `foundryget install "https://somehost.com/yourmodule.json"` and babele will be installed automatically.
-
 
 ## Usage Instructions
 

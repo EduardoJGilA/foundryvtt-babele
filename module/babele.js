@@ -20,6 +20,19 @@ Hooks.once('setup', () => {
     game.babele = Babele.get();
 });
 
+Hooks.on('renderActorSheet', (app, html, data) => {
+    if(game.user.isGM && data.editable) {
+        let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
+        let openBtn = $(`<a class="translate" title="${title}"><i class="fas fa-globe"></i>${title}</a>`);
+        openBtn.click(ev => {
+            Babele.get().translateActor(app.entity);
+        });
+        html.closest('.app').find('.translate').remove();
+        let titleElement = html.closest('.app').find('.window-title');
+        openBtn.insertAfter(titleElement);
+    }
+});
+
 /**
  *
  */
@@ -207,10 +220,10 @@ class Babele {
         if (compendium && folder) {
             compendium.getIndex().then(index => {
                 index.forEach(entity => {
-                    compendium.getEntity(entity.id)
+                    compendium.getEntity(entity._id)
                         .then(entity => {
                             console.log(entity.data);
-                            if (!entity.data.translated) {
+                            if (!entity.data.hasTranslation) {
                                 entity.constructor.create(
                                     mergeObject(entity.data, {
                                         folder: folder.id
@@ -230,6 +243,11 @@ class Babele {
                 });
             });
         }
+    }
+
+    translateActor(actor) {
+        let d = new OnDemandTranslateDialog(actor);
+        d.render(true);
     }
 }
 
@@ -312,14 +330,16 @@ class DecoratedCompendium extends Compendium {
 
     _getHeaderButtons() {
         let buttons = super._getHeaderButtons();
-        buttons.unshift({
-            label: "translations",
-            class: "import",
-            icon: "fas fa-download",
-            onclick: ev => {
-                this.exportTranslationsFile();
-            }
-        });
+        if(game.user.isGM) {
+            buttons.unshift({
+                label: game.i18n.localize("BABELE.CompendiumTranslations"),
+                class: "import",
+                icon: "fas fa-download",
+                onclick: ev => {
+                    this.exportTranslationsFile();
+                }
+            });
+        }
         return buttons;
     }
 
@@ -357,14 +377,32 @@ class TranslatedCompendium extends DecoratedCompendium {
         pack.metadata = mergeObject(pack.metadata, { label: translations.label });
         this.translations = [];
         this.translated = true;
-        translations.entries.forEach(t => {
-          this.translations[t.id] = t;
-        });
+        this.reference = translations.reference;
+        if(translations.entries) {
+            translations.entries.forEach(t => {
+                this.translations[t.id] = t;
+            });
+        }
     }
 
     i18nName(idx) {
-      let translation = this.translations[idx._id] || this.translations[idx.id] || this.translations[idx.name] || { name: idx.name };
+      let translation =
+              this.translations[idx._id] ||
+              this.translations[idx.id] ||
+              this.translations[idx.name] ||
+              { name: this.referenceI18Name(idx) || idx.name };
       return translation.name;
+    }
+
+    referenceI18Name(idx) {
+        let name = null;
+        if(this.reference) {
+            let referencePack = game.packs.get(this.reference);
+            if(referencePack.translated) {
+                name = referencePack.i18nName(idx);
+            }
+        }
+        return name;
     }
 
     getIndex() {
@@ -393,24 +431,116 @@ class TranslatedCompendium extends DecoratedCompendium {
     }
 
     hasTranslation(data) {
-        return !!this.translations[data._id] || !!this.translations[data.name];
+        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data);
     }
 
-    translate(data) {
+    hasReferenceTranslations(data) {
+        if(this.reference) {
+            let referencePack = game.packs.get(this.reference);
+            return referencePack.translated && referencePack.hasTranslation(data);
+        }
+        return false;
+    }
+
+    translate(data, translationsOnly) {
         if(data.translated) {
             return data;
         }
+
         let translatedData = this.mapping.map(data, this.translations[data._id] || this.translations[data.name] || {});
-        return mergeObject(
-            data,
-            mergeObject(
-            translatedData, {translated: true, hasTranslation: this.hasTranslation(data), originalName: data.name}, {inplace: false}),
-            { inplace: false }
-        );
+
+        if(this.reference) {
+            let referencePack = game.packs.get(this.reference);
+            if(referencePack.translated) {
+                let fromReference = referencePack.translate(data, true);
+                translatedData = mergeObject(fromReference, translatedData);
+            }
+        }
+
+        if(translationsOnly) {
+            return translatedData;
+        } else {
+            return mergeObject(
+                data,
+                mergeObject(
+                    translatedData, {
+                        translated: true,
+                        hasTranslation: this.hasTranslation(data),
+                        originalName: data.name,
+                        flags: {
+                            babele: {
+                                translated: true,
+                                hasTranslation: this.hasTranslation(data),
+                                originalName: data.name
+                            }
+                        }
+                    },
+                    {inplace: false}
+                ),
+                { inplace: false }
+            );
+        }
     }
 
     _toEntity(data) {
         return this.pack._toEntity(this.translate(data));
+    }
+
+}
+
+class OnDemandTranslateDialog extends Dialog {
+
+    constructor(actor) {
+        super({
+            title: game.i18n.localize("BABELE.TranslateActorTitle"),
+            content:
+                `<p>${game.i18n.localize("BABELE.TranslateActorHint")}</p>
+                <textarea rows="10" cols="50" id="actor-translate-log" style="font-family: Courier, monospace"></textarea>`,
+            buttons: {
+              translate: {
+                  icon: '<i class="fas fa-globe"></i>',
+                  label: game.i18n.localize("BABELE.TranslateActorBtn"),
+                  callback: () => {
+                      let area = $('#actor-translate-log');
+                      area.append(`start...\n`);
+                      let items = actor.items.entries.length;
+                      let translated = 0;
+                      let untranslated = 0;
+                      actor.items.entries.forEach(item => {
+                          let data = item.data;
+                          let pack = game.packs.find(pack => pack.translated && pack.hasTranslation(data));
+                          if(pack) {
+                              let translatedData = pack.translate(data, true);
+                              actor.updateOwnedItem(mergeObject(translatedData, { _id: item._id }));
+                              area.append(`${data.name.padEnd(68,'.')}ok\n`);
+                              translated++;
+                          } else {
+                              area.append(`${data.name.padEnd(61,'.')}not found\n`);
+                              untranslated++;
+                          }
+                      });
+                      area.append(`\nend. tot items: ${items}, tot translated: ${translated}, tot untranslated: ${untranslated}  
+                      \n`);
+                  }
+              }
+            },
+            default: "translate"
+        });
+    }
+
+    static get defaultOptions() {
+        return mergeObject(super.defaultOptions, {
+            width: 600
+        });
+    }
+
+    submit(button) {
+        try {
+            button.callback();
+        } catch(err) {
+            ui.notifications.error(err);
+            throw new Error(err);
+        }
     }
 
 }

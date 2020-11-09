@@ -1,0 +1,7 @@
+{
+  "BABELE.CompendiumTranslations": "Translations",
+  "BABELE.TranslateActorHeadBtn": "Translate",
+  "BABELE.TranslateActorTitle": "Translate Actor",
+  "BABELE.TranslateActorHint": "Automatically translates all the owned items of the actor for which there is a translated compendium",
+  "BABELE.TranslateActorBtn": "Translate!"
+}

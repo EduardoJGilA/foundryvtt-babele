@@ -22,6 +22,10 @@
 		"lang": "it",
 		"name": "Italian",
 		"path": "./lang/it.json"
+	}, {
+		"lang": "es",
+		"name": "Español",
+		"path": "./lang/es.json"
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",

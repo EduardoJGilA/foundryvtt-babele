@@ -28,7 +28,7 @@
 		"path": "./lang/es.json"
 	}, {
 		"lang": "fr",
-		"name": "French",
+		"name": "Français",
 		"path": "./lang/fr.json"
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",

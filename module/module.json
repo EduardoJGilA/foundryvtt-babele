@@ -26,6 +26,10 @@
 		"lang": "es",
 		"name": "Español",
 		"path": "./lang/es.json"
+	}, {
+		"lang": "de",
+		"name": "Deutsch (German)",
+		"path": "./lang/de.json"
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",

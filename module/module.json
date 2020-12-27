@@ -28,10 +28,10 @@
 		"path": "./lang/es.json"
 	}, {
 		"lang": "fr",
-		"name": "Español",
+		"name": "Français",
 		"path": "./lang/fr.json"
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",
-	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/1.21/raw/babele.zip?job=build"
+	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/1.20/raw/babele.zip?job=build"
 }

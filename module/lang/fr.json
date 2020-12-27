@@ -1,7 +1,7 @@
 {
-  "BABELE.CompendiumTranslations": "Traductions",
+  "BABELE.CompendiumTranslations": "Traduction",
   "BABELE.TranslateActorHeadBtn": "Traduire",
-  "BABELE.TranslateActorTitle": "Traduire l'Acteur",
-  "BABELE.TranslateActorHint": "Traduit automatiquement tout les items de l'acteur possédant une traduction dans un compendium",
+  "BABELE.TranslateActorTitle": "Traduire le personnage",
+  "BABELE.TranslateActorHint": "Traduit automatiquement tous les items du personnage à partir des compendiums traduits",
   "BABELE.TranslateActorBtn": "Traduire!"
 }

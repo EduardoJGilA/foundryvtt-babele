@@ -345,27 +345,37 @@ class DecoratedCompendium extends Compendium {
 
 
     async exportTranslationsFile() {
-        let file = {
-            label: this.metadata.label,
-            entries: []
-        };
 
-        let index = await this.pack.getIndex();
-        Promise.all(index.map(entry => this.getEntity(entry._id))).then(entities => {
-            entities.forEach((entity, idx) => {
-                let entry = mergeObject({ id: index[idx].name }, this.mapping.extract(entity));
-                file.entries.push(entry);
-            });
+        ExportTranslationsDialog.create(this).then(async conf => {
 
-            let dataStr = JSON.stringify(file, null, '\t');
-            let exportFileDefaultName = this.collection + '.json';
+            if (conf) {
+                let file = {
+                    label: this.metadata.label,
+                    entries: conf.format === 'legacy' ? [] : {}
+                };
 
-            var zip = new JSZip();
-            zip.file(exportFileDefaultName, dataStr);
-            zip.generateAsync({type:"blob"})
-                .then(content => {
-                    saveAs(content, this.collection + ".zip");
+                let index = await this.pack.getIndex();
+                Promise.all(index.map(entry => this.getEntity(entry._id))).then(entities => {
+                    entities.forEach((entity, idx) => {
+                        if (conf.format === 'legacy') {
+                            let entry = mergeObject({id: index[idx].name}, this.mapping.extract(entity));
+                            file.entries.push(entry);
+                        } else {
+                            file.entries[`${index[idx].name}`] = this.mapping.extract(entity);
+                        }
+                    });
+
+                    let dataStr = JSON.stringify(file, null, '\t');
+                    let exportFileDefaultName = this.collection + '.json';
+
+                    var zip = new JSZip();
+                    zip.file(exportFileDefaultName, dataStr);
+                    zip.generateAsync({type: "blob"})
+                            .then(content => {
+                                saveAs(content, this.collection + ".zip");
+                            });
                 });
+            }
         });
     }
 }
@@ -379,9 +389,13 @@ class TranslatedCompendium extends DecoratedCompendium {
         this.translated = true;
         this.reference = translations.reference;
         if(translations.entries) {
-            translations.entries.forEach(t => {
-                this.translations[t.id] = t;
-            });
+            if(Array.isArray(translations.entries)) {
+                translations.entries.forEach(t => {
+                    this.translations[t.id] = t;
+                });
+            } else {
+                this.translations = translations.entries;
+            }
         }
     }
 
@@ -486,6 +500,38 @@ class TranslatedCompendium extends DecoratedCompendium {
         return this.pack._toEntity(this.translate(data));
     }
 
+}
+
+class ExportTranslationsDialog extends Dialog {
+
+    constructor(pack, dialogData={}, options={}) {
+        super(dialogData, options);
+        this.pack = pack;
+    }
+
+    static async create(pack) {
+        const html = await renderTemplate("modules/babele/templates/export-translations-dialog.html", pack);
+
+        return new Promise((resolve) => {
+            const dlg = new this(pack, {
+                title: pack.metadata.label + ': ' + game.i18n.localize("BABELE.ExportTranslationTitle"),
+                content: html,
+                buttons: {
+                    exp: {
+                        icon: `<i class="fas fa-download"></i>`,
+                        label: game.i18n.localize("BABELE.ExportTranslationBtn"),
+                        callback: html => {
+                            const fd = new FormDataExtended(html[0].querySelector("form"));
+                            resolve(fd.toObject());
+                        }
+                    }
+                },
+                default: "exp",
+                close: () => resolve(null)
+            });
+            dlg.render(true);
+        });
+    }
 }
 
 class OnDemandTranslateDialog extends Dialog {

@@ -3,5 +3,11 @@
   "BABELE.TranslateActorHeadBtn": "Traduci",
   "BABELE.TranslateActorTitle": "Traduci Attore",
   "BABELE.TranslateActorHint": "Traduci automaticamente tutti gli oggetti/privilegi/incantesimi dell'attore per i quali è disponibile un compendio tradotto",
-  "BABELE.TranslateActorBtn": "Traduci!"
+  "BABELE.TranslateActorBtn": "Traduci!",
+  "BABELE.ExportTranslationTitle": "Esporta il File di Traduzione",
+  "BABELE.ExportTranslationBtn": "Esporta!",
+  "BABELE.ExportTranslationNotes": "seleziona il formato da uilizzare per il file di traduzione esportato. Seleziona “Nativo” per il formato originale nativo, oppure “Compatibile” nel caso in cui si intenda gestire la traduzione mediante una Localization Platform esterna (ex. Weblate, Transifex, etc..)",
+  "BABELE.ExportTranslationFormat": "Formato",
+  "BABELE.ExportTranslationFormatLegacy": "Nativo",
+  "BABELE.ExportTranslationFormatCompatible": "Compatibile"
 }

@@ -534,10 +534,6 @@ class ExportTranslationsDialog extends Dialog {
     }
 }
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 class OnDemandTranslateDialog extends Dialog {
 
     constructor(actor) {
@@ -565,7 +561,6 @@ class OnDemandTranslateDialog extends Dialog {
                               await actor.updateOwnedItem(mergeObject(translatedData, { _id: item._id }));
                               area.append(`${data.name.padEnd(68,'.')}ok\n`);
                               translated++;
-                              await sleep(500);
                           } else {
                               area.append(`${data.name.padEnd(61,'.')}not found\n`);
                               untranslated++;

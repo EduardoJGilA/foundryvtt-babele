@@ -534,6 +534,10 @@ class ExportTranslationsDialog extends Dialog {
     }
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class OnDemandTranslateDialog extends Dialog {
 
     constructor(actor) {
@@ -546,25 +550,27 @@ class OnDemandTranslateDialog extends Dialog {
               translate: {
                   icon: '<i class="fas fa-globe"></i>',
                   label: game.i18n.localize("BABELE.TranslateActorBtn"),
-                  callback: () => {
+                  callback: async () => {
                       let area = $('#actor-translate-log');
                       area.append(`start...\n`);
                       let items = actor.items.entries.length;
                       let translated = 0;
                       let untranslated = 0;
-                      actor.items.entries.forEach(item => {
+                      for (let idx = 0; idx < items; idx++) {
+                          let item = actor.items.entries[idx];
                           let data = item.data;
                           let pack = game.packs.find(pack => pack.translated && pack.hasTranslation(data));
                           if(pack) {
                               let translatedData = pack.translate(data, true);
-                              actor.updateOwnedItem(mergeObject(translatedData, { _id: item._id }));
+                              await actor.updateOwnedItem(mergeObject(translatedData, { _id: item._id }));
                               area.append(`${data.name.padEnd(68,'.')}ok\n`);
                               translated++;
+                              await sleep(500);
                           } else {
                               area.append(`${data.name.padEnd(61,'.')}not found\n`);
                               untranslated++;
                           }
-                      });
+                      }
                       area.append(`\nend. tot items: ${items}, tot translated: ${translated}, tot untranslated: ${untranslated}  
                       \n`);
                   }

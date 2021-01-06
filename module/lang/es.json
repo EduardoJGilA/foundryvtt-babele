@@ -6,5 +6,11 @@
   "BABELE.TranslateActorHeadBtn": "Traducir",
   "BABELE.TranslateActorTitle": "Traducir Actor",
   "BABELE.TranslateActorHint": "Traduce automáticamente todos los objetos que posee el actor para los que existe un compendio de traducción",
-  "BABELE.TranslateActorBtn": "¡Traducir!"
+  "BABELE.TranslateActorBtn": "¡Traducir!",
+  "BABELE.ExportTranslationTitle": "Exportar Fichero de Traducción",
+  "BABELE.ExportTranslationBtn": "¡Exportar!",
+  "BABELE.ExportTranslationNotes": "Seleccione el formato del fichero de exportación de la traducción. Seleccione \"Heredado\" si desea usar el formato nativo original, o \"Compatible\" si lo que desea es gestionar la traducción usando alguna plataforma externa de localización (p.ej. Weblate, Transifex, etc ..)",
+  "BABELE.ExportTranslationFormat": "Formato",
+  "BABELE.ExportTranslationFormatLegacy": "Heredado",
+  "BABELE.ExportTranslationFormatCompatible": "Compatible"
 }

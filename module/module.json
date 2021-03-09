@@ -2,7 +2,7 @@
 	"name": "babele",
 	"title": "Babele",
 	"description": "Module that allows a 'runtime' translation of all the installed compendiums",
-	"version": "1.25",
+	"version": "1.24",
 	"minimumCoreVersion" : "0.5.5",
 	"compatibleCoreVersion" : "0.7.9",
 	"author": "Simone",

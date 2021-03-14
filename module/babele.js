@@ -43,10 +43,17 @@ class Converters {
         return function(items, translations) {
             return items.map(data => {
 
-                let translation = translations ? translations.find(t => t.id === data._id || t.id === data.name) : null;
-                if(translation) {
-                    let translatedData = dynamicMapping.map(data, translation);
-                    return mergeObject(data, mergeObject(translatedData, { translated: true }));
+                if(translations) {
+                    let translation;
+                    if(Array.isArray(translations)) {
+                        translation = translations.find(t => t.id === data._id || t.id === data.name);
+                    } else {
+                        translation = translations[data._id] || translations[data.name];
+                    }
+                    if(translation) {
+                        let translatedData = dynamicMapping.map(data, translation);
+                        return mergeObject(data, mergeObject(translatedData, { translated: true }));
+                    }
                 }
 
                 let pack = game.packs.find(pack => pack.translated && pack.hasTranslation(data));

@@ -2,8 +2,8 @@
 Hooks.once('init', () => {
 
     game.settings.register('babele', 'directory', {
-        name: 'Translations Files Directory',
-        hint: 'Enter the directory where the compendium\'s translation files are located',
+        name: game.i18n.localize("BABELE.TranslationDirTitle"),
+        hint: game.i18n.localize("BABELE.TranslationDirHint"),
         type: window.Azzu.SettingsTypes.DirectoryPicker,
         default: ' ',
         scope: 'world',
@@ -11,6 +11,15 @@ Hooks.once('init', () => {
         onChange: directory => {
             window.location.reload();
         }
+    });
+
+    game.settings.register('babele', 'export', {
+        name: game.i18n.localize("BABELE.EnableTranslationExportTile"),
+        hint: game.i18n.localize("BABELE.EnableTranslationExportHint"),
+        scope: 'world',
+        type: Boolean,
+        config: true,
+        default: true
     });
 });
 
@@ -348,8 +357,9 @@ class DecoratedCompendium extends Compendium {
     }
 
     _getHeaderButtons() {
-        let buttons = super._getHeaderButtons();
-        if(game.user.isGM) {
+        const buttons = super._getHeaderButtons();
+        const exportEnabled = game.settings.get('babele', 'export');
+        if(game.user.isGM && exportEnabled) {
             buttons.unshift({
                 label: game.i18n.localize("BABELE.CompendiumTranslations"),
                 class: "import",

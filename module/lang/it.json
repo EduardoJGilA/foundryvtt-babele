@@ -9,5 +9,10 @@
   "BABELE.ExportTranslationNotes": "seleziona il formato da uilizzare per il file di traduzione esportato. Seleziona “Nativo” per il formato originale nativo, oppure “Compatibile” nel caso in cui si intenda gestire la traduzione mediante una Localization Platform esterna (ex. Weblate, Transifex, etc..)",
   "BABELE.ExportTranslationFormat": "Formato",
   "BABELE.ExportTranslationFormatLegacy": "Nativo",
-  "BABELE.ExportTranslationFormatCompatible": "Compatibile"
+  "BABELE.ExportTranslationFormatCompatible": "Compatibile",
+  "BABELE.TranslationDirTitle": "Directory File di Traduzione",
+  "BABELE.TranslationDirHint": "Immettere la directory in cui si trovano i file di traduzione locale dei compendium",
+  "BABELE.EnableTranslationExportTile": "Abilita Export Traduzioni",
+  "BABELE.EnableTranslationExportHint": "Abilita questa opzione se vuoi aggiungere un pulsante su ogni compendio per generare il file di traduzione, utile come file template da cui partire"
+
 }

@@ -187,28 +187,40 @@ class Babele {
             directories.push(`${directory}/${lang}`);
         }
 
-        let allTranslations = [];
-        const keys = game.packs.keys();
-        for (const key of keys) {
-          let pack = game.packs.get(key);
-          if(this.supported(pack)) {
-              console.log("Translation loaded", key, pack);
-              const urls = directories.map(directory => `${directory}/${pack.collection}.json`);
-              const [translations] = await Promise.all(
-                  [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {})))]
-              );
+        const files = [];
+        for(let i=0; i<directories.length; i++) {
+            let result = await FilePicker.browse("data", directories[i]);
+            result.files.forEach(file => files.push(file));
+        }
 
-              let translation;
-              translations.forEach(t => {
-                if(t) {
-                  translation = t; // the last valid
+        let allTranslations = [];
+        if(files.length === 0) {
+            console.log(`Babele | no compendium translation files found for ${lang} language.`);
+        } else {
+            const keys = game.packs.keys();
+            for (const key of keys) {
+                let pack = game.packs.get(key);
+                if(this.supported(pack)) {
+                    const urls = files.filter(file => file.endsWith(`${pack.collection}.json`));
+                    if(urls.length === 0) {
+                        console.log(`Babele | no translation file found for ${pack.collection} pack`);
+                    } else {
+                        const [translations] = await Promise.all(
+                            [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {})))]
+                        );
+
+                        let translation;
+                        translations.forEach(t => {
+                            if(t) {
+                                translation = t; // the last valid
+                            }
+                        });
+                        if(translation) {
+                            console.log(`Babele | translation for ${pack.collection} pack successfully loaded`);
+                            allTranslations.push(mergeObject(translation, { collection: pack.collection }));
+                        }
+                    }
                 }
-              });
-              if(translation) {
-                console.log(`Babele | Translation for ${pack.collection} pack successfully loaded`);
-                allTranslations.push(mergeObject(translation, { collection: pack.collection }));
-              }
-              //console.log(`Babele | No translations files for ${pack.collection} pack found in ${directory} directory`)
             }
         }
         return allTranslations;
@@ -342,7 +354,6 @@ class DecoratedCompendium extends Compendium {
         }
         return buttons;
     }
-
 
     async exportTranslationsFile() {
 

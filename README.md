@@ -16,19 +16,46 @@ To install, follow these instructions:
 
 ## Usage Instructions
 
+### Translation File (JSON)
+
 To work properly, the module needs translation files formatted in this way:
 
 ```json
-[{
+{
     "label": "Incantesimi (SRD)",
     "entries": [
         { "id": "Haste", "name": "Velocità", "description": "<p>L'incantatore sceglie ..." }
     ]
-}]
+}
+```
+Where id must contain the **name** or the **id** of the original entity, while "name" and "description" are the translations and will be used to overwrite the original property through a **Transation Mapping** config.\
+Be careful to correctly enter the original name (or the id) of the entity because Babel will use it to match the translation to be applied.\
+Babel expects and searches (using a naming convention described below) a translation file for each translated compendium.
+
+_Since version 1.22_ Babele supports another format for the translation file, which guarantees greater compatibility with localization platforms such as Weblate or Transifex.\
+With the new format, the list of entries can no longer be declared as an array but as a JSON object, where the id used for the match with the original entity coincides with the name of the object property and the value with the content of the translation:
+```json
+{
+    "label": "Incantesimi (SRD)",
+    "entries": {
+       "Haste": { 
+           "name": "Velocità", 
+           "description": "<p>L'incantatore sceglie ..." 
+       }
+    }
+}
 ```
 
-Where id must contain the name of the original entity while "name" and "description" are the translations and and will be used to overwrite the original property through a mapping config.\
-This mapping configuration depends on the type of the entity and by default takes these values:
+## Translation Mapping
+
+The rules for applying translations to an entity are called **Translation Mapping** (mapping), and can be defined using a JSON where the property corresponds to the key of the rule and the value corresponds to the path to the entity data value that will be replaced by the translation.
+```json
+{
+    "description": "data.details.biography.value"
+}
+```
+If they are not configured, Babele applies predefined mappings based on the entity's type of the compendium.\
+These default mappings are as follows:
 
 ```json
 {

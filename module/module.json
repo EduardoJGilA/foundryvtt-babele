@@ -7,9 +7,9 @@
 	"compatibleCoreVersion" : "0.7.9",
 	"author": "Simone",
 	"scripts": [
-		"./settings-extender.js",
-		"./jszip.min.js",
-		"./FileSaver.js",
+		"./lib/settings-extender.js",
+		"./lib/jszip.min.js",
+		"./lib/FileSaver.js",
 		"./babele.js"
 	],
 	"styles": [

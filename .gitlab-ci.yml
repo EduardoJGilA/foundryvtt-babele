@@ -14,6 +14,7 @@ build:
   artifacts:
     name: babele
     when: on_success
+    expire_in: never
     paths:
       - babele.zip
   when: on_success

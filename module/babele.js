@@ -304,6 +304,10 @@ class FieldMapping {
     extract(data) {
         return this.path.split('.').reduce((o, k) => {return o && o[k]; }, data); 
     }
+
+    isDynamic() {
+        return this.converter != null;
+    }
 }
 
 class CompendiumMapping {
@@ -325,7 +329,9 @@ class CompendiumMapping {
         let data = {};
         Object.keys(this.mapping).forEach(key => {
             let field = new FieldMapping(key, this.mapping[key]);
-            data[key] = field.extract(entity.data);
+            if(!field.isDynamic()) {
+                data[key] = field.extract(entity.data);
+            }
         });
         return data;
     }
@@ -485,6 +491,11 @@ class TranslatedCompendium extends DecoratedCompendium {
     }
 
     translate(data, translationsOnly) {
+
+        if(data == null) {
+            return data;
+        }
+
         if(data.translated) {
             return data;
         }

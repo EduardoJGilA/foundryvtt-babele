@@ -434,23 +434,8 @@ class TranslatedCompendium extends DecoratedCompendium {
     }
 
     i18nName(idx) {
-      let translation =
-              this.translations[idx._id] ||
-              this.translations[idx.id] ||
-              this.translations[idx.name] ||
-              { name: this.referenceI18Name(idx) || idx.name };
+      let translation = this.translate(idx, true);
       return translation.name;
-    }
-
-    referenceI18Name(idx) {
-        let name = null;
-        if(this.reference) {
-            let referencePack = game.packs.get(this.reference);
-            if(referencePack.translated) {
-                name = referencePack.i18nName(idx);
-            }
-        }
-        return name;
     }
 
     getIndex() {

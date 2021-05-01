@@ -294,7 +294,10 @@ class FieldMapping {
 
     map(data, translations) {
         let map = {};
-        let value = this.converter ? this.converter(this.extract(data), translations[this.field]) : translations[this.field];
+        let originalValue = this.extract(data);
+        let value = this.converter && originalValue ?
+                this.converter(originalValue, translations[this.field], data) :
+                translations[this.field];
         if(value) {
             this.path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);    
         }
@@ -433,16 +436,19 @@ class TranslatedCompendium extends DecoratedCompendium {
         }
     }
 
-    i18nName(idx) {
+    i18nIdx(idx) {
       let translation = this.translate(idx, true);
-      return translation.name;
+      return {
+          name: translation.name ? translation.name : idx.name,
+          img: translation.img ? translation.img : idx.img
+      }
     }
 
     getIndex() {
         return new Promise((resolve, reject) => {
             this.pack.getIndex().then(index => {
                 this.index = index
-                    .map(idx => mergeObject(idx, { name: this.i18nName(idx) }))
+                    .map(idx => mergeObject(idx, this.i18nIdx(idx)))
                     .sort((a, b) => {
                         if (a.name < b.name)
                             return -1;

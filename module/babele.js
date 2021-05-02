@@ -436,37 +436,21 @@ class TranslatedCompendium extends DecoratedCompendium {
         }
     }
 
-    i18nIdx(idx) {
-      let translation = this.translate(idx, true);
-      return {
-          name: translation.name ? translation.name : idx.name,
-          img: translation.img ? translation.img : idx.img
-      }
+    async getIndex() {
+        const idxs = await this.pack.getIndex();
+        return this.index = idxs
+            .map(idx => this.translate(idx))
+            .sort((a, b) => {
+                if (a.name < b.name)
+                    return -1;
+                if (a.name > b.name)
+                    return 1;
+                return 0;
+            });
     }
 
-    getIndex() {
-        return new Promise((resolve, reject) => {
-            this.pack.getIndex().then(index => {
-                this.index = index
-                    .map(idx => mergeObject(idx, this.i18nIdx(idx)))
-                    .sort((a, b) => {
-                        if (a.name < b.name)
-                            return -1;
-                        if (a.name > b.name)
-                            return 1;
-                        return 0;
-                    });
-                resolve(this.index);
-            });
-        });
-    }
-
-    getEntry(entryId) {
-        return new Promise((resolve, reject) => {
-            this.pack.getEntry(entryId).then(data => {
-                resolve(this.translate(data));
-            });
-        });
+    async getEntry(entryId) {
+        return this.translate(await this.pack.getEntry(entryId));
     }
 
     hasTranslation(data) {

@@ -8,8 +8,7 @@ Hooks.once('init', () => {
     game.settings.register('babele', 'directory', {
         name: game.i18n.localize("BABELE.TranslationDirTitle"),
         hint: game.i18n.localize("BABELE.TranslationDirHint"),
-        type: window.Azzu.SettingsTypes.DirectoryPicker,
-        default: ' ',
+        type: String,
         scope: 'world',
         config: true,
         onChange: directory => {
@@ -302,8 +301,12 @@ class Babele {
 
         const files = [];
         for(let i=0; i<directories.length; i++) {
-            let result = await FilePicker.browse("data", directories[i]);
-            result.files.forEach(file => files.push(file));
+            try {
+                let result = await FilePicker.browse("data", directories[i]);
+                result.files.forEach(file => files.push(file));
+            } catch (err) {
+                console.warn("Babele: " + err)
+            }
         }
 
         let allTranslations = [];

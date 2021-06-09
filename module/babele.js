@@ -627,6 +627,13 @@ class CompendiumMapping {
             .reduce((m, f) => mergeObject(m, f.extract(data)), {});
     }
 
+    /**
+     * If almost one of the mapped field is dynamic, the compendium is considered dynamic.
+     */
+    isDynamic() {
+        return this.fields.map(f => f.isDynamic()).reduce((result, dynamic) => result || dynamic, false);
+    }
+
 }
 
 /**
@@ -661,7 +668,7 @@ class TranslatedCompendium {
      * @returns {boolean|*|{translated}}
      */
     hasTranslation(data) {
-        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data);
+        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data) || this.mapping.isDynamic();
     }
 
     /**

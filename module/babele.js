@@ -362,7 +362,7 @@ class Babele {
      */
     translate(pack, data, translationsOnly) {
         const tc = this.packs.get(pack);
-        if(!tc || !tc.hasTranslation(data)) {
+        if(!tc || !(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
             return data;
         }
         return tc.translate(data, translationsOnly);
@@ -377,7 +377,7 @@ class Babele {
      */
     translateField(field, pack, data) {
         const tc = this.packs.get(pack);
-        if(!tc || !tc.hasTranslation(data)) {
+        if(!tc || !(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
             return tc.extractField(field, data);
         }
         return tc.translateField(field, data);
@@ -668,7 +668,7 @@ class TranslatedCompendium {
      * @returns {boolean|*|{translated}}
      */
     hasTranslation(data) {
-        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data) || this.mapping.isDynamic();
+        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data);
     }
 
     /**

@@ -26,10 +26,14 @@ Hooks.once('init', () => {
     });
 });
 
-Hooks.once('setup', () => {
+Hooks.once('ready', async () => {
     CONFIG.DatabaseBackend = new BabeleClientDatabaseBackend();
     game.babele = Babele.get();
-    game.babele.instrument();
+    await game.babele.init();
+    game.packs.contents.forEach(pack => {
+        pack.getIndex()
+    })
+    ui.sidebar.tabs.compendium.render();
 });
 
 Hooks.on('renderActorSheet', (app, html, data) => {
@@ -216,6 +220,7 @@ class Babele {
 
     /**
      * Apply the aspects on the necessary game pointcuts.
+     * TODO: to remove
      */
     instrument() {
         game.initializePacks = this.initializePacks();
@@ -249,7 +254,7 @@ class Babele {
     /**
      * Decoration (aspect) of the original initializePacks.
      * Decorate the original compendiums with the Babele translated compendiums after downloading the translated files.
-     *
+     * TODO: to remove
      * @returns {function(*=): *}
      */
     initializePacks() {

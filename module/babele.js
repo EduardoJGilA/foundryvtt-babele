@@ -27,11 +27,19 @@ Hooks.once('init', () => {
 });
 
 Hooks.once('ready', async () => {
-    CONFIG.DatabaseBackend = new BabeleClientDatabaseBackend();
     game.babele = Babele.get();
     await game.babele.init();
+    CONFIG.DatabaseBackend = new BabeleClientDatabaseBackend();
     game.packs.contents.forEach(pack => {
-        pack.getIndex()
+        const index = game.babele.translateIndex(pack.index.contents, pack.collection);
+        pack.index = new foundry.utils.Collection();
+        for ( let i of index ) {
+            if ( i.thumb ) {
+                i.img = i.thumb;
+                delete i.thumb;
+            }
+            pack.index.set(i._id, i);
+        }
     })
     ui.sidebar.tabs.compendium.render();
 });
@@ -84,18 +92,7 @@ class BabeleClientDatabaseBackend extends ClientDatabaseBackend {
         }
 
         if(options.index) {
-            return result
-                    .map(data => {
-                        return game.babele.translate(pack, data)
-                    })
-                    .sort((a, b) => {
-                        if (a.name < b.name)
-                            return -1;
-                        if (a.name > b.name)
-                            return 1;
-                        return 0;
-                    });
-
+            return game.babele.translateIndex(result, pack);
         } else {
             return result.map(data => {
                 return new documentClass(game.babele.translate(pack, data.toObject()), {pack});
@@ -344,6 +341,27 @@ class Babele {
             }
         }
         return allTranslations;
+    }
+
+    /**
+     * Translate & sort the compendium index.
+     *
+     * @param index the untranslated index
+     * @param pack the pack name
+     * @returns {*} the translated & sorted index
+     */
+    translateIndex(index, pack) {
+        return index
+                .map(data => {
+                    return this.translate(pack, data)
+                })
+                .sort((a, b) => {
+                    if (a.name < b.name)
+                        return -1;
+                    if (a.name > b.name)
+                        return 1;
+                    return 0;
+                });
     }
 
     /**

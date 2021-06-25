@@ -2,7 +2,7 @@
   "BABELE.CompendiumTranslations": "翻譯",
   "BABELE.TranslateActorHeadBtn": "翻譯",
   "BABELE.TranslateActorTitle": "翻譯角色",
-  "BABELE.TranslateActorHint": "自動翻譯角色的所有的物品當那裡有已翻譯的概要(compendium)",
+  "BABELE.TranslateActorHint": "當那裡有已翻譯的概要(compendium)時，自動翻譯角色的所有的物品",
   "BABELE.TranslateActorBtn": "翻譯！",
   "BABELE.ExportTranslationTitle": "導出翻譯文件",
   "BABELE.ExportTranslationBtn": "導出！",

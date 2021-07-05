@@ -40,7 +40,8 @@ Hooks.once('ready', async () => {
             }
             pack.index.set(i._id, i);
         }
-    })
+    });
+    Hooks.callAll(`babele.ready`);
     ui.sidebar.tabs.compendium.render();
 });
 
@@ -216,14 +217,6 @@ class Babele {
     }
 
     /**
-     * Apply the aspects on the necessary game pointcuts.
-     * TODO: to remove
-     */
-    instrument() {
-        game.initializePacks = this.initializePacks();
-    }
-
-    /**
      *
      * @param module
      */
@@ -246,22 +239,6 @@ class Babele {
      */
     supported(pack) {
         return Babele.SUPPORTED_PACKS.includes(pack.entity);
-    }
-
-    /**
-     * Decoration (aspect) of the original initializePacks.
-     * Decorate the original compendiums with the Babele translated compendiums after downloading the translated files.
-     * TODO: to remove
-     * @returns {function(*=): *}
-     */
-    initializePacks() {
-        let original = game.initializePacks;
-        let babele = this;
-        return async function () {
-            await babele.init();
-            await original.apply(game, arguments);
-            ui.sidebar.tabs.compendium.render();
-        }
     }
 
     /**

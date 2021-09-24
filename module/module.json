@@ -2,9 +2,9 @@
 	"name": "babele",
 	"title": "Babele",
 	"description": "Module allowing a 'runtime' translation of all the installed compendiums",
-	"version": "2.0.6",
+	"version": "2.0.7",
 	"minimumCoreVersion" : "0.8.5",
-	"compatibleCoreVersion" : "0.8.8",
+	"compatibleCoreVersion" : "0.8.9",
 	"author": "Simone",
 	"scripts": [
 		"./lib/jszip.min.js",

@@ -203,6 +203,7 @@ class Babele {
         this.modules = [];
         this.converters = {};
         this.translations = null;
+        this.systemTranslationsDir = null;
         this.registerDefaultConverters();
     }
 
@@ -242,6 +243,14 @@ class Babele {
     }
 
     /**
+     *
+     * @param dir
+     */
+    setSystemTranslationsDir(dir) {
+        this.systemTranslationsDir = dir;
+    }
+
+    /**
      * Initialize babele downloading the available translations files and instantiating the associated
      * translated compendium class.
      *
@@ -276,6 +285,10 @@ class Babele {
 
         if(directory && directory.trim && directory.trim()) {
             directories.push(`${directory}/${lang}`);
+        }
+
+        if(this.systemTranslationsDir) {
+            directories.push(`systems/${game.system.data.name}/${this.systemTranslationsDir}/${lang}`);
         }
 
         const files = [];

@@ -119,6 +119,11 @@ where:
 
 Directories and modules can be used simultaneously. If the same compendium is present on both places, the directory will take precedence over the module.
 
+**Since version 2.0.4**, it is possible for system developers to distribute translations made with babele together with the distribution of their own system. It is sufficient to use the following API to provide Babel with the system directory in which to find, divided into folders one for each language, the JSON files of the translated compendia:
+```javascript
+Babele.get().setSystemTranslationsDir("packs/translations");
+```
+
 **Since version 1.2**, it is possible to map a property value using a `converter`, a function that allows to change the original data dynamically, instead of using static text.\
 A converter is a standard javascript function with the following signature:
 ```javascript

@@ -240,7 +240,7 @@ For example, considering a table of this type:
 
 <div align="center">
 
-![example0](/rolltable-example.webp?raw=true)
+![example0](/rolltable-example.jpg?raw=true)
 
 </div>
 
@@ -265,7 +265,7 @@ Obtaining the following result:
 
 <div align="center">
 
-![example0](/rolltable-example-2.webp?raw=true)
+![example0](/rolltable-example-2.jpg?raw=true)
 
 </div>
 

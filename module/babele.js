@@ -151,6 +151,24 @@ class Converters {
             return tc.translateField(field, data);
         }
     }
+
+    static tableResults() {
+        return function (results, translations) {
+            return results.map(data => {
+                if(translations) {
+                    let translation = translations[`${data.range[0]}-${data.range[1]}`];
+                    if(translation) {
+                        return mergeObject(data, mergeObject({ "text": translation}, { translated: true }));
+                    }
+                }
+                if(data.collection) {
+                    let text = game.babele.translateField("name", data.collection, { "name": data.text });
+                    return mergeObject(data, mergeObject({ "text": text}, { translated: true }));
+                }
+                return data;
+            });
+        }
+    }
 }
 
 /**
@@ -159,7 +177,7 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Actor', 'Item', 'JournalEntry'];
+        return ['Actor', 'Item', 'JournalEntry', 'RollTable'];
     }
 
     static get DEFAULT_MAPPINGS() {
@@ -183,6 +201,14 @@ class Babele {
             "JournalEntry": {
                 "name": "name",
                 "description": "content"
+            },
+            "RollTable": {
+                "name": "name",
+                "description": "description",
+                "results": {
+                    "path": "results",
+                    "converter": "tableResults"
+                }
             }
         }
     }
@@ -213,7 +239,8 @@ class Babele {
     registerDefaultConverters() {
         this.registerConverters({
             "fromPack": Converters.fromPack(),
-            "name": Converters.mappedField("name")
+            "name": Converters.mappedField("name"),
+            "tableResults": Converters.tableResults()
         })
     }
 

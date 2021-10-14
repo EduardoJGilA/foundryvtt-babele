@@ -75,7 +75,7 @@ These default mappings are as follows:
 ```
 
 This configuration is provided by default but can also be inserted in the translation files, in order to expand or overwrite the supported properties.\
-Mapppigs could be added like this (ex. spells):
+Mappigs could be added like this (ex. spells):
 ```json
 {
     "label": "Incantesimi (SRD)",
@@ -132,7 +132,7 @@ function converter(value, translations) {
 }
 ```
 
-where: 
+where:
 * **value**: the original untranslated propery value.
 * **translations**: the full entry list of the translation file.
 
@@ -156,6 +156,121 @@ and they can be referenced in the mapping:
     }
 }
 ```
+
+Using a special built-in converter named 'fromPack', Actor mapping allows automatic translation of owned items based on translations
+already present in the other compendiums.   
+The default mappings of the actor is changed in ths:
+```json
+"Actor": {
+   "name": "name",
+   "description": "data.details.biography.value",
+   "items": {
+      "path": "items",
+      "converter": "fromPack"
+   },
+   "tokenName": {
+      "path": "token.name",
+      "converter": "name"
+   }
+}
+```
+The additional special built-in converter named 'name' always return the translated name of the actual entity, in the Actor 
+default mapping is used to "synchronize" the actor translated name with the token name.
+
+The 'fromPack' converter also allows you to overwrite any item if the translation from its translated compendium is not 
+adequate or if some items are present and others are not. To overwrite (or add) owned items translations, simply provide 
+them as under translation under "items":
+
+```json
+{
+  "label": "Mostri (SRD)",
+  "entries": [{
+      "id": "Acolyte",
+      "name": "Accolito",
+      "description": "...",
+      "items": [{
+        "id": "Club",
+        "name": "Randello dell'accolito",
+        "description": "Il randello dell'accolito è un'arma molto potente..."
+      }]
+    }
+  ]
+}
+```
+In the example above, the "Club" item will be overwritten with the provided custom translation while the one from the item compendium will be skipped.
+The other items not overwritten will be translated by taking the translations from the relative compendium (if any).   
+Of course, the transifex-compatible format is also supported:
+
+```json
+{
+  "label": "Mostri (SRD)",
+  "entries": {
+    "Acolyte": {
+      "name": "Accolito",
+      "description": "...",
+      "items": {
+        "Club": {
+          "name": "Randello dell'accolito",
+          "description": "Il randello dell'accolito è un'arma molto potente..."
+        }
+      }
+    } 
+  }
+}
+```
+
+**Since version 2.1.0**, Babele adds a support also for **RollTable** compendium translations. This support is done adding 
+a new special built-in converter named 'tableResults' (Notice how the use of custom converters allows Babele extensibility without modifying its internal engine, making it a modular and flexible system)   
+This is the default mapping definition for a RollTable compendium:
+
+```json
+"RollTable": {
+   "name": "name",
+   "description": "description",
+   "results": {
+      "path": "results",
+      "converter": "tableResults"
+   }
+}
+```
+
+The 'tableResult' converter automatically translate roll table results if they are 'entity' from an already translated compendium
+while the translations of the text-type elements can be provided in the translation file under the "results" property, mapped as a key-value where the key corresponds to the associated "range".   
+For example, considering a table of this type:
+
+<div align="center">
+
+![example0](/rolltable-example.webp?raw=true)
+
+</div>
+
+The associated JSON translation file could be:
+
+```json
+{
+  "label": "Tabelle di prova",
+  "entries": [
+    {
+      "id": "Test",
+      "name": "Prova",
+      "description": "Descrizione tradotta",
+      "results": {
+        "1-1": "Testo tradotto"
+      }
+    }
+  ]
+}
+```
+Obtaining the following result:
+
+<div align="center">
+
+![example0](/rolltable-example-2.webp?raw=true)
+
+</div>
+
+As you can see, the text associated with the "1-1" range has been translated by retrieving the content from the file, 
+while the entities have been automatically translated by retrieving their respective translations from the associated translated compendiums.
 
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
 [https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)

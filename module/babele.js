@@ -24,6 +24,15 @@ Hooks.once('init', () => {
         config: true,
         default: true
     });
+
+    game.settings.register('babele', 'showOriginalName', {
+        name: game.i18n.localize("BABELE.ShowOriginalName"),
+        hint: game.i18n.localize("BABELE.ShowOriginalNameHint"),
+        scope: 'client',
+        type: Boolean,
+        config: true,
+        default: false
+    });
 });
 
 Hooks.once('ready', async () => {
@@ -61,6 +70,26 @@ Hooks.on('renderCompendium', (app, html, data) => {
         HtmlUtils.appendHeaderButton(html, title, ev => {
             game.babele.exportTranslationsFile(app.collection)
         });
+    }
+
+    const showOriginalName = game.settings.get('babele', 'showOriginalName');
+    if(showOriginalName) {
+        const items = html[0].querySelector(".directory-list").children;
+        for (let li of items) {
+            const entryName = li.querySelector(".entry-name");
+            const entry = data.index.find(i => i.name === entryName.textContent);
+            if(entry && entry.translated && entry.hasTranslation) {
+                const entryNameText = li.querySelector('.entry-name > a');
+                entryName.setAttribute("style", "display: flex; flex-direction: column;");
+                entryNameText.setAttribute("style", "line-height: normal; padding-top: 10px;");
+                const entryNameOriginalText = $(
+                    `<div style="line-height: normal; font-size: 12px; color: gray;">
+                        ${entry.originalName}
+                    </div>`
+                );
+                entryNameOriginalText.insertAfter(entryNameText);
+            }
+        }
     }
 });
 

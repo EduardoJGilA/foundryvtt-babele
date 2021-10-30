@@ -13,5 +13,7 @@
   "BABELE.TranslationDirTitle": "Translations Files Directory",
   "BABELE.TranslationDirHint": "Enter the directory where the compendium's local translation files are located",
   "BABELE.EnableTranslationExportTile": "Enable Translation Export",
-  "BABELE.EnableTranslationExportHint": "Enable this option if you want to add a button on each compendium to generate the translation file, useful as a startup template"
+  "BABELE.EnableTranslationExportHint": "Enable this option if you want to add a button on each compendium to generate the translation file, useful as a startup template",
+  "BABELE.ShowOriginalName": "Shows Original Name",
+  "BABELE.ShowOriginalNameHint": "Shows the untranslated name of the compendium's item in addition to the translated one. This will also allow you to filter by the original name along with the translated one in the search widget."
 }

@@ -33,12 +33,47 @@ Hooks.once('init', () => {
         config: true,
         default: false
     });
+
+    /**
+     * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend _getDocuments implementation
+     * with a code that merge the incoming data with the mapped translations.
+     */
+    libWrapper.register('babele', 'ClientDatabaseBackend.prototype._getDocuments', async function (wrapped, ...args) {
+        const result = await wrapped(...args);
+        const documentClass = args[0], query = args[1].query, options = args[1].options, pack = args[1].pack, user = args[2];
+        if(!pack || !result || !game.babele.isTranslated(pack)) {
+            return result;
+        }
+
+        if(options.index) {
+            return game.babele.translateIndex(result, pack);
+        } else {
+            return result.map(data => {
+                return new documentClass(game.babele.translate(pack, data.toObject()), {pack});
+            });
+        }
+    }, 'WRAPPER');
+
+    /**
+     * Necessary to solve a problem caused by the replacement of the index, even if already present, after reading the document.
+     */
+    libWrapper.register('babele', 'CompendiumCollection.prototype.indexDocument', function (wrapped, ...args) {
+        const id = args[0].id;
+        const idx = this.index.get(id);
+        wrapped(...args);
+        this.index.set(id, mergeObject(this.index.get(id), idx));
+    }, 'WRAPPER');
+
 });
 
 Hooks.once('ready', async () => {
+
+    if(!game.modules.get('lib-wrapper')?.active && game.user.isGM) {
+        ui.notifications.error(game.i18n.localize("BABELE.requireLibWrapperMessage"));
+    }
+
     game.babele = Babele.get();
     await game.babele.init();
-    CONFIG.DatabaseBackend = new BabeleClientDatabaseBackend();
     game.packs.contents.forEach(pack => {
         const index = game.babele.translateIndex(pack.index.contents, pack.collection);
         pack.index = new foundry.utils.Collection();
@@ -104,30 +139,6 @@ class HtmlUtils {
         html.closest('.app').find('.translate').remove();
         let titleElement = html.closest('.app').find('.window-title');
         openBtn.insertAfter(titleElement);
-    }
-}
-
-/**
- * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend with a
- * custom implementation that merge the incoming data with the mapped translations.
- *
- * TODO: consider using libwrapper.
- */
-class BabeleClientDatabaseBackend extends ClientDatabaseBackend {
-
-    async _getDocuments(documentClass, {query, options, pack}, user) {
-        const result = await super._getDocuments(documentClass, {query, options, pack}, user);
-        if(!pack || !result || !game.babele.isTranslated(pack)) {
-            return result;
-        }
-
-        if(options.index) {
-            return game.babele.translateIndex(result, pack);
-        } else {
-            return result.map(data => {
-                return new documentClass(game.babele.translate(pack, data.toObject()), {pack});
-            });
-        }
     }
 }
 
@@ -397,9 +408,15 @@ class Babele {
      * @returns {*} the translated & sorted index
      */
     translateIndex(index, pack) {
+        const prevIndex = game.packs.get(pack).index;
         return index
                 .map(data => {
-                    return this.translate(pack, data)
+                    let translated = prevIndex.get(data._id)?.translated;
+                    if(translated) {
+                        return mergeObject(data, this.translate(pack, data, true));
+                    } else {
+                        return this.translate(pack, data);
+                    }
                 })
                 .sort((a, b) => {
                     if (a.name < b.name)

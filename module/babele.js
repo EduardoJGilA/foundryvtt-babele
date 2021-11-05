@@ -40,6 +40,10 @@ Hooks.once('init', () => {
      */
     libWrapper.register('babele', 'ClientDatabaseBackend.prototype._getDocuments', async function (wrapped, ...args) {
         const result = await wrapped(...args);
+        if(!game.babele || !game.babele.initialized) {
+            return result;
+        }
+
         const documentClass = args[0], query = args[1].query, options = args[1].options, pack = args[1].pack, user = args[2];
         if(!pack || !result || !game.babele.isTranslated(pack)) {
             return result;
@@ -270,6 +274,7 @@ class Babele {
         this.converters = {};
         this.translations = null;
         this.systemTranslationsDir = null;
+        this.initialized = false;
         this.registerDefaultConverters();
     }
 
@@ -335,6 +340,7 @@ class Babele {
                 this.packs.set(collection, new TranslatedCompendium(metadata, translation));
             }
         }
+        this.initialized = true;
     }
 
     /**

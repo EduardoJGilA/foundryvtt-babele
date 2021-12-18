@@ -11,6 +11,7 @@ Hooks.once('init', () => {
         type: String,
         scope: 'world',
         config: true,
+        filePicker: "folder",
         onChange: directory => {
             window.location.reload();
         }
@@ -97,7 +98,7 @@ Hooks.on('renderActorSheet', (app, html, data) => {
     if(game.user.isGM && data.editable) {
         let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
         HtmlUtils.appendHeaderButton(html, title, ev => {
-            game.babele.translateActor(app.entity);
+            game.babele.translateActor(app.actor);
         });
     }
 });
@@ -115,10 +116,10 @@ Hooks.on('renderCompendium', (app, html, data) => {
     if(showOriginalName) {
         const items = html[0].querySelector(".directory-list").children;
         for (let li of items) {
-            const entryName = li.querySelector(".entry-name");
+            const entryName = li.querySelector(".entry-name")||li.querySelector(".document-name");
             const entry = data.index.find(i => i.name === entryName.textContent);
             if(entry && entry.translated && entry.hasTranslation) {
-                const entryNameText = li.querySelector('.entry-name > a');
+                const entryNameText = li.querySelector('.entry-name > a')||li.querySelector('.document-name > a');
                 entryName.setAttribute("style", "display: flex; flex-direction: column;");
                 entryNameText.setAttribute("style", "line-height: normal; padding-top: 10px;");
                 const entryNameOriginalText = $(
@@ -311,7 +312,8 @@ class Babele {
      * @returns {boolean}
      */
     supported(pack) {
-        return Babele.SUPPORTED_PACKS.includes(pack.entity);
+        console.log(pack.type);
+        return Babele.SUPPORTED_PACKS.includes(pack.type);
     }
 
     /**
@@ -736,7 +738,7 @@ class TranslatedCompendium {
     constructor(metadata, translations) {
         this.metadata = metadata;
         this.translations = [];
-        this.mapping = new CompendiumMapping(metadata.entity, translations ? translations.mapping : null, this);
+        this.mapping = new CompendiumMapping(metadata.type, translations ? translations.mapping : null, this);
         if(translations) {
             mergeObject(metadata, { label: translations.label });
 
@@ -935,6 +937,7 @@ class OnDemandTranslateDialog extends Dialog {
                       let translated = 0;
                       let untranslated = 0;
 
+                      let updates = [];
                       for (let idx = 0; idx < items; idx++) {
                           let item = actor.items.contents[idx];
                           let data = item.toObject();
@@ -942,7 +945,7 @@ class OnDemandTranslateDialog extends Dialog {
                           let pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
                           if(pack) {
                               let translatedData =  pack.translate(data, true);
-                              await actor.updateEmbeddedDocuments("Item", [mergeObject(translatedData, { _id: item._id })]);
+                              updates.push(mergeObject(translatedData, { _id: item.id }));
                               area.append(`${data.name.padEnd(68,'.')}ok\n`);
                               translated++;
                           } else {
@@ -950,7 +953,11 @@ class OnDemandTranslateDialog extends Dialog {
                               untranslated++;
                           }
                       }
-                      area.append(`\nend. tot items: ${items}, tot translated: ${translated}, tot untranslated: ${untranslated}  
+                      if(updates.length) {
+                          area.append(`Updating...\n`);
+                          await actor.updateEmbeddedDocuments("Item", updates);
+                      }
+                      area.append(`\nDone. tot items: ${items}, tot translated: ${translated}, tot untranslated: ${untranslated}  
                       \n`);
                   }
               }

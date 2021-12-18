@@ -312,7 +312,6 @@ class Babele {
      * @returns {boolean}
      */
     supported(pack) {
-        console.log(pack.type);
         return Babele.SUPPORTED_PACKS.includes(pack.type);
     }
 

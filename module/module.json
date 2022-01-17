@@ -48,6 +48,10 @@
 		"lang": "zh-tw",
 		"name": "Taiwanese",
 		"path": "./lang/zh-tw.json"
+	}, {
+		"lang": "ja",
+		"name": "日本語",
+		"path": "./lang/ja.json"
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",

@@ -208,7 +208,11 @@ class Converters {
                 }
                 if(data.collection) {
                     let text = game.babele.translateField("name", data.collection, { "name": data.text });
-                    return mergeObject(data, mergeObject({ "text": text}, { translated: true }));
+                    if(text) {
+                        return mergeObject(data, mergeObject({ "text": text}, { translated: true }));
+                    } else {
+                        return data;
+                    }
                 }
                 return data;
             });
@@ -470,7 +474,10 @@ class Babele {
      */
     translateField(field, pack, data) {
         const tc = this.packs.get(pack);
-        if(!tc || !(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
+        if(!tc) {
+            return null;
+        }
+        if(!(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
             return tc.extractField(field, data);
         }
         return tc.translateField(field, data);

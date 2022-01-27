@@ -35,6 +35,13 @@ Hooks.once('init', () => {
         default: false
     });
 
+    game.settings.register('babele', 'translationFiles', {
+        type: Array,
+        default: [],
+        scope: 'world',
+        config: false
+    });
+
     /**
      * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend _getDocuments implementation
      * with a code that merge the incoming data with the mapped translations.
@@ -369,14 +376,19 @@ class Babele {
             directories.push(`systems/${game.system.data.name}/${this.systemTranslationsDir}/${lang}`);
         }
 
-        const files = [];
-        for(let i=0; i<directories.length; i++) {
-            try {
-                let result = await FilePicker.browse("data", directories[i]);
-                result.files.forEach(file => files.push(file));
-            } catch (err) {
-                console.warn("Babele: " + err)
+        let files = [];
+        if(game.user.isGM) {
+            for(let i=0; i<directories.length; i++) {
+                try {
+                    let result = await FilePicker.browse("data", directories[i]);
+                    result.files.forEach(file => files.push(file));
+                } catch (err) {
+                    console.warn("Babele: " + err)
+                }
             }
+            game.settings.set('babele', 'translationFiles', files);
+        } else {
+            files = game.settings.get('babele', 'translationFiles');
         }
 
         let allTranslations = [];

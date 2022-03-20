@@ -432,6 +432,8 @@ class Babele {
      */
     translateIndex(index, pack) {
         const prevIndex = game.packs.get(pack).index;
+        const lang = game.settings.get('core', 'language');
+        const collator = new Intl.Collator(Intl.Collator.supportedLocalesOf([ lang ]).length > 0 ? lang : 'en');
         return index
                 .map(data => {
                     let translated = prevIndex.get(data._id)?.translated;
@@ -442,11 +444,7 @@ class Babele {
                     }
                 })
                 .sort((a, b) => {
-                    if (a.name < b.name)
-                        return -1;
-                    if (a.name > b.name)
-                        return 1;
-                    return 0;
+                  return collator.compare(a.name, b.name);
                 });
     }
 

@@ -35,6 +35,15 @@ Hooks.once('init', () => {
         default: false
     });
 
+    game.settings.register('babele', 'showTranslateOption', {
+        name: game.i18n.localize("BABELE.ShowTranslateOption"),
+        hint: game.i18n.localize("BABELE.ShowTranslateOptionHint"),
+        scope: 'client',
+        type: Boolean,
+        config: true,
+        default: true
+    });
+
     game.settings.register('babele', 'translationFiles', {
         type: Array,
         default: [],
@@ -102,7 +111,8 @@ Hooks.once('ready', async () => {
 });
 
 Hooks.on('renderActorSheet', (app, html, data) => {
-    if(game.user.isGM && data.editable) {
+    const exportEnabled = game.settings.get('babele', 'showTranslateOption');
+    if(exportEnabled && game.user.isGM && data.editable) {
         let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
         HtmlUtils.appendHeaderButton(html, title, ev => {
             game.babele.translateActor(app.actor);

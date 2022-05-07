@@ -19,5 +19,7 @@
   "BABELE.EnableTranslationExportHint": "Active esta opción si desea añadir un botón en cada compendio para generar un fichero de traducción, útil para generar plantillas con las que trabajar",
   "BABELE.ShowOriginalName": "Mostrar nombre original",
   "BABELE.ShowOriginalNameHint": "Muestra el nombre sin traducir del objeto del compendio además de la traducción. Esto le permitirá filtrar por el nombre original además de por la traducción en la herramienta de búsqueda",
+  "BABELE.ShowTranslateOption": "Mostrar opción de traducción",
+  "BABELE.ShowTranslateOptionHint": "Conmuta la opción de tradución en las hojas de los actores",
   "BABELE.requireLibWrapperMessage": "Babele necesita el módulo 'libWrapper'. Por favor, instálelo y actívelo"
 }

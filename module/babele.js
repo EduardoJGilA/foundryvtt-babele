@@ -769,7 +769,11 @@ class TranslatedCompendium {
             mergeObject(metadata, { label: translations.label });
 
             this.translated = true;
-            this.reference = translations.reference;
+            this.reference = null;
+            if(translations.reference) {
+                this.reference = Array.isArray(translations.reference) ? translations.reference : [translations.reference];
+            }
+
             if(translations.entries) {
                 if(Array.isArray(translations.entries)) {
                     translations.entries.forEach(t => {
@@ -807,8 +811,12 @@ class TranslatedCompendium {
      */
     hasReferenceTranslations(data) {
         if(this.reference) {
-            let referencePack = game.babele.packs.get(this.reference);
-            return referencePack.translated && referencePack.hasTranslation(data);
+            for (let ref of this.reference) {
+                let referencePack = game.babele.packs.get(ref);
+                if(referencePack.translated && referencePack.hasTranslation(data)) {
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -873,10 +881,12 @@ class TranslatedCompendium {
         let translatedData = this.mapping.map(data, this.translationsFor(data));
 
         if(this.reference) {
-            let referencePack = game.babele.packs.get(this.reference);
-            if(referencePack.translated) {
-                let fromReference = referencePack.translate(data, true);
-                translatedData = mergeObject(fromReference, translatedData);
+            for (let ref of this.reference) {
+                let referencePack = game.babele.packs.get(ref);
+                if(referencePack.translated && referencePack.hasTranslation(data)) {
+                    let fromReference = referencePack.translate(data, true);
+                    translatedData = mergeObject(fromReference, translatedData);
+                }
             }
         }
 

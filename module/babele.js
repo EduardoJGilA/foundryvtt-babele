@@ -12,6 +12,7 @@ Hooks.once('init', () => {
         scope: 'world',
         config: true,
         filePicker: "folder",
+        default: '',
         onChange: directory => {
             window.location.reload();
         }
@@ -50,6 +51,10 @@ Hooks.once('init', () => {
         scope: 'world',
         config: false
     });
+
+    if(!game.modules.get('lib-wrapper')?.active && game.user.isGM) {
+        ui.notifications.error(game.i18n.localize("BABELE.requireLibWrapperMessage"));
+    }
 
     /**
      * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend _getDocuments implementation
@@ -250,7 +255,7 @@ class Babele {
         return {
             "Actor": {
                 "name": "name",
-                "description": "data.details.biography.value",
+                "description": "system.details.biography.value",
                 "items": {
                     "path": "items",
                     "converter": "fromPack"
@@ -262,7 +267,7 @@ class Babele {
             },
             "Item": {
                 "name": "name",
-                "description": "data.description.value"
+                "description": "system.description.value"
             },
             "JournalEntry": {
                 "name": "name",
@@ -356,13 +361,14 @@ class Babele {
         }
         this.packs = new foundry.utils.Collection();
         for ( let metadata of game.data.packs ) {
-            const collection = `${metadata.package}.${metadata.name}`;
+            const collection = `${metadata.packageName}.${metadata.name}`;
             if(this.supported(metadata)) {
                 let translation = this.translations.find(t => t.collection === collection);
                 this.packs.set(collection, new TranslatedCompendium(metadata, translation));
             }
         }
         this.initialized = true;
+        Hooks.callAll(`babele.ready`);
     }
 
     /**
@@ -396,9 +402,9 @@ class Babele {
                     console.warn("Babele: " + err)
                 }
             }
-            game.settings.set('babele', 'translationFiles', files);
+            //game.settings.set('babele', 'translationFiles', files);
         } else {
-            files = game.settings.get('babele', 'translationFiles');
+            //files = game.settings.get('babele', 'translationFiles');
         }
 
         let allTranslations = [];
@@ -406,7 +412,7 @@ class Babele {
             console.log(`Babele | no compendium translation files found for ${lang} language.`);
         } else {
             for ( let metadata of game.data.packs ) {
-                const collection = `${metadata.package}.${metadata.name}`;
+                const collection = `${metadata.packageName}.${metadata.name}`;
                 if(this.supported(metadata)) {
                     const urls = files.filter(file => file.endsWith(`${collection}.json`));
                     if(urls.length === 0) {

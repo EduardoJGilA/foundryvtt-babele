@@ -1,14 +1,23 @@
 {
-	"name": "babele",
+	"id": "babele",
 	"title": "Babele",
 	"description": "Module allowing a 'runtime' translation of all the installed compendiums",
-	"version": "2.2.6",
-	"minimumCoreVersion" : "9",
-	"compatibleCoreVersion" : "9",
-	"dependencies": [{
-		"name": "lib-wrapper"
+	"version": "2.3.0",
+	"compatibility": {
+		"minimum": 10,
+		"verified": "10.279"
+	},
+	"relationships": {
+		"requires": [{
+			"id": "lib-wrapper",
+			"type": "module"
+		}]
+	},
+	"authors": [{
+		"name": "Simone",
+		"email": "simone.ricciardi@gmail.com",
+		"discord": "Simone [UTC +1]#6710"
 	}],
-	"author": "Simone",
 	"scripts": [
 		"./lib/jszip.min.js",
 		"./lib/FileSaver.js",
@@ -55,5 +64,5 @@
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",
-	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.2.6/raw/babele.zip?job=build"
+	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.3.0/raw/babele.zip?job=build"
 }

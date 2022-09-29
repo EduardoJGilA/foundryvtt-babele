@@ -402,9 +402,9 @@ class Babele {
                     console.warn("Babele: " + err)
                 }
             }
-            //game.settings.set('babele', 'translationFiles', files);
+            game.settings.set('babele', 'translationFiles', files);
         } else {
-            //files = game.settings.get('babele', 'translationFiles');
+            files = game.settings.get('babele', 'translationFiles');
         }
 
         let allTranslations = [];

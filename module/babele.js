@@ -228,8 +228,8 @@ class Converters {
                         return mergeObject(data, mergeObject({ "text": translation}, { translated: true }));
                     }
                 }
-                if(data.collection) {
-                    let text = game.babele.translateField("name", data.collection, { "name": data.text });
+                if(data.documentCollection) {
+                    let text = game.babele.translateField("name", data.documentCollection, { "name": data.text });
                     if(text) {
                         return mergeObject(data, mergeObject({ "text": text}, { translated: true }));
                     } else {

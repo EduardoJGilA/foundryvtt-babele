@@ -136,20 +136,22 @@ Hooks.on('renderCompendium', (app, html, data) => {
 
     const showOriginalName = game.settings.get('babele', 'showOriginalName');
     if(showOriginalName) {
-        const items = html[0].querySelector(".directory-list").children;
-        for (let li of items) {
-            const entryName = li.querySelector(".entry-name")||li.querySelector(".document-name");
-            const entry = data.index.find(i => i.name === entryName.textContent);
-            if(entry && entry.translated && entry.hasTranslation) {
-                const entryNameText = li.querySelector('.entry-name > a')||li.querySelector('.document-name > a');
-                entryName.setAttribute("style", "display: flex; flex-direction: column;");
-                entryNameText.setAttribute("style", "line-height: normal; padding-top: 10px;");
-                const entryNameOriginalText = $(
-                    `<div style="line-height: normal; font-size: 12px; color: gray;">
+        const items = html[0].querySelector(".directory-list")?.children;
+        if(items) {
+            for (let li of items) {
+                const entryName = li.querySelector(".entry-name")||li.querySelector(".document-name");
+                const entry = data.index.find(i => i.name === entryName.textContent);
+                if(entry && entry.translated && entry.hasTranslation) {
+                    const entryNameText = li.querySelector('.entry-name > a')||li.querySelector('.document-name > a');
+                    entryName.setAttribute("style", "display: flex; flex-direction: column;");
+                    entryNameText.setAttribute("style", "line-height: normal; padding-top: 10px;");
+                    const entryNameOriginalText = $(
+                        `<div style="line-height: normal; font-size: 12px; color: gray;">
                         ${entry.originalName}
                     </div>`
-                );
-                entryNameOriginalText.insertAfter(entryNameText);
+                    );
+                    entryNameOriginalText.insertAfter(entryNameText);
+                }
             }
         }
     }
@@ -240,6 +242,24 @@ class Converters {
             });
         }
     }
+
+    static pages() {
+        return function (pages, translations) {
+            return pages.map(data => {
+                if(translations) {
+                    let translation = translations[data.name];
+                    if(translation) {
+                        return mergeObject(data, {
+                            name: translation.name,
+                            text: { content: translation.text },
+                            translated: true
+                        });
+                    }
+                }
+                return data;
+            });
+        }
+    }
 }
 
 /**
@@ -261,7 +281,7 @@ class Babele {
                     "converter": "fromPack"
                 },
                 "tokenName": {
-                    "path": "token.name",
+                    "path": "prototypeToken.name",
                     "converter": "name"
                 }
             },
@@ -271,7 +291,11 @@ class Babele {
             },
             "JournalEntry": {
                 "name": "name",
-                "description": "content"
+                "description": "content",
+                "pages": {
+                    "path": "pages",
+                    "converter": "pages"
+                }
             },
             "RollTable": {
                 "name": "name",
@@ -312,7 +336,8 @@ class Babele {
         this.registerConverters({
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
-            "tableResults": Converters.tableResults()
+            "tableResults": Converters.tableResults(),
+            "pages": Converters.pages()
         })
     }
 

@@ -272,6 +272,33 @@ Obtaining the following result:
 As you can see, the text associated with the "1-1" range has been translated by retrieving the content from the file, 
 while the entities have been automatically translated by retrieving their respective translations from the associated translated compendiums.
 
+## V10 new Journal Entries
+
+From version 10, in Foundry, the data structure of the Journal has been enriched with pages. Babele supports this new structure from version 2.3.2 introducing the new converter “pages”, automatically mapped to the Journal Document.    
+It is therefore possible to translate the pages of a journal using a JSON of this type:
+
+```json
+{
+  "label": "Regole (SRD)",
+  "entries": {
+    "Chapter 1: Beyond 1st Level": {
+      "name": "Capitolo 1: Oltre il 1° Livello",
+      "pages": {
+        "Beyond 1st Level": {
+          "name": "Oltre il 1° Livello",
+          "text": "..."
+        },
+        "Another page": {
+          "name": "Un'altra pagina",
+          "text": "..."  
+        }
+      }
+    },
+    ...
+  }
+}
+```
+
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
 [https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)
 

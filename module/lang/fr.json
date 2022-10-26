@@ -15,6 +15,8 @@
   "BABELE.EnableTranslationExportTile": "Activer l'export de la traduction",
   "BABELE.EnableTranslationExportHint": "Activez cette option si vous souhaitez ajouter un bouton sur chaque compendium pour générer le fichier de traduction, utile comme modèle de démarrage",
   "BABELE.ShowOriginalName": "Montrer le nom original",
-  "BABELE.ShowOriginalNameHint": "Montre le nom avant traductionde l'objet du compendium en plus du nom traduit. Cela va vous permettre de filtrer par le nom original ainsi que par le nom traduit dans la barre de recherche.",
+  "BABELE.ShowOriginalNameHint": "Montre le nom avant traduction de l'objet du compendium en plus du nom traduit. Cela va vous permettre de filtrer par le nom original ainsi que par le nom traduit dans la barre de recherche.",
+  "BABELE.ShowTranslateOption": "Montrer l'option de traduction",
+  "BABELE.ShowTranslateOptionHint": "Afficher/Masquer l'option Traduire sur les fiches d'acteurs",
   "BABELE.requireLibWrapperMessage": "Babele nécessite l'utilisation du module 'libWrapper'. Merci de l'installer et de l'activer."
 }

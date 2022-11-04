@@ -430,7 +430,9 @@ class Babele {
                     console.warn("Babele: " + err)
                 }
             }
-            game.settings.set('babele', 'translationFiles', files);
+            if(game.user.isGM) {
+                game.settings.set('babele', 'translationFiles', files);
+            }
         } else {
             files = game.settings.get('babele', 'translationFiles');
         }

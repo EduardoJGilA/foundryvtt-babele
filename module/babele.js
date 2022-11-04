@@ -418,7 +418,7 @@ class Babele {
         }
 
         let files = [];
-        if(game.user.isGM) {
+        if(game.user.hasPermission('FILES_BROWSE')) {
             for(let i=0; i<directories.length; i++) {
                 try {
                     let result = await FilePicker.browse("data", directories[i]);

@@ -268,7 +268,7 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Actor', 'Item', 'JournalEntry', 'RollTable'];
+        return ['Actor', 'Item', 'JournalEntry', 'RollTable', 'Scene'];
     }
 
     static get DEFAULT_MAPPINGS() {
@@ -304,6 +304,9 @@ class Babele {
                     "path": "results",
                     "converter": "tableResults"
                 }
+            },
+            "Scene": {
+                "name": "name"
             }
         }
     }

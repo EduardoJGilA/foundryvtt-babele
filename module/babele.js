@@ -300,6 +300,43 @@ class Converters {
             });
         };
     }
+
+    static adventurePlaylists() {
+        return function (playlists, translations) {
+            return playlists.map(data => {
+                if (translations) {
+                    const translation = translations[data.name];
+                    if (translation) {
+                        return mergeObject(data, {
+                            name: translation.name ?? data.name,
+                            description: translation.description ?? data.description,
+                            sounds: Converters._playlistSounds(data.sounds, translation.sounds),
+                            translated: true,
+                        });
+                    }
+                }
+
+                return data;
+            });
+        };
+    }
+
+    static _playlistSounds(sounds, translations) {
+        return sounds.map(data => {
+            if (translations) {
+                const translation = translations[data.name];
+                if (translation) {
+                    return mergeObject(data, {
+                        name: translation.name ?? data.name,
+                        description: translation.description ?? data.description,
+                        translated: true,
+                    });
+                }
+            }
+
+            return data;
+        });
+    }
 }
 
 /**
@@ -332,6 +369,10 @@ class Babele {
                 "macros": {
                     "path": "macros",
                     "converter": "nameCollection"
+                },
+                "playlists": {
+                    "path": "playlists",
+                    "converter": "adventurePlaylists"
                 }
             },
             "Actor": {
@@ -403,7 +444,8 @@ class Babele {
             "nameCollection": Converters.fieldCollection("name"),
             "tableResults": Converters.tableResults(),
             "pages": Converters.pages(),
-            "adventureJournals": Converters.adventureJournals()
+            "adventureJournals": Converters.adventureJournals(),
+            "adventurePlaylists": Converters.adventurePlaylists()
         })
     }
 

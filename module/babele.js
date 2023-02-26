@@ -221,6 +221,23 @@ class Converters {
         }
     }
 
+    static fieldCollection(field) {
+        return function (collection, translations) {
+            if (!translations) {
+                return collection;
+            }
+
+            return collection.map(data => {
+                const translation = translations[data[field]];
+                if (!translation) {
+                    return data;
+                }
+
+                return mergeObject(data, { [field]: translation, translated: true });
+            });
+        };
+    }
+
     static tableResults() {
         return function (results, translations) {
             return results.map(data => {
@@ -260,29 +277,12 @@ class Converters {
     }
 
     static pages() {
-        const that = this;
         return function (pages, translations) {
-            return that._pages(pages, translations);
-        };
-    }
-
-    static adventureFolders() {
-        return function (folders, translations) {
-            return folders.map(data => {
-                if (translations) {
-                    const translation = translations[data.name];
-                    if (translation) {
-                        return mergeObject(data, mergeObject({ 'name': translation }, { translated: true }));
-                    }
-                }
-
-                return data;
-            });
+            return Converters._pages(pages, translations);
         };
     }
 
     static adventureJournals() {
-        const that = this;
         return function (journals, translations) {
             return journals.map(data => {
                 if (translations) {
@@ -290,7 +290,7 @@ class Converters {
                     if (translation) {
                         return mergeObject(data, {
                             name: translation.name,
-                            pages: that._pages(data.pages, translation.pages),
+                            pages: Converters._pages(data.pages, translation.pages),
                             translated: true,
                         });
                     }
@@ -319,11 +319,15 @@ class Babele {
                 "caption": "caption",
                 "folders": {
                     "path": "folders",
-                    "converter": "adventureFolders"
+                    "converter": "nameCollection"
                 },
                 "journals": {
                     "path": "journal",
                     "converter": "adventureJournals"
+                },
+                "scenes": {
+                    "path": "scenes",
+                    "converter": "nameCollection"
                 }
             },
             "Actor": {
@@ -392,9 +396,9 @@ class Babele {
         this.registerConverters({
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
+            "nameCollection": Converters.fieldCollection("name"),
             "tableResults": Converters.tableResults(),
             "pages": Converters.pages(),
-            "adventureFolders": Converters.adventureFolders(),
             "adventureJournals": Converters.adventureJournals()
         })
     }

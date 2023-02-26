@@ -238,26 +238,52 @@ class Converters {
         };
     }
 
+    static _tableResults(results, translations) {
+        return results.map(data => {
+            if (translations) {
+                const translation = translations[`${data.range[0]}-${data.range[1]}`];
+                if (translation) {
+                    return mergeObject(data, mergeObject({ 'text': translation }, { translated: true }));
+                }
+            }
+            if (data.documentCollection) {
+                const text = game.babele.translateField('name', data.documentCollection, { 'name': data.text });
+                if (text) {
+                    return mergeObject(data, mergeObject({ 'text': text }, { translated: true }));
+                } else {
+                    return data;
+                }
+            }
+            return data;
+        });
+    }
+
     static tableResults() {
         return function (results, translations) {
-            return results.map(data => {
-                if(translations) {
-                    let translation = translations[`${data.range[0]}-${data.range[1]}`];
-                    if(translation) {
-                        return mergeObject(data, mergeObject({ "text": translation}, { translated: true }));
-                    }
+            return Converters._tableResults(results, translations);
+        };
+    }
+
+    static tableResultsCollection() {
+        return function (collection, translations) {
+            if (!translations) {
+                return collection;
+            }
+
+            return collection.map(data => {
+                const translation = translations[data.name];
+                if (!translation) {
+                    return data;
                 }
-                if(data.documentCollection) {
-                    let text = game.babele.translateField("name", data.documentCollection, { "name": data.text });
-                    if(text) {
-                        return mergeObject(data, mergeObject({ "text": text}, { translated: true }));
-                    } else {
-                        return data;
-                    }
-                }
-                return data;
+
+                return mergeObject(data, {
+                    name: translation.name ?? data.name,
+                    description: translation.description ?? data.description,
+                    results: Converters._tableResults(data.results, translation.results),
+                    translated: true,
+                });
             });
-        }
+        };
     }
 
     static _pages(pages, translations) {
@@ -373,6 +399,10 @@ class Babele {
                 "playlists": {
                     "path": "playlists",
                     "converter": "adventurePlaylists"
+                },
+                "tables": {
+                    "path": "tables",
+                    "converter": "tableResultsCollection"
                 }
             },
             "Actor": {
@@ -443,6 +473,7 @@ class Babele {
             "name": Converters.mappedField("name"),
             "nameCollection": Converters.fieldCollection("name"),
             "tableResults": Converters.tableResults(),
+            "tableResultsCollection": Converters.tableResultsCollection(),
             "pages": Converters.pages(),
             "adventureJournals": Converters.adventureJournals(),
             "adventurePlaylists": Converters.adventurePlaylists()

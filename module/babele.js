@@ -328,6 +328,10 @@ class Babele {
                 "scenes": {
                     "path": "scenes",
                     "converter": "nameCollection"
+                },
+                "macros": {
+                    "path": "macros",
+                    "converter": "nameCollection"
                 }
             },
             "Actor": {

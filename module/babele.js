@@ -243,22 +243,62 @@ class Converters {
         }
     }
 
+    static _pages(pages, translations) {
+        return pages.map(data => {
+            if(translations) {
+                let translation = translations[data.name];
+                if(translation) {
+                    return mergeObject(data, {
+                        name: translation.name,
+                        text: { content: translation.text },
+                        translated: true
+                    });
+                }
+            }
+            return data;
+        });
+    }
+
     static pages() {
+        const that = this;
         return function (pages, translations) {
-            return pages.map(data => {
-                if(translations) {
-                    let translation = translations[data.name];
-                    if(translation) {
+            return that._pages(pages, translations);
+        };
+    }
+
+    static adventureFolders() {
+        return function (folders, translations) {
+            return folders.map(data => {
+                if (translations) {
+                    const translation = translations[data.name];
+                    if (translation) {
+                        return mergeObject(data, mergeObject({ 'name': translation }, { translated: true }));
+                    }
+                }
+
+                return data;
+            });
+        };
+    }
+
+    static adventureJournals() {
+        const that = this;
+        return function (journals, translations) {
+            return journals.map(data => {
+                if (translations) {
+                    const translation = translations[data.name];
+                    if (translation) {
                         return mergeObject(data, {
                             name: translation.name,
-                            text: { content: translation.text },
-                            translated: true
+                            pages: that._pages(data.pages, translation.pages),
+                            translated: true,
                         });
                     }
                 }
+
                 return data;
             });
-        }
+        };
     }
 }
 
@@ -268,11 +308,24 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Actor', 'Item', 'JournalEntry', 'RollTable', 'Scene'];
+        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'RollTable', 'Scene'];
     }
 
     static get DEFAULT_MAPPINGS() {
         return {
+            "Adventure": {
+                "name": "name",
+                "description": "description",
+                "caption": "caption",
+                "folders": {
+                    "path": "folders",
+                    "converter": "adventureFolders"
+                },
+                "journals": {
+                    "path": "journal",
+                    "converter": "adventureJournals"
+                }
+            },
             "Actor": {
                 "name": "name",
                 "description": "system.details.biography.value",
@@ -340,7 +393,9 @@ class Babele {
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
             "tableResults": Converters.tableResults(),
-            "pages": Converters.pages()
+            "pages": Converters.pages(),
+            "adventureFolders": Converters.adventureFolders(),
+            "adventureJournals": Converters.adventureJournals()
         })
     }
 
@@ -398,7 +453,7 @@ class Babele {
         this.initialized = true;
         Hooks.callAll(`babele.ready`);
     }
-	
+
 	getCollection(metadata) {
 		const collectionPrefix = metadata.packageType === "world" ? "world" : metadata.packageName;
 		return `${collectionPrefix}.${metadata.name}`;
@@ -679,9 +734,9 @@ class FieldMapping {
         const map = {};
         const value = this.translate(data, translations);
         if(value) {
-            this.path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);    
+            this.path.split('.').reduce((a,f,i,r) => { a[f] = (i<r.length-1) ? {} : value; return a[f]; }, map);
         }
-        return map;    
+        return map;
     }
 
     /**

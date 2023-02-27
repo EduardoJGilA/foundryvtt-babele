@@ -403,6 +403,10 @@ class Babele {
                 "tables": {
                     "path": "tables",
                     "converter": "tableResultsCollection"
+                },
+                "items": {
+                    "path": "items",
+                    "converter": "fromPack"
                 }
             },
             "Actor": {

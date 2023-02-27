@@ -157,6 +157,17 @@ Hooks.on('renderCompendium', (app, html, data) => {
     }
 });
 
+Hooks.on('importAdventure', () => {
+    game.scenes.forEach(scene => {
+        scene.tokens.forEach(token => {
+            const actor = game.actors.get(token.actorId);
+            if (actor) {
+                token.update({ name: actor.prototypeToken.name });
+            }
+        });
+    });
+});
+
 /**
  * Simple utility class to inject a custom button to the window header.
  */
@@ -363,6 +374,26 @@ class Converters {
             return data;
         });
     }
+
+    static adventureActors() {
+        return function (actors, translations) {
+            return actors.map(data => {
+                if (translations) {
+                    const translation = translations[data.name];
+                    if (translation) {
+                        return mergeObject(data, {
+                            name: translation.name ?? data.name,
+                            description: translation.description ?? data.description,
+                            prototypeToken: { name: translation.tokenName ?? data.prototypeToken.name },
+                            translated: true
+                        });
+                    }
+                }
+
+                return data;
+            });
+        }
+    }
 }
 
 /**
@@ -407,6 +438,10 @@ class Babele {
                 "items": {
                     "path": "items",
                     "converter": "fromPack"
+                },
+                "actors": {
+                    "path": "actors",
+                    "converter": "adventureActors",
                 }
             },
             "Actor": {
@@ -480,7 +515,8 @@ class Babele {
             "tableResultsCollection": Converters.tableResultsCollection(),
             "pages": Converters.pages(),
             "adventureJournals": Converters.adventureJournals(),
-            "adventurePlaylists": Converters.adventurePlaylists()
+            "adventurePlaylists": Converters.adventurePlaylists(),
+            "adventureActors": Converters.adventureActors()
         })
     }
 

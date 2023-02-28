@@ -394,6 +394,54 @@ class Converters {
             });
         }
     }
+
+    static adventureCards() {
+        return function (cards, translations) {
+            return cards.map(data => {
+                if (translations) {
+                    const translation = translations[data.name];
+                    if (translation) {
+                        return mergeObject(data, {
+                            name: translation.name ?? data.name,
+                            description: translation.description ?? data.description,
+                            cards: Converters._deckCards(data.cards, translation.cards),
+                            translated: true
+                        });
+                    }
+                }
+
+                return data;
+            });
+        }
+    }
+
+    static _deckCards(cards, translations) {
+        return cards.map(data => {
+            if (translations) {
+                const translation = translations[data.name];
+                if (translation) {
+                    return mergeObject(data, {
+                        name: translation.name ?? data.name,
+                        description: translation.description ?? data.description,
+                        faces: translation.faces.map((face, faceIndex) => {
+                            const faceData = data.faces[faceIndex];
+                            return mergeObject(faceData ?? {}, {
+                                name: face.name ?? faceData.name,
+                                text: face.text ?? faceData.text,
+                            });
+                        }),
+                        back: {
+                            name: translation.back.name ?? data.back.name,
+                            text: translation.back.text ?? data.back.text,
+                        },
+                        translated: true,
+                    });
+                }
+            }
+
+            return data;
+        });
+    }
 }
 
 /**
@@ -442,6 +490,10 @@ class Babele {
                 "actors": {
                     "path": "actors",
                     "converter": "adventureActors",
+                },
+                "cards": {
+                    "path": "cards",
+                    "converter": "adventureCards",
                 }
             },
             "Actor": {
@@ -516,7 +568,8 @@ class Babele {
             "pages": Converters.pages(),
             "adventureJournals": Converters.adventureJournals(),
             "adventurePlaylists": Converters.adventurePlaylists(),
-            "adventureActors": Converters.adventureActors()
+            "adventureActors": Converters.adventureActors(),
+            "adventureCards": Converters.adventureCards()
         })
     }
 

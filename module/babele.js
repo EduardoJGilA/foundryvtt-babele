@@ -423,7 +423,7 @@ class Converters {
                     return mergeObject(data, {
                         name: translation.name ?? data.name,
                         description: translation.description ?? data.description,
-                        faces: translation.faces.map((face, faceIndex) => {
+                        faces: (translation.faces ?? []).map((face, faceIndex) => {
                             const faceData = data.faces[faceIndex];
                             return mergeObject(faceData ?? {}, {
                                 name: face.name ?? faceData.name,
@@ -431,8 +431,8 @@ class Converters {
                             });
                         }),
                         back: {
-                            name: translation.back.name ?? data.back.name,
-                            text: translation.back.text ?? data.back.text,
+                            name: translation.back?.name ?? data.back.name,
+                            text: translation.back?.text ?? data.back.text,
                         },
                         translated: true,
                     });

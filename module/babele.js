@@ -398,6 +398,12 @@ class Converters {
         }
     }
 
+    static deckCards() {
+        return function (cards, translations) {
+            return Converters._deckCards(cards, translations);
+        }
+    }
+
     static _deckCards(cards, translations) {
         return cards.map(data => {
             if (translations) {
@@ -456,7 +462,7 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'Macro', 'Playlist', 'RollTable', 'Scene'];
+        return ['Adventure', 'Actor', 'Cards', 'Item', 'JournalEntry', 'Macro', 'Playlist', 'RollTable', 'Scene'];
     }
 
     static get DEFAULT_MAPPINGS() {
@@ -512,6 +518,14 @@ class Babele {
                 "tokenName": {
                     "path": "prototypeToken.name",
                     "converter": "name"
+                }
+            },
+            "Cards": {
+                "name": "name",
+                "description": "description",
+                "cards": {
+                    "path": "cards",
+                    "converter": "deckCards"
                 }
             },
             "Item": {
@@ -587,7 +601,8 @@ class Babele {
             "adventurePlaylists": Converters.adventurePlaylists(),
             "adventureActors": Converters.adventureActors(),
             "adventureCards": Converters.adventureCards(),
-            "playlistSounds": Converters.playlistSounds()
+            "playlistSounds": Converters.playlistSounds(),
+            "deckCards": Converters.deckCards()
         })
     }
 

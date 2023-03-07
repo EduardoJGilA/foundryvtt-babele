@@ -402,7 +402,7 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'RollTable', 'Scene'];
+        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'Macro', 'RollTable', 'Scene'];
     }
 
     static get DEFAULT_MAPPINGS() {
@@ -467,6 +467,9 @@ class Babele {
                     "path": "pages",
                     "converter": "pages"
                 }
+            },
+            "Macro": {
+                "name": "name"
             },
             "RollTable": {
                 "name": "name",

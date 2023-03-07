@@ -358,23 +358,6 @@ class Converters {
         };
     }
 
-    static _playlistSounds(sounds, translations) {
-        return sounds.map(data => {
-            if (translations) {
-                const translation = translations[data.name];
-                if (translation) {
-                    return mergeObject(data, {
-                        name: translation.name ?? data.name,
-                        description: translation.description ?? data.description,
-                        translated: true,
-                    });
-                }
-            }
-
-            return data;
-        });
-    }
-
     static adventureActors() {
         return function (actors, translations) {
             return actors.map(data => {
@@ -394,6 +377,29 @@ class Converters {
             });
         }
     }
+
+    static playlistSounds() {
+        return function (sounds, translations) {
+            return Converters._playlistSounds(sounds, translations);
+        }
+    }
+
+    static _playlistSounds(sounds, translations) {
+        return sounds.map(data => {
+            if (translations) {
+                const translation = translations[data.name];
+                if (translation) {
+                    return mergeObject(data, {
+                        name: translation.name ?? data.name,
+                        description: translation.description ?? data.description,
+                        translated: true,
+                    });
+                }
+            }
+
+            return data;
+        });
+    }
 }
 
 /**
@@ -402,7 +408,7 @@ class Converters {
 class Babele {
 
     static get SUPPORTED_PACKS() {
-        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'Macro', 'RollTable', 'Scene'];
+        return ['Adventure', 'Actor', 'Item', 'JournalEntry', 'Macro', 'Playlist', 'RollTable', 'Scene'];
     }
 
     static get DEFAULT_MAPPINGS() {
@@ -471,6 +477,14 @@ class Babele {
             "Macro": {
                 "name": "name"
             },
+            "Playlist": {
+                "name": "name",
+                "description": "description",
+                "sounds": {
+                    "path": "sounds",
+                    "converter": "playlistSounds"
+                }
+            },
             "RollTable": {
                 "name": "name",
                 "description": "description",
@@ -519,7 +533,8 @@ class Babele {
             "pages": Converters.pages(),
             "adventureJournals": Converters.adventureJournals(),
             "adventurePlaylists": Converters.adventurePlaylists(),
-            "adventureActors": Converters.adventureActors()
+            "adventureActors": Converters.adventureActors(),
+            "playlistSounds": Converters.playlistSounds()
         })
     }
 

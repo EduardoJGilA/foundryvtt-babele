@@ -238,6 +238,8 @@ divided into folders one for each language, the JSON files of the translated com
 Babele.get().setSystemTranslationsDir("packs/translations");
 ```
 
+### Use converters
+
 It is possible to map a property value using a `converter`, a function that allows to change the
 original data dynamically, instead of using static text.\
 A converter is a standard javascript function with the following signature:
@@ -278,11 +280,16 @@ and they can be referenced in the mapping:
 }
 ```
 
-Using a special built-in converter named `fromPack`, `Actor` mapping allows automatic translation of owned items based
-on
-translations already present in the other compendiums.
+#### Included converters
 
-The default mappings of the actor is using it, as shown below:
+Some converters are already in Babele and can be used for your own needs.
+
+##### `fromPack`
+
+The converter `fromPack` is used to get translation from another pack, by default `Item`.
+
+`Actor` mapping allows automatic translation of owned items based on translations already present in the other
+compendiums, as shown below:
 
 ```json
 {
@@ -300,9 +307,6 @@ The default mappings of the actor is using it, as shown below:
     }
 }
 ```
-
-The additional special built-in converter named `name` always return the translated name of the actual entity, in the
-`Actor` default mapping is used to "synchronize" the actor translated name with the token name.
 
 The `fromPack` converter also allows you to overwrite any item if the translation from its translated compendium is not
 adequate or if some items are present and others are not. To overwrite (or add) owned items translations, simply provide
@@ -352,26 +356,34 @@ Of course, the transifex-compatible format is also supported:
 }
 ```
 
-Babele adds a support also for **RollTable** compendium translations. This support is done adding a new special built-in
-converter named `tableResults` (Notice how the use of custom converters allows Babele extensibility without modifying
-its internal engine, making it a modular and flexible system).
+##### `name`
 
-This is the default mapping definition for a RollTable compendium:
+The converter `name` always return the translated name of the actual entity.
+
+In the `Actor` default mapping it’s used to "synchronize" the actor translated name with the token name.
+
+##### `nameCollection`
+
+The converter `nameCollection` works like `name`, but is used for a collection of name.
+
+For example, it’s used in adventures scenes name translation:
 
 ```json
 {
-    "RollTable": {
-        "name": "name",
-        "description": "description",
-        "results": {
-            "path": "results",
-            "converter": "tableResults"
-        }
+    "Adventure": {
+        ...
+        "scenes": {
+            "path": "scenes",
+            "converter": "nameCollection"
+        },
+        ...
     }
 }
 ```
 
-The `tableResults` converter automatically translate roll table results if they are 'entity' from an already translated
+##### `tableResults`
+
+The `tableResults` converter automatically translate roll table results if they are "entity" from an already translated
 compendium while the translations of the text-type elements can be provided in the translation file under the "results"
 property, mapped as a key-value where the key corresponds to the associated "range".
 
@@ -413,10 +425,29 @@ As you can see, the text associated with the `1-1` range has been translated by 
 while the entities have been automatically translated by retrieving their respective translations from the associated
 translated compendiums.
 
-## V10 new Journal Entries
+##### `tableResultsCollection`
 
-From version 10, in Foundry, the data structure of the Journal has been enriched with pages. Babele supports this new
-structure from version 2.3.2 introducing the new converter `pages`, automatically mapped to the `Journal Document`.
+The converter `tableResultsCollection` works like `tableResults`, but is used for a collection of roll tables.
+
+For example, it’s used in adventures roll tables translation:
+
+```json
+{
+    "Adventure": {
+        ...
+        "tables": {
+            "path": "tables",
+            "converter": "tableResultsCollection"
+        },
+        ...
+    }
+}
+```
+
+##### `pages`
+
+From version 10, in Foundry, the data structure of the `Journal` has been enriched with pages. Babele supports this new
+structure throught the converter `pages`, automatically mapped to the `Journal Document`.
 
 It is therefore possible to translate the pages of a journal using a JSON of this type:
 
@@ -447,6 +478,49 @@ As a reference, see the Italian translation of the dnd5e compendium present in t
 
 In order not to start from scratch, the translation file can also be extracted directly from the compendium interface by
 using the button on the window header
+
+##### `adventureJournals`
+
+The converter `adventureJournals` works like `pages`, but is used for journals inside adventures.
+
+For example, it’s used in adventures roll tables translation:
+
+```json
+{
+    "Adventure": {
+        ...
+        "journals": {
+            "path": "journal",
+            "converter": "adventureJournals"
+        },
+        ...
+    }
+}
+```
+
+##### `playlistSounds`
+
+The converter `playlistSounds` is used to translate the sounds of a playlist.
+
+##### `adventurePlaylists`
+
+The converter `adventurePlaylists` works like `playlistSounds`, but is used for playlists sounds inside adventures.
+
+##### `adventureActors`
+
+The converter `adventureActors` is used to translate `Actors` within adventures. The used mapping is the same as
+default `Actor`.
+
+As a bonus, when the import of an adventure will be finished, all tokens on the map will be processed in order to update
+their name, according to the translation.
+
+##### `deckCards`
+
+The converter `deckCards` is used to translate all types of `Cards`.
+
+##### `adventureCards`
+
+The converter `adventureCards` works like `deckCards`, but is used for decks inside adventures.
 
 ## Compatibility
 

@@ -732,10 +732,6 @@ The converter `adventureCards` works like `deckCards`, but is used for decks ins
 }
 ```
 
-## Compatibility
-
-Tested on 0.4.5 version.
-
 ## Feedback
 
 Every suggestion/feedback are appreciated, if so, please contact me on discord (Simone#6710)

@@ -362,6 +362,19 @@ The converter `name` always return the translated name of the actual entity.
 
 In the `Actor` default mapping it’s used to "synchronize" the actor translated name with the token name.
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "Acolyte": {
+            "name": "Accolito"
+        }
+    }
+}
+```
+
 ##### `nameCollection`
 
 The converter `nameCollection` works like `name`, but is used for a collection of name.
@@ -377,6 +390,22 @@ For example, it’s used in adventures scenes name translation:
             "converter": "nameCollection"
         },
         ...
+    }
+}
+```
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "scenes": {
+                "A - Gauntlight Cupola": "A - Coupole de Mornelueur",
+                "A - Gauntlight Ruins": "A - Ruines de Mornelueur"
+            }
+        }
     }
 }
 ```
@@ -444,6 +473,34 @@ For example, it’s used in adventures roll tables translation:
 }
 ```
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "tables": {
+                "Fetid Lake Encounters": {
+                    "name": "Rencontres au lac fétide",
+                    "results": {
+                        "1-4": "Pas de rencontre",
+                        "5-20": "Créatures du lac"
+                    }
+                },
+                "Quiet Lake Encounters": {
+                    "name": "Rencontres au lac tranquille",
+                    "results": {
+                        "1-10": "Pas de rencontre",
+                        "11-20": "Créatures du lac"
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
 ##### `pages`
 
 From version 10, in Foundry, the data structure of the `Journal` has been enriched with pages. Babele supports this new
@@ -498,13 +555,81 @@ For example, it’s used in adventures roll tables translation:
 }
 ```
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "journals": {
+                "Campaign Background": {
+                    "name": "Background",
+                    "pages": {
+                        "Campaign Timeline": {
+                            "name": "Chronologie de la campagne",
+                            "text": "..."
+                        },
+                        "Starting point": {
+                            "name": "Point de départ",
+                            "text": "..."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
 ##### `playlistSounds`
 
 The converter `playlistSounds` is used to translate the sounds of a playlist.
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My playlist": {
+            "sounds": {
+                "First sound": {
+                    "name": "My first sound",
+                    "description": "..."
+                }
+            }
+        }
+    }
+}
+```
+
 ##### `adventurePlaylists`
 
-The converter `adventurePlaylists` works like `playlistSounds`, but is used for playlists sounds inside adventures.
+The converter `adventurePlaylists` is used for playlists inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "playlists": {
+                "My playlist": {
+                    "name": "My edited playlist",
+                    "sounds": {
+                        "First sound": {
+                            "name": "My first sound",
+                            "description": "..."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
 
 ##### `adventureActors`
 
@@ -514,13 +639,98 @@ default `Actor`.
 As a bonus, when the import of an adventure will be finished, all tokens on the map will be processed in order to update
 their name, according to the translation.
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "actors": {
+                "Bite Bite": {
+                    "name": "Bouffe-Bouffe",
+                    "tokenName": "Bouffe-Bouffe"
+                }
+            }
+        }
+    }
+}
+```
+
 ##### `deckCards`
 
 The converter `deckCards` is used to translate all types of `Cards`.
 
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "Deck of cards": {
+            "name": "Translated deck of cards",
+            "desription": "...",
+            "face": [
+                {
+                    "name": "First face",
+                    "text": "..."
+                },
+                {
+                    "name": "Second face",
+                    "text": "..."
+                }
+            ],
+            "back": {
+                "name": "Back of the card",
+                "text": "..."
+            }
+        }
+    }
+}
+```
+
 ##### `adventureCards`
 
 The converter `adventureCards` works like `deckCards`, but is used for decks inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "cards": {
+                "Deck": {
+                    "name": "Translated deck",
+                    "cards": {
+                        "Card 1": {
+                            "name": "Card one",
+                            "description": "...",
+                            "faces": [
+                                {
+                                    "name": "Face 1",
+                                    "text": "..."
+                                },
+                                {
+                                    "name": "Face 2"
+                                }
+                            ],
+                            "back": {
+                                "name": "Back",
+                                "text": "..."
+                            }
+                        },
+                        "Card 2": {
+                            "name": "Card two"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
 
 ## Compatibility
 

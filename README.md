@@ -44,7 +44,7 @@ translation to be applied.\
 Babel expects and searches (using a naming convention described below) a translation file for each translated
 compendium.
 
-_Since version 1.22_ Babele supports another format for the translation file, which guarantees greater compatibility
+Babele supports another format for the translation file, which guarantees greater compatibility
 with localization platforms such as Weblate or Transifex.\
 With the new format, the list of entries can no longer be declared as an array but as a JSON object, where the id used
 for the match with the original entity coincides with the name of the object property and the value with the content of
@@ -79,17 +79,100 @@ These default mappings are as follows:
 
 ```json
 {
+    "Adventure": {
+        "name": "name",
+        "description": "description",
+        "caption": "caption",
+        "folders": {
+            "path": "folders",
+            "converter": "nameCollection"
+        },
+        "journals": {
+            "path": "journal",
+            "converter": "adventureJournals"
+        },
+        "scenes": {
+            "path": "scenes",
+            "converter": "nameCollection"
+        },
+        "macros": {
+            "path": "macros",
+            "converter": "nameCollection"
+        },
+        "playlists": {
+            "path": "playlists",
+            "converter": "adventurePlaylists"
+        },
+        "tables": {
+            "path": "tables",
+            "converter": "tableResultsCollection"
+        },
+        "items": {
+            "path": "items",
+            "converter": "fromPack"
+        },
+        "actors": {
+            "path": "actors",
+            "converter": "adventureActors"
+        },
+        "cards": {
+            "path": "cards",
+            "converter": "adventureCards"
+        }
+    },
     "Actor": {
         "name": "name",
-        "description": "data.details.biography.value"
+        "description": "system.details.biography.value",
+        "items": {
+            "path": "items",
+            "converter": "fromPack"
+        },
+        "tokenName": {
+            "path": "prototypeToken.name",
+            "converter": "name"
+        }
+    },
+    "Cards": {
+        "name": "name",
+        "description": "description",
+        "cards": {
+            "path": "cards",
+            "converter": "deckCards"
+        }
     },
     "Item": {
         "name": "name",
-        "description": "data.description.value"
+        "description": "system.description.value"
     },
     "JournalEntry": {
         "name": "name",
-        "description": "content"
+        "description": "content",
+        "pages": {
+            "path": "pages",
+            "converter": "pages"
+        }
+    },
+    "Macro": {
+        "name": "name"
+    },
+    "Playlist": {
+        "name": "name",
+        "description": "description",
+        "sounds": {
+            "path": "sounds",
+            "converter": "playlistSounds"
+        }
+    },
+    "RollTable": {
+        "name": "name",
+        "description": "description",
+        "results": {
+            "path": "results",
+            "converter": "tableResults"
+        }
+    },
+    "Scene": {
+        "name": "name"
     }
 }
 ```
@@ -117,17 +200,17 @@ Mappigs could be added like this (ex. spells):
 ```
 
 Babele loads these files from a directory, created in the data path, that must be set in the module configuration, and
-associating them with the compendium by the name of the collection (ex. dnd5e.spells.json).
-One file per pack is required.
-Since version 1.1, Babele applies the translation files _according to the language selected in the settings_. It is
-therefore **necessary** to create one subdirectory per language and insert the translation files inside.
+associating them with the compendium by the name of the collection (ex. `dnd5e.spells.json`). One file per pack is
+required.
+
+Babele applies the translation files _according to the language selected in the settings_. It is therefore **necessary**
+to create one subdirectory per language and insert the translation files inside.
 
 It is also possible to distribute translation files within other modules using a provided registration API.
 Registration should be done like this:
 
 ```javascript
 Hooks.on('init', () => {
-
     if (typeof Babele !== 'undefined') {
         Babele.get().register({
             module: 'FoundryVTT-dnd5e-it',
@@ -147,15 +230,15 @@ where:
 Directories and modules can be used simultaneously. If the same compendium is present on both places, the directory will
 take precedence over the module.
 
-**Since version 2.0.4**, it is possible for system developers to distribute translations made with babele together with
-the distribution of their own system. It is sufficient to use the following API to provide Babel with the system
-directory in which to find, divided into folders one for each language, the JSON files of the translated compendia:
+It is possible for system developers to distribute translations made with babele together with the distribution of their
+own system. It is sufficient to use the following API to provide Babel with the system directory in which to find,
+divided into folders one for each language, the JSON files of the translated compendia:
 
 ```javascript
 Babele.get().setSystemTranslationsDir("packs/translations");
 ```
 
-**Since version 1.2**, it is possible to map a property value using a `converter`, a function that allows to change the
+It is possible to map a property value using a `converter`, a function that allows to change the
 original data dynamically, instead of using static text.\
 A converter is a standard javascript function with the following signature:
 
@@ -195,31 +278,33 @@ and they can be referenced in the mapping:
 }
 ```
 
-Using a special built-in converter named 'fromPack', Actor mapping allows automatic translation of owned items based on
-translations
-already present in the other compendiums.   
-The default mappings of the actor is changed in ths:
+Using a special built-in converter named `fromPack`, `Actor` mapping allows automatic translation of owned items based
+on
+translations already present in the other compendiums.
+
+The default mappings of the actor is using it, as shown below:
 
 ```json
-"Actor": {
-"name": "name",
-"description": "data.details.biography.value",
-"items": {
-"path": "items",
-"converter": "fromPack"
-},
-"tokenName": {
-"path": "token.name",
-"converter": "name"
-}
+{
+    "Actor": {
+        "name": "name",
+        "description": "system.details.biography.value",
+        "items": {
+            "path": "items",
+            "converter": "fromPack"
+        },
+        "tokenName": {
+            "path": "prototypeToken.name",
+            "converter": "name"
+        }
+    }
 }
 ```
 
-The additional special built-in converter named 'name' always return the translated name of the actual entity, in the
-Actor
-default mapping is used to "synchronize" the actor translated name with the token name.
+The additional special built-in converter named `name` always return the translated name of the actual entity, in the
+`Actor` default mapping is used to "synchronize" the actor translated name with the token name.
 
-The 'fromPack' converter also allows you to overwrite any item if the translation from its translated compendium is not
+The `fromPack` converter also allows you to overwrite any item if the translation from its translated compendium is not
 adequate or if some items are present and others are not. To overwrite (or add) owned items translations, simply provide
 them as under translation under "items":
 
@@ -245,6 +330,7 @@ them as under translation under "items":
 
 In the example above, the "Club" item will be overwritten with the provided custom translation while the one from the
 item compendium will be skipped.
+
 The other items not overwritten will be translated by taking the translations from the relative compendium (if any).   
 Of course, the transifex-compatible format is also supported:
 
@@ -266,32 +352,34 @@ Of course, the transifex-compatible format is also supported:
 }
 ```
 
-**Since version 2.1.0**, Babele adds a support also for **RollTable** compendium translations. This support is done
-adding
-a new special built-in converter named 'tableResults' (Notice how the use of custom converters allows Babele
-extensibility without modifying its internal engine, making it a modular and flexible system)   
+Babele adds a support also for **RollTable** compendium translations. This support is done adding a new special built-in
+converter named `tableResults` (Notice how the use of custom converters allows Babele extensibility without modifying
+its internal engine, making it a modular and flexible system).
+
 This is the default mapping definition for a RollTable compendium:
 
 ```json
-"RollTable": {
-"name": "name",
-"description": "description",
-"results": {
-"path": "results",
-"converter": "tableResults"
-}
+{
+    "RollTable": {
+        "name": "name",
+        "description": "description",
+        "results": {
+            "path": "results",
+            "converter": "tableResults"
+        }
+    }
 }
 ```
 
-The 'tableResult' converter automatically translate roll table results if they are 'entity' from an already translated
-compendium
-while the translations of the text-type elements can be provided in the translation file under the "results" property,
-mapped as a key-value where the key corresponds to the associated "range".   
+The `tableResults` converter automatically translate roll table results if they are 'entity' from an already translated
+compendium while the translations of the text-type elements can be provided in the translation file under the "results"
+property, mapped as a key-value where the key corresponds to the associated "range".
+
 For example, considering a table of this type:
 
 <div align="center">
 
-![example0](/rolltable-example.jpg?raw=true)
+![example0](./rolltable-example.jpg?raw=true)
 
 </div>
 
@@ -317,18 +405,19 @@ Obtaining the following result:
 
 <div align="center">
 
-![example0](/rolltable-example-2.jpg?raw=true)
+![example0](./rolltable-example-2.jpg?raw=true)
 
 </div>
 
-As you can see, the text associated with the "1-1" range has been translated by retrieving the content from the file,
+As you can see, the text associated with the `1-1` range has been translated by retrieving the content from the file,
 while the entities have been automatically translated by retrieving their respective translations from the associated
 translated compendiums.
 
 ## V10 new Journal Entries
 
 From version 10, in Foundry, the data structure of the Journal has been enriched with pages. Babele supports this new
-structure from version 2.3.2 introducing the new converter “pages”, automatically mapped to the Journal Document.    
+structure from version 2.3.2 introducing the new converter `pages`, automatically mapped to the `Journal Document`.
+
 It is therefore possible to translate the pages of a journal using a JSON of this type:
 
 ```json
@@ -365,7 +454,7 @@ Tested on 0.4.5 version.
 
 ## Feedback
 
-Every suggestions/feedback are appreciated, if so, please contact me on discord (Simone#6710)
+Every suggestion/feedback are appreciated, if so, please contact me on discord (Simone#6710)
 
 ## Acknowledgments
 

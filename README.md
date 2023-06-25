@@ -97,7 +97,7 @@ These default mappings are as follows:
         },
         "macros": {
             "path": "macros",
-            "converter": "nameCollection"
+            "converter": "adventureMacros"
         },
         "playlists": {
             "path": "playlists",
@@ -109,7 +109,7 @@ These default mappings are as follows:
         },
         "items": {
             "path": "items",
-            "converter": "fromPack"
+            "converter": "adventureItems"
         },
         "actors": {
             "path": "actors",
@@ -180,7 +180,7 @@ These default mappings are as follows:
 
 This configuration is provided by default but can also be inserted in the translation files, in order to expand or
 overwrite the supported properties.\
-Mappigs could be added like this (ex. spells):
+Mappings could be added like this (ex. `spells`):
 
 ```json
 {
@@ -199,6 +199,68 @@ Mappigs could be added like this (ex. spells):
         },
         ...
 ```
+
+### Mapping inside adventure translation
+
+When translating an adventure, you can use mapping for specific content using the same `mapping` key, but with an
+additional "level" which represents the type of document to map.
+
+For example:
+```json
+{
+    "label": "E - Adventure",
+    "mapping": {
+        "actors": {
+            "appearance": "system.details.appearance"
+        },
+        "items": {
+            "source": "system.source"
+        }
+    },
+    "entries": {
+        "actors": {
+            "O - Actor B": {
+                "name": "E - Actor B",
+                "appearance": "E - Appearance"
+            }
+        },
+        "items": {
+            "O - Item": {
+                "name": "E - Item",
+                "source": "E - Source"
+            },
+            "O - Weapon": {
+                "name": "E - Weapon"
+            }
+        }
+    }
+}
+```
+
+As you can see, we add two custom mapping: one for actors and one for items. The configure mapping _will be merged with
+the default one for this kind of document_, it means that for `items` the resulting mapping configuration will be:
+
+```json
+    "Item": {
+        "name": "name",
+        "description": "system.description.value",
+        "source": "system.source"
+    },
+```
+
+Also, if a translation is not find, it will get translation from another pack as explained in the converter
+[`fromPack`](#frompack).
+
+You can define custom mapping for the following documents types:
+
+* `Item`
+* `Actor`
+* `Cards`
+* `JournalEntry`
+* `Playlist`
+* `Macro`
+
+## Translations files loading
 
 Babele loads these files from a directory, created in the data path, that must be set in the module configuration, and
 associating them with the compendium by the name of the collection (ex. `dnd5e.spells.json`). One file per pack is
@@ -726,6 +788,55 @@ The converter `adventureCards` works like `deckCards`, but is used for decks ins
                             "name": "Card two"
                         }
                     }
+                }
+            }
+        }
+    }
+}
+```
+
+##### `adventureItems`
+
+The converter `adventureItems` is used for items inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "items": {
+                "O - Item": {
+                    "name": "E - Item"
+                },
+                "O - Weapon": {
+                    "name": "E - Weapon"
+                }
+            }
+        }
+    }
+}
+```
+
+##### `adventureMacros`
+
+The converter `adventureMacros` is used for macros inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "macros": {
+                "O - Macro": {
+                    "name": "E - Macro",
+                    "command": "E - The content"
+                },
+                "O - Macro bis": {
+                    "name": "E - Macro bis"
                 }
             }
         }

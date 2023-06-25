@@ -307,6 +307,7 @@ You can define custom mapping for the following documents types:
 * `JournalEntry`
 * `Playlist`
 * `Macro`
+* `Scene`
 
 ## Translations files loading
 

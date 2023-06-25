@@ -18,6 +18,50 @@ To install, follow these instructions:
    URL: https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json
 3. Click Install and wait for installation to complete.
 
+## Important notes
+
+### Upgrade from `2.4.0`
+
+Since the `2.4.0`, it’s possible to translate adventures modules. This first iteration was a bit limitated and the
+format of the awaited JSON translation file has changed:
+
+* Macros
+    * Old format
+      ```json
+      "macros": {
+          "O - Macro": "E - Macro"
+      }
+      ```
+    * New format
+      ```json
+      "macros": {
+          "O - Macro": {
+              "name": "E - Macro",
+              "command": "E - The content"
+          }
+      }
+      ```
+      _Note:_ As you can see, it’s now possible to translate the macro command.
+* Scenes
+    * Old format
+      ```json
+      "scenes": {
+          "O - Scene": "E - Scene"
+      }
+      ```
+    * New format
+      ```json
+      "scenes": {
+          "O - Scene": {
+              "name": "E - Scene",
+              "notes": {
+                "O - The note": "E - The note"
+              }
+          }
+      }
+      ```
+      _Note:_ As you can see, it’s now possible to translate the notes on the scene.
+
 ## Usage Instructions
 
 ### Translation File (JSON)

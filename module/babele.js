@@ -541,7 +541,8 @@ class Babele {
                 }
             },
             "Macro": {
-                "name": "name"
+                "name": "name",
+                "command": "command"
             },
             "Playlist": {
                 "name": "name",

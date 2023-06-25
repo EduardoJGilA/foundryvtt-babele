@@ -153,7 +153,8 @@ These default mappings are as follows:
         }
     },
     "Macro": {
-        "name": "name"
+        "name": "name",
+        "command": "command"
     },
     "Playlist": {
         "name": "name",

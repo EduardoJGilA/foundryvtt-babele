@@ -93,7 +93,7 @@ These default mappings are as follows:
         },
         "scenes": {
             "path": "scenes",
-            "converter": "nameCollection"
+            "converter": "adventureScenes"
         },
         "macros": {
             "path": "macros",
@@ -173,7 +173,11 @@ These default mappings are as follows:
         }
     },
     "Scene": {
-        "name": "name"
+        "name": "name",
+        "notes": {
+            "path": "notes",
+            "converter": "textCollection"
+        }
     }
 }
 ```
@@ -442,17 +446,33 @@ In the `Actor` default mapping it’s used to "synchronize" the actor translated
 
 The converter `nameCollection` works like `name`, but is used for a collection of name.
 
-For example, it’s used in adventures scenes name translation:
+For example, it’s used in adventures folders name translation:
 
 ```json
 {
     "Adventure": {
         ...
-        "scenes": {
-            "path": "scenes",
+        "folders": {
+            "path": "folders",
             "converter": "nameCollection"
         },
         ...
+    }
+}
+```
+
+##### `textCollection`
+
+The converter `textCollection` works like `textName`, but is used for a collection of text.
+
+For example, it’s used in scenes notes translation:
+
+```json
+{
+    "name": "name",
+    "notes": {
+        "path": "notes",
+        "converter": "textCollection"
     }
 }
 ```
@@ -461,13 +481,10 @@ For example, it’s used in adventures scenes name translation:
 
 ```json
 {
-    "label": "My translation",
-    "entries": {
-        "My adventure": {
-            "scenes": {
-                "A - Gauntlight Cupola": "A - Coupole de Mornelueur",
-                "A - Gauntlight Ruins": "A - Ruines de Mornelueur"
-            }
+    "O - Scene": {
+        "name": "E - Scene",
+        "notes": {
+            "O - The note": "E - The note"
         }
     }
 }

@@ -421,7 +421,7 @@ class Babele {
                 },
                 "scenes": {
                     "path": "scenes",
-                    "converter": "nameCollection"
+                    "converter": "adventureScenes"
                 },
                 "macros": {
                     "path": "macros",
@@ -501,7 +501,11 @@ class Babele {
                 }
             },
             "Scene": {
-                "name": "name"
+                "name": "name",
+                "notes": {
+                    "path": "notes",
+                    "converter": "textCollection"
+                }
             }
         }
     }
@@ -535,6 +539,7 @@ class Babele {
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
             "nameCollection": Converters.fieldCollection("name"),
+            "textCollection": Converters.fieldCollection("text"),
             "tableResults": Converters.tableResults(),
             "tableResultsCollection": Converters.tableResultsCollection(),
             "pages": Converters.pages(),
@@ -545,7 +550,8 @@ class Babele {
             "adventureCards": Converters.fromDefaultMapping("Cards", "card"),
             "adventureJournals": Converters.fromDefaultMapping("JournalEntry", "journals"),
             "adventurePlaylists": Converters.fromDefaultMapping("Playlist", "playlists"),
-            "adventureMacros": Converters.fromDefaultMapping("Macro", "macros")
+            "adventureMacros": Converters.fromDefaultMapping("Macro", "macros"),
+            "adventureScenes": Converters.fromDefaultMapping("Scene", "scenes")
         })
     }
 

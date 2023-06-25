@@ -162,7 +162,7 @@ Hooks.on('importAdventure', () => {
         scene.tokens.forEach(token => {
             const actor = game.actors.get(token.actorId);
             if (actor) {
-                token.update({ name: actor.prototypeToken.name });
+                token.update({ name: actor.name });
             }
         });
     });
@@ -208,7 +208,7 @@ class Converters {
                 : {};
             const dynamicMapping = new CompendiumMapping(
                 entityType,
-                mergeObject(Babele.DEFAULT_MAPPINGS[entityType], customMapping),
+                customMapping,
                 game.babele.packs.find(pack => pack.translated)
             );
 

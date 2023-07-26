@@ -27,6 +27,11 @@ To work properly, the module needs translation files formatted in this way:
 ```json
 {
     "label": "Incantesimi (SRD)",
+    "folders": {
+        "Folder A": "Dossier A",
+        "Folder B": "Dossier B",
+        "Folder C": "Dossier C"
+    },
     "entries": [
         {
             "id": "Haste",
@@ -37,7 +42,7 @@ To work properly, the module needs translation files formatted in this way:
 }
 ```
 
-Where id must contain the **name** or the **id** of the original entity, while "name" and "description" are the
+Where id must contain the **name** or the **id** of the original entity, while `name` and `description` are the
 translations and will be used to overwrite the original property through a **Transation Mapping** config.\
 Be careful to correctly enter the original name (or the id) of the entity because Babel will use it to match the
 translation to be applied.\
@@ -46,13 +51,18 @@ compendium.
 
 Babele supports another format for the translation file, which guarantees greater compatibility
 with localization platforms such as Weblate or Transifex.\
-With the new format, the list of entries can no longer be declared as an array but as a JSON object, where the id used
+With the new format, the list of `entries` can no longer be declared as an array but as a JSON object, where the id used
 for the match with the original entity coincides with the name of the object property and the value with the content of
 the translation:
 
 ```json
 {
     "label": "Incantesimi (SRD)",
+    "folders": {
+        "Folder A": "Dossier A",
+        "Folder B": "Dossier B",
+        "Folder C": "Dossier C"
+    },
     "entries": {
         "Haste": {
             "name": "Velocità",
@@ -61,6 +71,12 @@ the translation:
     }
 }
 ```
+
+Since Foundry v11, it’s possible to create folders into compendiums. In both formats, you can declare a `folders` key
+to translates them.
+
+The format is simple: original name in key and translation in the value. No need to manage the depth, if a name is used
+multiple times in the compendium, only one translation is necessary.
 
 ## Translation Mapping
 

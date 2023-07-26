@@ -110,6 +110,8 @@ Hooks.once('ready', async () => {
             }
             pack.index.set(i._id, i);
         }
+
+        game.babele.translatePackFolders(pack);
     });
     Hooks.callAll(`babele.ready`);
     ui.sidebar.tabs.compendium.render();
@@ -140,7 +142,7 @@ Hooks.on('renderCompendium', (app, html, data) => {
         if(items) {
             for (let li of items) {
                 const entryName = li.querySelector(".entry-name")||li.querySelector(".document-name");
-                const entry = data.index.find(i => i.name === entryName.textContent);
+                const entry = entryName ? data.index.find(i => i.name === entryName.textContent) : null;
                 if(entry && entry.translated && entry.hasTranslation) {
                     const entryNameText = li.querySelector('.entry-name > a')||li.querySelector('.document-name > a');
                     entryName.setAttribute("style", "display: flex; flex-direction: column;");
@@ -907,6 +909,16 @@ class Babele {
             });
         }
     }
+
+    translatePackFolders(pack) {
+        if (!pack?.folders?.size) {
+            return;
+        }
+
+        const tcFolders = this.packs.get(pack.metadata.id)?.folders ?? [];
+
+        pack.folders.forEach((folder) => folder.name = tcFolders[folder.name] ?? folder.name);
+    }
 }
 
 /**
@@ -1085,6 +1097,10 @@ class TranslatedCompendium {
                 } else {
                     this.translations = translations.entries;
                 }
+            }
+
+            if (translations.folders) {
+                this.folders = translations.folders;
             }
         }
     }

@@ -136,26 +136,17 @@ Hooks.on('renderCompendium', (app, html, data) => {
         });
     }
 
-    const showOriginalName = game.settings.get('babele', 'showOriginalName');
-    if(showOriginalName) {
-        const items = html[0].querySelector(".directory-list")?.children;
-        if(items) {
-            for (let li of items) {
-                const entryName = li.querySelector(".entry-name")||li.querySelector(".document-name");
-                const entry = entryName ? data.index.find(i => i.name === entryName.textContent) : null;
-                if(entry && entry.translated && entry.hasTranslation) {
-                    const entryNameText = li.querySelector('.entry-name > a')||li.querySelector('.document-name > a');
-                    entryName.setAttribute("style", "display: flex; flex-direction: column;");
-                    entryNameText.setAttribute("style", "line-height: normal; padding-top: 10px;");
-                    const entryNameOriginalText = $(
-                        `<div style="line-height: normal; font-size: 12px; color: gray;">
-                        ${entry.originalName}
-                    </div>`
-                    );
-                    entryNameOriginalText.insertAfter(entryNameText);
-                }
+    if (game.settings.get('babele', 'showOriginalName')) {
+        html[0].querySelectorAll('.directory-list .entry-name, .directory-list .document-name').forEach((item) => {
+            const entry = item.textContent?.length ? data.index.find(i => i.name === item.textContent) : null;
+
+            if (entry && entry.translated && entry.hasTranslation) {
+                const entryNameText = item.querySelector('.entry-name > a, .document-name > a');
+                item.setAttribute('style', 'display: flex; flex-direction: column;');
+                entryNameText.setAttribute('style', 'line-height: normal; padding-top: 10px;');
+                entryNameText.innerHTML += `<div style="line-height: normal; font-size: 12px; color: gray;">${entry.originalName}</div>`;
             }
-        }
+        });
     }
 });
 

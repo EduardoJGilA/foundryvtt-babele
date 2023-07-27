@@ -162,7 +162,7 @@ Hooks.on('importAdventure', () => {
         scene.tokens.forEach(token => {
             const actor = game.actors.get(token.actorId);
             if (actor) {
-                token.update({ name: actor.prototypeToken.name });
+                token.update({ name: actor.name });
             }
         });
     });
@@ -196,29 +196,48 @@ class Converters {
     static fromPack(mapping, entityType = 'Item') {
         let dynamicMapping = new CompendiumMapping(entityType, mapping);
         return function(items, translations) {
-            return items.map(data => {
-
-                if(translations) {
-
-                    let translation;
-                    if(Array.isArray(translations)) {
-                        translation = translations.find(t => t.id === data._id || t.id === data.name);
-                    } else {
-                        translation = translations[data._id] || translations[data.name];
-                    }
-                    if(translation) {
-                        let translatedData = dynamicMapping.map(data, translation);
-                        return mergeObject(data, mergeObject(translatedData, { translated: true }));
-                    }
-                }
-
-                let pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
-                if(pack) {
-                    return pack.translate(data);
-                }
-                return data;
-            });
+            return Converters._fromPack(items, translations, dynamicMapping);
         }
+    }
+
+    static fromDefaultMapping(entityType, mappingKey) {
+        return function (entities, translations) {
+            const babeleTranslations = game.babele.translations[0] ?? null;
+            const customMapping = babeleTranslations && babeleTranslations.mapping
+                ? babeleTranslations?.mapping[mappingKey] ?? {}
+                : {};
+            const dynamicMapping = new CompendiumMapping(
+                entityType,
+                customMapping,
+                game.babele.packs.find(pack => pack.translated)
+            );
+
+            return Converters._fromPack(entities, translations, dynamicMapping);
+        };
+    }
+
+    static _fromPack(entities, translations, dynamicMapping) {
+        return entities.map((data) => {
+            if (translations) {
+                let translation;
+
+                if (Array.isArray(translations)) {
+                    translation = translations.find(t => t.id === data._id || t.id === data.name);
+                } else {
+                    translation = translations[data._id] || translations[data.name];
+                }
+
+                if (translation) {
+                    const translatedData = dynamicMapping.map(data, translation);
+
+                    return mergeObject(data, mergeObject(translatedData, { translated: true }));
+                }
+            }
+
+            const pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
+
+            return pack ? pack.translate(data) : data;
+        });
     }
 
     /**
@@ -319,85 +338,6 @@ class Converters {
         };
     }
 
-    static adventureJournals() {
-        return function (journals, translations) {
-            return journals.map(data => {
-                if (translations) {
-                    const translation = translations[data.name];
-                    if (translation) {
-                        return mergeObject(data, {
-                            name: translation.name,
-                            pages: Converters._pages(data.pages, translation.pages),
-                            translated: true,
-                        });
-                    }
-                }
-
-                return data;
-            });
-        };
-    }
-
-    static adventurePlaylists() {
-        return function (playlists, translations) {
-            return playlists.map(data => {
-                if (translations) {
-                    const translation = translations[data.name];
-                    if (translation) {
-                        return mergeObject(data, {
-                            name: translation.name ?? data.name,
-                            description: translation.description ?? data.description,
-                            sounds: Converters._playlistSounds(data.sounds, translation.sounds),
-                            translated: true,
-                        });
-                    }
-                }
-
-                return data;
-            });
-        };
-    }
-
-    static adventureActors() {
-        return function (actors, translations) {
-            return actors.map(data => {
-                if (translations) {
-                    const translation = translations[data.name];
-                    if (translation) {
-                        return mergeObject(data, {
-                            name: translation.name ?? data.name,
-                            description: translation.description ?? data.description,
-                            prototypeToken: { name: translation.tokenName ?? data.prototypeToken.name },
-                            translated: true
-                        });
-                    }
-                }
-
-                return data;
-            });
-        }
-    }
-
-    static adventureCards() {
-        return function (cards, translations) {
-            return cards.map(data => {
-                if (translations) {
-                    const translation = translations[data.name];
-                    if (translation) {
-                        return mergeObject(data, {
-                            name: translation.name ?? data.name,
-                            description: translation.description ?? data.description,
-                            cards: Converters._deckCards(data.cards, translation.cards),
-                            translated: true
-                        });
-                    }
-                }
-
-                return data;
-            });
-        }
-    }
-
     static deckCards() {
         return function (cards, translations) {
             return Converters._deckCards(cards, translations);
@@ -481,11 +421,11 @@ class Babele {
                 },
                 "scenes": {
                     "path": "scenes",
-                    "converter": "nameCollection"
+                    "converter": "adventureScenes"
                 },
                 "macros": {
                     "path": "macros",
-                    "converter": "nameCollection"
+                    "converter": "adventureMacros"
                 },
                 "playlists": {
                     "path": "playlists",
@@ -497,15 +437,15 @@ class Babele {
                 },
                 "items": {
                     "path": "items",
-                    "converter": "fromPack"
+                    "converter": "adventureItems"
                 },
                 "actors": {
                     "path": "actors",
-                    "converter": "adventureActors",
+                    "converter": "adventureActors"
                 },
                 "cards": {
                     "path": "cards",
-                    "converter": "adventureCards",
+                    "converter": "adventureCards"
                 }
             },
             "Actor": {
@@ -541,7 +481,8 @@ class Babele {
                 }
             },
             "Macro": {
-                "name": "name"
+                "name": "name",
+                "command": "command"
             },
             "Playlist": {
                 "name": "name",
@@ -560,7 +501,11 @@ class Babele {
                 }
             },
             "Scene": {
-                "name": "name"
+                "name": "name",
+                "notes": {
+                    "path": "notes",
+                    "converter": "textCollection"
+                }
             }
         }
     }
@@ -594,15 +539,19 @@ class Babele {
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
             "nameCollection": Converters.fieldCollection("name"),
+            "textCollection": Converters.fieldCollection("text"),
             "tableResults": Converters.tableResults(),
             "tableResultsCollection": Converters.tableResultsCollection(),
             "pages": Converters.pages(),
-            "adventureJournals": Converters.adventureJournals(),
-            "adventurePlaylists": Converters.adventurePlaylists(),
-            "adventureActors": Converters.adventureActors(),
-            "adventureCards": Converters.adventureCards(),
             "playlistSounds": Converters.playlistSounds(),
-            "deckCards": Converters.deckCards()
+            "deckCards": Converters.deckCards(),
+            "adventureItems": Converters.fromDefaultMapping("Item", "items"),
+            "adventureActors": Converters.fromDefaultMapping("Actor", "actors"),
+            "adventureCards": Converters.fromDefaultMapping("Cards", "card"),
+            "adventureJournals": Converters.fromDefaultMapping("JournalEntry", "journals"),
+            "adventurePlaylists": Converters.fromDefaultMapping("Playlist", "playlists"),
+            "adventureMacros": Converters.fromDefaultMapping("Macro", "macros"),
+            "adventureScenes": Converters.fromDefaultMapping("Scene", "scenes")
         })
     }
 

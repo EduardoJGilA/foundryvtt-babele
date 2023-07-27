@@ -18,6 +18,50 @@ To install, follow these instructions:
    URL: https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json
 3. Click Install and wait for installation to complete.
 
+## Important notes
+
+### Upgrade from `2.4.0`
+
+Since the `2.4.0`, it’s possible to translate adventures modules. This first iteration was a bit limitated and the
+format of the awaited JSON translation file has changed:
+
+* Macros
+    * Old format
+      ```json
+      "macros": {
+          "O - Macro": "E - Macro"
+      }
+      ```
+    * New format
+      ```json
+      "macros": {
+          "O - Macro": {
+              "name": "E - Macro",
+              "command": "E - The content"
+          }
+      }
+      ```
+      _Note:_ As you can see, it’s now possible to translate the macro command.
+* Scenes
+    * Old format
+      ```json
+      "scenes": {
+          "O - Scene": "E - Scene"
+      }
+      ```
+    * New format
+      ```json
+      "scenes": {
+          "O - Scene": {
+              "name": "E - Scene",
+              "notes": {
+                "O - The note": "E - The note"
+              }
+          }
+      }
+      ```
+      _Note:_ As you can see, it’s now possible to translate the notes on the scene.
+
 ## Usage Instructions
 
 ### Translation File (JSON)
@@ -93,11 +137,11 @@ These default mappings are as follows:
         },
         "scenes": {
             "path": "scenes",
-            "converter": "nameCollection"
+            "converter": "adventureScenes"
         },
         "macros": {
             "path": "macros",
-            "converter": "nameCollection"
+            "converter": "adventureMacros"
         },
         "playlists": {
             "path": "playlists",
@@ -109,7 +153,7 @@ These default mappings are as follows:
         },
         "items": {
             "path": "items",
-            "converter": "fromPack"
+            "converter": "adventureItems"
         },
         "actors": {
             "path": "actors",
@@ -153,7 +197,8 @@ These default mappings are as follows:
         }
     },
     "Macro": {
-        "name": "name"
+        "name": "name",
+        "command": "command"
     },
     "Playlist": {
         "name": "name",
@@ -172,14 +217,18 @@ These default mappings are as follows:
         }
     },
     "Scene": {
-        "name": "name"
+        "name": "name",
+        "notes": {
+            "path": "notes",
+            "converter": "textCollection"
+        }
     }
 }
 ```
 
 This configuration is provided by default but can also be inserted in the translation files, in order to expand or
 overwrite the supported properties.\
-Mappigs could be added like this (ex. spells):
+Mappings could be added like this (ex. `spells`):
 
 ```json
 {
@@ -198,6 +247,69 @@ Mappigs could be added like this (ex. spells):
         },
         ...
 ```
+
+### Mapping inside adventure translation
+
+When translating an adventure, you can use mapping for specific content using the same `mapping` key, but with an
+additional "level" which represents the type of document to map.
+
+For example:
+```json
+{
+    "label": "E - Adventure",
+    "mapping": {
+        "actors": {
+            "appearance": "system.details.appearance"
+        },
+        "items": {
+            "source": "system.source"
+        }
+    },
+    "entries": {
+        "actors": {
+            "O - Actor B": {
+                "name": "E - Actor B",
+                "appearance": "E - Appearance"
+            }
+        },
+        "items": {
+            "O - Item": {
+                "name": "E - Item",
+                "source": "E - Source"
+            },
+            "O - Weapon": {
+                "name": "E - Weapon"
+            }
+        }
+    }
+}
+```
+
+As you can see, we add two custom mapping: one for actors and one for items. The configure mapping _will be merged with
+the default one for this kind of document_, it means that for `items` the resulting mapping configuration will be:
+
+```json
+    "Item": {
+        "name": "name",
+        "description": "system.description.value",
+        "source": "system.source"
+    },
+```
+
+Also, if a translation is not find, it will get translation from another pack as explained in the converter
+[`fromPack`](#frompack).
+
+You can define custom mapping for the following documents types:
+
+* `Item`
+* `Actor`
+* `Cards`
+* `JournalEntry`
+* `Playlist`
+* `Macro`
+* `Scene`
+
+## Translations files loading
 
 Babele loads these files from a directory, created in the data path, that must be set in the module configuration, and
 associating them with the compendium by the name of the collection (ex. `dnd5e.spells.json`). One file per pack is
@@ -379,17 +491,33 @@ In the `Actor` default mapping it’s used to "synchronize" the actor translated
 
 The converter `nameCollection` works like `name`, but is used for a collection of name.
 
-For example, it’s used in adventures scenes name translation:
+For example, it’s used in adventures folders name translation:
 
 ```json
 {
     "Adventure": {
         ...
-        "scenes": {
-            "path": "scenes",
+        "folders": {
+            "path": "folders",
             "converter": "nameCollection"
         },
         ...
+    }
+}
+```
+
+##### `textCollection`
+
+The converter `textCollection` works like `textName`, but is used for a collection of text.
+
+For example, it’s used in scenes notes translation:
+
+```json
+{
+    "name": "name",
+    "notes": {
+        "path": "notes",
+        "converter": "textCollection"
     }
 }
 ```
@@ -398,13 +526,10 @@ For example, it’s used in adventures scenes name translation:
 
 ```json
 {
-    "label": "My translation",
-    "entries": {
-        "My adventure": {
-            "scenes": {
-                "A - Gauntlight Cupola": "A - Coupole de Mornelueur",
-                "A - Gauntlight Ruins": "A - Ruines de Mornelueur"
-            }
+    "O - Scene": {
+        "name": "E - Scene",
+        "notes": {
+            "O - The note": "E - The note"
         }
     }
 }
@@ -725,6 +850,55 @@ The converter `adventureCards` works like `deckCards`, but is used for decks ins
                             "name": "Card two"
                         }
                     }
+                }
+            }
+        }
+    }
+}
+```
+
+##### `adventureItems`
+
+The converter `adventureItems` is used for items inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "items": {
+                "O - Item": {
+                    "name": "E - Item"
+                },
+                "O - Weapon": {
+                    "name": "E - Weapon"
+                }
+            }
+        }
+    }
+}
+```
+
+##### `adventureMacros`
+
+The converter `adventureMacros` is used for macros inside adventures.
+
+**Example of translation file**
+
+```json
+{
+    "label": "My translation",
+    "entries": {
+        "My adventure": {
+            "macros": {
+                "O - Macro": {
+                    "name": "E - Macro",
+                    "command": "E - The content"
+                },
+                "O - Macro bis": {
+                    "name": "E - Macro bis"
                 }
             }
         }

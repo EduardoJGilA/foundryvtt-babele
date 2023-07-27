@@ -203,8 +203,8 @@ class Converters {
     }
 
     static fromDefaultMapping(entityType, mappingKey) {
-        return function (entities, translations) {
-            const babeleTranslations = game.babele.translations[0] ?? null;
+        return function (entities, translations, data, tc) {
+            const babeleTranslations = game.babele.translations.find((item) => item.collection === tc.metadata.id);
             const customMapping = babeleTranslations && babeleTranslations.mapping
                 ? babeleTranslations?.mapping[mappingKey] ?? {}
                 : {};

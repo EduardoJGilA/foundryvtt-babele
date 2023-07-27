@@ -635,7 +635,7 @@ class Babele {
         }
 
         if(this.systemTranslationsDir) {
-            directories.push(`systems/${game.system.data.name}/${this.systemTranslationsDir}/${lang}`);
+            directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}/${lang}`);
         }
 
         let files = [];

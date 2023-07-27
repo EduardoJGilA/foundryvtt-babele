@@ -671,12 +671,6 @@ It is therefore possible to translate the pages of a journal using a JSON of thi
 }
 ```
 
-As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
-[https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)
-
-In order not to start from scratch, the translation file can also be extracted directly from the compendium interface by
-using the button on the window header
-
 ##### `adventureJournals`
 
 The converter `adventureJournals` works like `pages`, but is used for journals inside adventures.
@@ -921,6 +915,12 @@ The converter `adventureMacros` is used for macros inside adventures.
     }
 }
 ```
+
+As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
+[https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)
+
+In order not to start from scratch, the translation file can also be extracted directly from the compendium interface by
+using the button on the window header
 
 ## Feedback
 

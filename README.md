@@ -122,6 +122,15 @@ to translates them.
 The format is simple: original name in key and translation in the value. No need to manage the depth, if a name is used
 multiple times in the compendium, only one translation is necessary.
 
+### Translate "level 0" compendium folders
+
+Since Foundry v11, systems and modules can store the compendiums they contain in folders.\
+This is not the same as the folders that are present _in_ the compendiums.
+
+In order to translate these folders, specials translations files are used. They should be
+named `[id]._packs-folders.json`, where `[id]` must be replaced by the ID of the concerned system or the module (
+eg. `pf1._packs-folders.json`).
+
 ## Translation Mapping
 
 The rules for applying translations to an entity are called **Translation Mapping** (mapping), and can be defined using

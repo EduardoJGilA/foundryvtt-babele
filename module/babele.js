@@ -646,7 +646,7 @@ class Babele {
         const files = await this.#getTranslationsFiles();
 
         if (files.length === 0) {
-            console.log(`Babele | no compendium translation files found for ${lang} language.`);
+            console.log(`Babele | no compendium translation files found for ${game.settings.get('core', 'language')} language.`);
 
             return [];
         }

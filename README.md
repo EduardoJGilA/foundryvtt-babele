@@ -131,6 +131,17 @@ In order to translate these folders, specials translations files are used. They 
 named `[id]._packs-folders.json`, where `[id]` must be replaced by the ID of the concerned system or the module (
 eg. `pf1._packs-folders.json`).
 
+As with others translations files, the file should contains an `entries` key, with translations in it:
+
+```json
+{
+  "entries": {
+    "Character Building": "Création de personnages",
+    "Roll Tables": "Tables aléatoires"
+  }
+}
+```
+
 ## Translation Mapping
 
 The rules for applying translations to an entity are called **Translation Mapping** (mapping), and can be defined using

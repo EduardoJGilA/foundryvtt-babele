@@ -311,17 +311,26 @@ class Converters {
 
     static _pages(pages, translations) {
         return pages.map(data => {
-            if(translations) {
-                let translation = translations[data.name];
-                if(translation) {
-                    return mergeObject(data, {
-                        name: translation.name,
-                        text: { content: translation.text },
-                        translated: true
-                    });
-                }
+            if (!translations) {
+                return data;
             }
-            return data;
+
+            const translation = translations[data.name];
+            if (!translation) {
+                return data;
+            }
+
+            return mergeObject(data, {
+                name: translation.name,
+                image: { caption: translation.caption ?? data.image.caption },
+                src: translation.src ?? data.src,
+                text: { content: translation.text ?? data.text.content },
+                video: {
+                    width: translation.width ?? data.video.width,
+                    height: translation.height ?? data.video.height,
+                },
+                translated: true,
+            });
         });
     }
 

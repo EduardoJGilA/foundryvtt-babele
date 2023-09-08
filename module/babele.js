@@ -1,4 +1,3 @@
-
 /****************
  * HOOKS
  ***************/
@@ -495,6 +494,10 @@ class Babele {
             },
             "Scene": {
                 "name": "name",
+                "drawings": {
+                    "path": "drawings",
+                    "converter": "textCollection"
+                },
                 "notes": {
                     "path": "notes",
                     "converter": "textCollection"

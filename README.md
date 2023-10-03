@@ -683,6 +683,21 @@ It is therefore possible to translate the pages of a journal using a JSON of thi
                 "Another page": {
                     "name": "Un'altra pagina",
                     "text": "..."
+                },
+                "A PDF page": {
+                    "name": "Edited title of the PDF page",
+                    "src": "path/to/another/file.pdf"
+                },
+                "An image page": {
+                    "name": "Edited title of the image page",
+                    "src": "path/to/another/picture.webp",
+                    "caption": "New caption of the image"
+                },
+                "A video page": {
+                    "name": "Edited title of the video page",
+                    "src": "path/to/another/video.webm",
+                    "width": 300,
+                    "height": 200
                 }
             }
         },

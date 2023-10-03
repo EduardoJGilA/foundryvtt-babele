@@ -694,7 +694,8 @@ class Babele {
         for (const metadata of game.data.packs) {
             if (this.supported(metadata)) {
                 const collection = this.getCollection(metadata);
-                const urls = files.filter(file => file.endsWith(`${collection}.json`));
+                const collectionFileName = encodeURI(`${collection}.json`);
+                const urls = files.filter(file => file.endsWith(collectionFileName));
 
                 await loadTranslations(collection, urls);
             }

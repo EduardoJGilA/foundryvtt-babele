@@ -357,14 +357,17 @@ class Converters {
                     return mergeObject(data, {
                         name: translation.name ?? data.name,
                         description: translation.description ?? data.description,
+                        suit: translation.suit ?? data.suit,
                         faces: (translation.faces ?? []).map((face, faceIndex) => {
                             const faceData = data.faces[faceIndex];
                             return mergeObject(faceData ?? {}, {
+                                img: face.img ?? faceData.img,
                                 name: face.name ?? faceData.name,
                                 text: face.text ?? faceData.text,
                             });
                         }),
                         back: {
+                            img: translation.back?.img ?? data.back.img,
                             name: translation.back?.name ?? data.back.name,
                             text: translation.back?.text ?? data.back.text,
                         },

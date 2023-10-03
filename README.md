@@ -840,8 +840,10 @@ The converter `deckCards` is used to translate all types of `Cards`.
         "Deck of cards": {
             "name": "Translated deck of cards",
             "desription": "...",
+            "suit": "...",
             "face": [
                 {
+                    "img": "/path/to/new-image.webp",
                     "name": "First face",
                     "text": "..."
                 },
@@ -851,6 +853,7 @@ The converter `deckCards` is used to translate all types of `Cards`.
                 }
             ],
             "back": {
+                "img": "/path/to/new-image.webp",
                 "name": "Back of the card",
                 "text": "..."
             }
@@ -877,8 +880,10 @@ The converter `adventureCards` works like `deckCards`, but is used for decks ins
                         "Card 1": {
                             "name": "Card one",
                             "description": "...",
+                            "suit": "...",
                             "faces": [
                                 {
+                                    "img": "/path/to/new-image.webp",
                                     "name": "Face 1",
                                     "text": "..."
                                 },
@@ -887,6 +892,7 @@ The converter `adventureCards` works like `deckCards`, but is used for decks ins
                                 }
                             ],
                             "back": {
+                                "img": "/path/to/new-image.webp",
                                 "name": "Back",
                                 "text": "..."
                             }

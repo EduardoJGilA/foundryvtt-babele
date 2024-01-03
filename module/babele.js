@@ -680,7 +680,18 @@ class Babele {
                 let translation;
                 translations.forEach(t => {
                     if (t) {
-                        translation = t; // the last valid
+                        if (translation){
+                            translation.label = t.label ?? translation.label;
+                            if (t.entries){
+                                translation.entries = {...translation.entries, ...t.entries};
+                            }
+                            if (t.mapping){
+                                translation.mapping = {...translation.mapping, ...t.mapping};
+                            }
+                        }
+                        else {
+                            translation = t;
+                        }
                     }
                 });
 

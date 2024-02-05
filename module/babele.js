@@ -318,7 +318,7 @@ class Converters {
                 return data;
             }
 
-            const translation = translations[data.name];
+            const translation = translations[data._id] || translations[data.name];
             if (!translation) {
                 return data;
             }

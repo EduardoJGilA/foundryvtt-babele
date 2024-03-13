@@ -695,7 +695,7 @@ class Babele {
             if (this.supported(metadata)) {
                 const collection = this.getCollection(metadata);
                 const collectionFileName = encodeURI(`${collection}.json`);
-                const urls = files.filter(file => file.endsWith(collectionFileName));
+                const urls = files.filter(file => file.split('/').pop().split('\\').pop() == collectionFileName);
 
                 await loadTranslations(collection, urls);
             }

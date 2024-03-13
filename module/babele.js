@@ -60,7 +60,7 @@ Hooks.once('init', () => {
      * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend _getDocuments implementation
      * with a code that merge the incoming data with the mapped translations.
      */
-    libWrapper.register('babele', 'ClientDatabaseBackend.prototype._getDocuments', async function (wrapped, ...args) {
+    libWrapper.register('babele', 'CONFIG.DatabaseBackend._getDocuments', async function (wrapped, ...args) {
         const result = await wrapped(...args);
         if(!game.babele || !game.babele.initialized) {
             return result;

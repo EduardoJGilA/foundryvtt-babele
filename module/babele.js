@@ -87,7 +87,7 @@ Hooks.once('init', () => {
         const id = args[0].id;
         const idx = this.index.get(id);
         wrapped(...args);
-        this.index.set(id, foundry.utils.foundry.utils.mergeObject(this.index.get(id), idx));
+        this.index.set(id, foundry.utils.mergeObject(this.index.get(id), idx));
     }, 'WRAPPER');
 
 });

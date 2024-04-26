@@ -71,7 +71,7 @@ Hooks.once('init', () => {
             return result;
         }
 
-        if(options.index) {
+        if(options?.index) {
             return game.babele.translateIndex(result, pack);
         } else {
             return result.map(data => {
@@ -87,7 +87,7 @@ Hooks.once('init', () => {
         const id = args[0].id;
         const idx = this.index.get(id);
         wrapped(...args);
-        this.index.set(id, mergeObject(this.index.get(id), idx));
+        this.index.set(id, foundry.utils.foundry.utils.mergeObject(this.index.get(id), idx));
     }, 'WRAPPER');
 
 });
@@ -226,7 +226,7 @@ class Converters {
                 if (translation) {
                     const translatedData = dynamicMapping.map(data, translation);
 
-                    return mergeObject(data, mergeObject(translatedData, { translated: true }));
+                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject(translatedData, { translated: true }));
                 }
             }
 
@@ -259,7 +259,7 @@ class Converters {
                     return data;
                 }
 
-                return mergeObject(data, { [field]: translation, translated: true });
+                return foundry.utils.mergeObject(data, { [field]: translation, translated: true });
             });
         };
     }
@@ -269,13 +269,13 @@ class Converters {
             if (translations) {
                 const translation = translations[`${data.range[0]}-${data.range[1]}`];
                 if (translation) {
-                    return mergeObject(data, mergeObject({ 'text': translation }, { translated: true }));
+                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject({ 'text': translation }, { translated: true }));
                 }
             }
             if (data.documentCollection) {
                 const text = game.babele.translateField('name', data.documentCollection, { 'name': data.text });
                 if (text) {
-                    return mergeObject(data, mergeObject({ 'text': text }, { translated: true }));
+                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject({ 'text': text }, { translated: true }));
                 } else {
                     return data;
                 }
@@ -302,7 +302,7 @@ class Converters {
                     return data;
                 }
 
-                return mergeObject(data, {
+                return foundry.utils.mergeObject(data, {
                     name: translation.name ?? data.name,
                     description: translation.description ?? data.description,
                     results: Converters._tableResults(data.results, translation.results),
@@ -323,7 +323,7 @@ class Converters {
                 return data;
             }
 
-            return mergeObject(data, {
+            return foundry.utils.mergeObject(data, {
                 name: translation.name,
                 image: { caption: translation.caption ?? data.image.caption },
                 src: translation.src ?? data.src,
@@ -354,13 +354,13 @@ class Converters {
             if (translations) {
                 const translation = translations[data.name];
                 if (translation) {
-                    return mergeObject(data, {
+                    return foundry.utils.mergeObject(data, {
                         name: translation.name ?? data.name,
                         description: translation.description ?? data.description,
                         suit: translation.suit ?? data.suit,
                         faces: (translation.faces ?? []).map((face, faceIndex) => {
                             const faceData = data.faces[faceIndex];
-                            return mergeObject(faceData ?? {}, {
+                            return foundry.utils.mergeObject(faceData ?? {}, {
                                 img: face.img ?? faceData.img,
                                 name: face.name ?? faceData.name,
                                 text: face.text ?? faceData.text,
@@ -391,7 +391,7 @@ class Converters {
             if (translations) {
                 const translation = translations[data.name];
                 if (translation) {
-                    return mergeObject(data, {
+                    return foundry.utils.mergeObject(data, {
                         name: translation.name ?? data.name,
                         description: translation.description ?? data.description,
                         translated: true,
@@ -585,7 +585,7 @@ class Babele {
      * @param converters
      */
     registerConverters(converters) {
-        this.converters = mergeObject(this.converters, converters);
+        this.converters = foundry.utils.mergeObject(this.converters, converters);
     }
 
     /**
@@ -697,7 +697,7 @@ class Babele {
 
                 if (translation) {
                     console.log(`Babele | translation for ${collection} pack successfully loaded`);
-                    allTranslations.push(mergeObject(translation, { collection: collection }));
+                    allTranslations.push(foundry.utils.mergeObject(translation, { collection: collection }));
                 }
             }
         };
@@ -737,7 +737,7 @@ class Babele {
                 .map(data => {
                     let translated = prevIndex.get(data._id)?.translated;
                     if(translated) {
-                        return mergeObject(data, this.translate(pack, data, true));
+                        return foundry.utils.mergeObject(data, this.translate(pack, data, true));
                     } else {
                         return this.translate(pack, data);
                     }
@@ -833,7 +833,7 @@ class Babele {
                     entities.forEach((entity, idx) => {
                         const name = entity.getFlag("babele", "translated") ? entity.getFlag("babele", "originalName") : entity.name;
                         if (conf.format === 'legacy') {
-                            let entry = mergeObject({id: name}, this.extract(pack.collection, entity));
+                            let entry = foundry.utils.mergeObject({id: name}, this.extract(pack.collection, entity));
                             file.entries.push(entry);
                         } else {
                             file.entries[`${name}`] = this.extract(pack.collection, entity);
@@ -874,7 +874,7 @@ class Babele {
                             console.log(entity.data);
                             if (!entity.data.hasTranslation) {
                                 entity.constructor.create(
-                                    mergeObject(entity.data, {
+                                    foundry.utils.mergeObject(entity.data, {
                                         folder: folder.id
                                     }),
                                     {displaySheet: false}
@@ -1070,7 +1070,7 @@ class FieldMapping {
 class CompendiumMapping {
 
     constructor(entityType, mapping, tc) {
-        this.mapping = mergeObject(Babele.DEFAULT_MAPPINGS[entityType], mapping || {});
+        this.mapping = foundry.utils.mergeObject(Babele.DEFAULT_MAPPINGS[entityType], mapping || {});
         this.fields = Object.keys(this.mapping).map(key => new FieldMapping(key, this.mapping[key], tc));
     }
 
@@ -1080,7 +1080,7 @@ class CompendiumMapping {
      * @returns {*} an object with expanded mapped fields path and a translated value.
      */
     map(data, translations) {
-        return this.fields.reduce((m, f) => mergeObject(m, f.map(data, translations)), {});
+        return this.fields.reduce((m, f) => foundry.utils.mergeObject(m, f.map(data, translations)), {});
     }
 
     /**
@@ -1105,7 +1105,7 @@ class CompendiumMapping {
     extract(data) {
         return this.fields
             .filter(f => !f.isDynamic())
-            .reduce((m, f) => mergeObject(m, f.extract(data)), {});
+            .reduce((m, f) => foundry.utils.mergeObject(m, f.extract(data)), {});
     }
 
     /**
@@ -1127,7 +1127,7 @@ class TranslatedCompendium {
         this.translations = [];
         this.mapping = new CompendiumMapping(metadata.type, translations ? translations.mapping : null, this);
         if(translations) {
-            mergeObject(metadata, { label: translations.label });
+            foundry.utils.mergeObject(metadata, { label: translations.label });
 
             this.translated = true;
             this.reference = null;
@@ -1250,7 +1250,7 @@ class TranslatedCompendium {
                 let referencePack = game.babele.packs.get(ref);
                 if(referencePack.translated && referencePack.hasTranslation(data)) {
                     let fromReference = referencePack.translate(data, true);
-                    translatedData = mergeObject(fromReference, translatedData);
+                    translatedData = foundry.utils.mergeObject(fromReference, translatedData);
                 }
             }
         }
@@ -1258,9 +1258,9 @@ class TranslatedCompendium {
         if(translationsOnly) {
             return translatedData;
         } else {
-            return mergeObject(
+            return foundry.utils.mergeObject(
                 data,
-                mergeObject(
+                foundry.utils.mergeObject(
                     translatedData, {
                         translated: true,
                         hasTranslation: this.hasTranslation(data),
@@ -1346,7 +1346,7 @@ class OnDemandTranslateDialog extends Dialog {
                           let pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
                           if(pack) {
                               let translatedData =  pack.translate(data, true);
-                              updates.push(mergeObject(translatedData, { _id: item.id }));
+                              updates.push(foundry.utils.mergeObject(translatedData, { _id: item.id }));
                               area.append(`${data.name.padEnd(68,'.')}ok\n`);
                               translated++;
                           } else {
@@ -1368,7 +1368,7 @@ class OnDemandTranslateDialog extends Dialog {
     }
 
     static get defaultOptions() {
-        return mergeObject(super.defaultOptions, {
+        return foundry.utils.mergeObject(super.defaultOptions, {
             width: 600
         });
     }

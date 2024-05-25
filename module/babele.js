@@ -66,12 +66,12 @@ Hooks.once('init', () => {
             return result;
         }
 
-        const documentClass = args[0], query = args[1].query, options = args[1].options, pack = args[1].pack, user = args[2];
+        const documentClass = args[0], query = args[1].query, options = args[1].options, index = args[1].index, pack = args[1].pack, user = args[2];
         if(!pack || !result || !game.babele.isTranslated(pack)) {
             return result;
         }
 
-        if(options?.index) {
+        if(index ?? options?.index) {
             return game.babele.translateIndex(result, pack);
         } else {
             return result.map(data => {

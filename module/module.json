@@ -2,10 +2,10 @@
 	"id": "babele",
 	"title": "Babele",
 	"description": "Module allowing a 'runtime' translation of all the installed compendiums",
-	"version": "2.5.4",
+	"version": "2.5.5",
 	"compatibility": {
 		"minimum": 10,
-		"verified": "12.324"
+		"verified": "12.325"
 	},
 	"relationships": {
 		"requires": [{
@@ -18,10 +18,12 @@
 		"email": "simone.ricciardi@gmail.com",
 		"discord": "Simone [UTC +1]#6710"
 	}],
+	"esmodules": [
+		"script/babele.js"
+	],
 	"scripts": [
-		"./lib/jszip.min.js",
-		"./lib/FileSaver.js",
-		"./babele.js"
+		"lib/jszip.min.js",
+		"lib/FileSaver.js"
 	],
 	"styles": [
 	],
@@ -69,5 +71,5 @@
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",
-	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.5.4/raw/babele.zip?job=build"
+	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.5.5/raw/babele.zip?job=build"
 }

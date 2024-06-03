@@ -12,7 +12,7 @@ export class FieldMapping {
         this.tc = tc;
         if (typeof mapping === "object") {
             this.path = mapping["path"];
-            this.converter = Babel.get().converters[mapping["converter"]];
+            this.converter = game.babele.converters[mapping["converter"]];
             this.dynamic = true;
         } else {
             this.path = mapping;

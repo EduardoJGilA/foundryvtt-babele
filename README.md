@@ -84,12 +84,13 @@ To work properly, the module needs translation files formatted in this way:
     ]
 }
 ```
+This file is divided into a part relating to the compendium data (`label`, `folder`) and a part containing the list of translations applied to the individual elements of the compendium (`entries`).
 
-Where id must contain the **name** or the **id** of the original entity, while `name` and `description` are the
-translations and will be used to overwrite the original property through a **Transation Mapping** config.\
-Be careful to correctly enter the original name (or the id) of the entity because Babel will use it to match the
+Each entry will contain the list of properties to be translated, where id must be equal to the **name** or **id** of the original entity, while `name` and `description` are the
+translations and will be used to override the original property via a **Transaction Mapping** configuration.\
+Be careful to correctly enter the original name (or the id) of the entity because Babele will use it to match the
 translation to be applied.\
-Babel expects and searches (using a naming convention described below) a translation file for each translated
+Babele expects and searches (using a naming convention described below) a translation file for each translated
 compendium.
 
 Babele supports another format for the translation file, which guarantees greater compatibility

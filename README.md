@@ -4,12 +4,9 @@ Babele is a module for runtime translation of Compendium packs.
 
 The use of Babele therefore allows you to avoid making copies of the compendiums for the sole purpose of translating the contents, thus losing the possibility of receiving updates of the compendium when the module/system that provides the contents is itself updated.
 
-Babele obtains translation from configuration files in json format and applies them on the original compendium,
-overwriting the mapped properties of the entity in memory without altering the original content, in this way it is not
-necessary to keep a compendium copy with the sole purpose of translating their contents.
+Babele accomplishes this task by obtaining translation from configuration files in json format (provided by you and stored in a local directory or distributed via a module) and applies them on the original compendium, overwriting the mapped properties of the entity in memory without altering the original content.
 
-Since version 1.1 it is possible to provide a mapping of the translated fields, so that you can add different properties
-based on the pack you want to translate.
+Since version 1.1 it is possible to provide a custom mapping of the translated fields, so that you can add different properties (or altering the default provided) based on the compendium you want to translate.
 
 ## Installation
 

@@ -89,7 +89,7 @@ export class Converters {
     static _tableResults(results, translations) {
         return results.map(data => {
             if (translations) {
-                const translation = translations[`${data.range[0]}-${data.range[1]}`];
+                const translation = translations[data._id] || translations[`${data.range[0]}-${data.range[1]}`];
                 if (translation) {
                     return foundry.utils.mergeObject(data, foundry.utils.mergeObject({'text': translation}, {translated: true}));
                 }

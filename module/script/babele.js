@@ -78,8 +78,8 @@ Hooks.on('importAdventure', () => {
     game.scenes.forEach(scene => {
         scene.tokens.forEach(token => {
             const actor = game.actors.get(token.actorId);
-            if (actor) {
-                token.update({ name: actor.name });
+            if (actor && !token.delta.name) {
+                token.update({ name: actor.prototypeToken.name });
             }
         });
     });

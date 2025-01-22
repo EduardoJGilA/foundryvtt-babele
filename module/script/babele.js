@@ -74,7 +74,7 @@ Hooks.on('renderCompendium', (app, html, data) => {
     }
 });
 
-Hooks.on('importAdventure', (adventure, formData, created, updated) => {
+Hooks.on('importAdventure', () => {
     game.scenes.forEach(scene => {
         scene.tokens.forEach(token => {
             const actor = game.actors.get(token.actorId);
@@ -223,7 +223,6 @@ export class Babel {
     constructor() {
         this.modules = [];
         this.converters = {};
-        //this.defaultMappings = Babel.DEFAULT_MAPPINGS;
         this.translations = null;
         this.systemTranslationsDir = null;
         this.initialized = false;

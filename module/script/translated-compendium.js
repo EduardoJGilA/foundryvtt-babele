@@ -10,7 +10,9 @@ export class TranslatedCompendium {
         this.translations = [];
         this.mapping = new CompendiumMapping(metadata.type, translations ? translations.mapping : null, this);
         if (translations) {
-            foundry.utils.mergeObject(metadata, {label: translations.label});
+            if(translations.label) {
+                foundry.utils.mergeObject(metadata, {label: translations.label});
+            }
 
             this.translated = true;
             this.reference = null;
@@ -31,6 +33,10 @@ export class TranslatedCompendium {
             if (translations.folders) {
                 this.folders = translations.folders;
             }
+
+            if(translations.types) {
+                this.types = translations.types;
+            }
         }
     }
 
@@ -40,6 +46,9 @@ export class TranslatedCompendium {
      * @returns {boolean|*|{translated}}
      */
     hasTranslation(data) {
+        if(this.types && !this.types.includes(data.type)) {
+            return false;
+        }
         return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data);
     }
 

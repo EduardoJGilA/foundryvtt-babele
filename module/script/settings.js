@@ -47,4 +47,11 @@ export function registerModuleSettings() {
         scope: 'world',
         config: false
     });
+
+    game.settings.register('babele', 'mappingFiles', {
+        type: Array,
+        default: [],
+        scope: 'world',
+        config: false
+    });
 }

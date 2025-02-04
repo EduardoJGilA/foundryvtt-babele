@@ -5,13 +5,15 @@ import {Converters} from "./converters.js";
 import {TranslatedCompendium} from "./translated-compendium.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
+import {defaultMappings} from "./default-mappings.js"
 
 /****************
  * HOOKS
  ***************/
 
 Hooks.once('init', () => {
-    let babele = Babel.get();
+    let babele = new Babel();
+    Babel.instance = babele;
     game["babele"] = babele;
     registerModuleSettings();
     initWrapper();
@@ -98,113 +100,7 @@ export class Babel {
         return ['Adventure', 'Actor', 'Cards', 'Folder', 'Item', 'JournalEntry', 'Macro', 'Playlist', 'RollTable', 'Scene'];
     }
 
-    static DEFAULT_MAPPINGS = {
-        "Adventure": {
-            "name": "name",
-            "description": "description",
-            "caption": "caption",
-            "folders": {
-                "path": "folders",
-                "converter": "nameCollection"
-            },
-            "journals": {
-                "path": "journal",
-                "converter": "adventureJournals"
-            },
-            "scenes": {
-                "path": "scenes",
-                "converter": "adventureScenes"
-            },
-            "macros": {
-                "path": "macros",
-                "converter": "adventureMacros"
-            },
-            "playlists": {
-                "path": "playlists",
-                "converter": "adventurePlaylists"
-            },
-            "tables": {
-                "path": "tables",
-                "converter": "tableResultsCollection"
-            },
-            "items": {
-                "path": "items",
-                "converter": "adventureItems"
-            },
-            "actors": {
-                "path": "actors",
-                "converter": "adventureActors"
-            },
-            "cards": {
-                "path": "cards",
-                "converter": "adventureCards"
-            }
-        },
-        "Actor": {
-            "name": "name",
-            "description": "system.details.biography.value",
-            "items": {
-                "path": "items",
-                "converter": "fromPack"
-            },
-            "tokenName": {
-                "path": "prototypeToken.name",
-                "converter": "name"
-            }
-        },
-        "Cards": {
-            "name": "name",
-            "description": "description",
-            "cards": {
-                "path": "cards",
-                "converter": "deckCards"
-            }
-        },
-        "Folder": {},
-        "Item": {
-            "name": "name",
-            "description": "system.description.value"
-        },
-        "JournalEntry": {
-            "name": "name",
-            "description": "content",
-            "pages": {
-                "path": "pages",
-                "converter": "pages"
-            }
-        },
-        "Macro": {
-            "name": "name",
-            "command": "command"
-        },
-        "Playlist": {
-            "name": "name",
-            "description": "description",
-            "sounds": {
-                "path": "sounds",
-                "converter": "playlistSounds"
-            }
-        },
-        "RollTable": {
-            "name": "name",
-            "description": "description",
-            "results": {
-                "path": "results",
-                "converter": "tableResults"
-            }
-        },
-        "Scene": {
-            "name": "name",
-            "drawings": {
-                "path": "drawings",
-                "converter": "textCollection"
-            },
-            "notes": {
-                "path": "notes",
-                "converter": "textCollection"
-            }
-        }
-    }
+    static DEFAULT_MAPPINGS = defaultMappings;
 
     /**
      * Singleton implementation.
@@ -312,7 +208,20 @@ export class Babel {
 
             if (this.supported(metadata)) {
                 let translation = this.translations.find(t => t.collection === collection);
-                this.packs.set(collection, new TranslatedCompendium(metadata, translation));
+                if(translation) {
+                    this.packs.set(collection, new TranslatedCompendium(metadata, translation));
+                    if(metadata.type === 'Adventure' && translation.entries) {
+                        let entries = translation.entries;
+                        Object.values(Array.isArray(entries) ? entries : entries || {}).forEach(adventure =>
+                            this.packs.set(`${collection}-items`, new TranslatedCompendium({
+                                type: 'Item'
+                            }, {
+                                mapping: translation.mapping ? translation.mapping['items'] ?? {} : {},
+                                entries: adventure.items ?? {}
+                            }))
+                        );
+                    }
+                }
             }
         };
 
@@ -394,7 +303,7 @@ export class Babel {
             if (this.supported(metadata)) {
                 const collection = this.getCollection(metadata);
                 const collectionFileName = encodeURI(`${collection}.json`);
-                const urls = files.filter(file => file.split('/').pop().split('\\').pop() == collectionFileName);
+                const urls = files.filter(file => file.split('/').pop().split('\\').pop() === collectionFileName);
 
                 await loadTranslations(collection, urls);
             }
@@ -405,6 +314,24 @@ export class Babel {
             const fileName = file.split('/').pop();
 
             await loadTranslations(fileName.replace('.json', ''), [file]);
+        }
+
+        // Handle global mappings
+        const mappingFiles = await this.#getMappingFiles();
+
+        if (mappingFiles.length > 0) {
+            console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`);
+
+            const loadMappings = async () => {
+                const [mappings] = await Promise.all(
+                    [Promise.all(mappingFiles.map((file) => fetch(file).then((r) => r.json()).catch(e => {
+                    })))],
+                );
+                mappings.forEach(mapping => {
+                    this.registerMapping(mapping);
+                })
+            }
+            await loadMappings();
         }
 
         return allTranslations;
@@ -652,6 +579,42 @@ export class Babel {
             packageName,
             name,
         };
+    }
+
+    async #getMappingFiles() {
+        if (!game.user.hasPermission('FILES_BROWSE')) {
+            return game.settings.get('babele', 'mappingFile');
+        }
+
+        const directory = game.settings.get('babele', 'directory');
+        const directories = this.modules
+            .map(module => `modules/${module.module}/${module.dir}`);
+
+        if (directory && directory.trim && directory.trim()) {
+            directories.push(`${directory}`);
+        }
+
+        if (this.systemTranslationsDir) {
+            directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}`);
+        }
+
+        const files = [];
+        for (let i = 0; i < directories.length; i++) {
+            try {
+                let result = await FilePicker.browse('data', directories[i]);
+                result.files
+                    .filter(file => file.endsWith('/mapping.json'))
+                    .forEach(file => files.push(file));
+            } catch (err) {
+                console.warn('Babele: ' + err);
+            }
+        }
+
+        if (game.user.isGM) {
+            game.settings.set('babele', 'mappingFiles', files);
+        }
+
+        return files;
     }
 }
 

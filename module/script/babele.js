@@ -583,7 +583,7 @@ export class Babel {
 
     async #getMappingFiles() {
         if (!game.user.hasPermission('FILES_BROWSE')) {
-            return game.settings.get('babele', 'mappingFile');
+            return game.settings.get('babele', 'mappingFiles');
         }
 
         const directory = game.settings.get('babele', 'directory');

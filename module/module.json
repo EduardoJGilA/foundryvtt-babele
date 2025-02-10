@@ -2,10 +2,10 @@
 	"id": "babele",
 	"title": "Babele",
 	"description": "Module allowing a 'runtime' translation of all the installed compendiums",
-	"version": "2.6.0",
+	"version": "2.6.1",
 	"compatibility": {
 		"minimum": 10,
-		"verified": "12.325"
+		"verified": "12.331"
 	},
 	"relationships": {
 		"requires": [{
@@ -71,5 +71,5 @@
 	}],
 	"url": "https://gitlab.com/riccisi/foundryvtt-babele",
 	"manifest": "https://gitlab.com/riccisi/foundryvtt-babele/raw/master/module/module.json",
-	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.6.0/raw/babele.zip?job=build"
+	"download": "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.6.1/raw/babele.zip?job=build"
 }

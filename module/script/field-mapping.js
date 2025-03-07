@@ -48,13 +48,13 @@ export class FieldMapping {
      */
     translate(data, translations) {
         const originalValue = this.extractValue(data);
-        let value;
-        if (this.converter && originalValue) {
-            value = this.converter(originalValue, translations[this.field], data, this.tc, translations)
+        if (typeof originalValue === "undefined" || originalValue === null)
+            return originalValue;
+        if (this.converter) {
+            return this.converter(originalValue, translations[this.field], data, this.tc, translations)
         } else {
-            value = translations[this.field];
+            return translations[this.field];
         }
-        return value;
     }
 
     /**

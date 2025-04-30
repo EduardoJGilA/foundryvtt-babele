@@ -35,25 +35,19 @@ Hooks.once('ready', async () => {
     await ui.compendium.render();
 });
 
-Hooks.on('renderActorSheet', (app, html, data) => {
+function addTranslateButton(app, html, data){
     const exportEnabled = game.settings.get('babele', 'showTranslateOption');
     if(exportEnabled && game.user.isGM && data.editable) {
-        let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
-        HtmlUtils.appendHeaderButton(html[0], title, ev => {
-            game.babele.translateActor(app.actor);
-        });
-    }
-});
-
-Hooks.on('renderActorSheetV2', (app, html, actor, token) => {
-    const exportEnabled = game.settings.get('babele', 'showTranslateOption');
-    if(exportEnabled && game.user.isGM && actor.editable) {
         let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
         HtmlUtils.appendHeaderButton(html, title, ev => {
             game.babele.translateActor(app.actor);
         });
     }
-});
+}
+
+Hooks.on('renderActorSheet', (app, html, data) => addTranslateButton(app, html[0], data));
+
+Hooks.on('renderActorSheetV2', (app, html, data, _) => addTranslateButton(app, html, data));
 
 Hooks.on('renderCompendium', (app, html, data) => {
     const exportEnabled = game.settings.get('babele', 'export');
@@ -69,9 +63,7 @@ Hooks.on('renderCompendium', (app, html, data) => {
             const entry = item.textContent?.length ? data.collection.index.find(i => i.name === item.textContent) : null;
 
             if (entry && entry.translated && entry.hasTranslation) {
-                const entryNameText = item.querySelector('a.entry-name, .document-name > a');
                 item.setAttribute('style', 'line-height: normal; padding-top: 10px;');
-                //entryNameText.setAttribute('style', '');
                 item.innerHTML += `<div style="line-height: normal; font-size: 12px; color: gray;">${entry.originalName}</div>`;
             }
         });

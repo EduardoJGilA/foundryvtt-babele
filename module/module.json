@@ -4,8 +4,7 @@
 	"description": "Module allowing a 'runtime' translation of all the installed compendiums",
 	"version": "2.6.2",
 	"compatibility": {
-		"minimum": 10,
-		"verified": "12.331"
+		"minimum": 13
 	},
 	"relationships": {
 		"requires": [{

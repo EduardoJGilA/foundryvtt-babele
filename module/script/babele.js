@@ -23,27 +23,19 @@ Hooks.once('init', () => {
 Hooks.once('ready', async () => {
 
     await game.babele.init();
-    game.packs.contents.forEach(pack => {
-        const index = game.babele.translateIndex(pack.index.contents, pack.collection);
-        pack.index = new foundry.utils.Collection();
-        for ( let i of index ) {
-            if ( i.thumb ) {
-                i.img = i.thumb;
-                delete i.thumb;
-            }
-            pack.index.set(i._id, i);
-        }
-
+    game.packs.forEach(pack => {
+        game.babele.translateIndex(pack.index, pack.collection);
         game.babele.translatePackFolders(pack);
+        pack.initializeTree();
     });
 
     game.babele.translateSystemPackFolders();
 
     Hooks.callAll('babele.ready');
-    ui.sidebar.tabs.compendium.render();
+    await ui.compendium.render();
 });
 
-Hooks.on('renderActorSheet', (app, html, data) => {
+function addTranslateButton(app, html, data){
     const exportEnabled = game.settings.get('babele', 'showTranslateOption');
     if(exportEnabled && game.user.isGM && data.editable) {
         let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
@@ -51,7 +43,11 @@ Hooks.on('renderActorSheet', (app, html, data) => {
             game.babele.translateActor(app.actor);
         });
     }
-});
+}
+
+Hooks.on('renderActorSheet', (app, html, data) => addTranslateButton(app, html[0], data));
+
+Hooks.on('renderActorSheetV2', (app, html, data, _) => addTranslateButton(app, html, data));
 
 Hooks.on('renderCompendium', (app, html, data) => {
     const exportEnabled = game.settings.get('babele', 'export');
@@ -63,14 +59,12 @@ Hooks.on('renderCompendium', (app, html, data) => {
     }
 
     if (game.settings.get('babele', 'showOriginalName')) {
-        html[0].querySelectorAll('.directory-list .entry-name, .directory-list .document-name').forEach((item) => {
-            const entry = item.textContent?.length ? data.index.find(i => i.name === item.textContent) : null;
+        html.querySelectorAll('.directory-list .entry-name, .directory-list .document-name').forEach((item) => {
+            const entry = item.textContent?.length ? data.collection.index.find(i => i.name === item.textContent) : null;
 
             if (entry && entry.translated && entry.hasTranslation) {
-                const entryNameText = item.querySelector('.entry-name > a, .document-name > a');
-                item.setAttribute('style', 'display: flex; flex-direction: column;');
-                entryNameText.setAttribute('style', 'line-height: normal; padding-top: 10px;');
-                entryNameText.innerHTML += `<div style="line-height: normal; font-size: 12px; color: gray;">${entry.originalName}</div>`;
+                item.setAttribute('style', 'line-height: normal; padding-top: 10px;');
+                item.innerHTML += `<div style="line-height: normal; font-size: 12px; color: gray;">${entry.originalName}</div>`;
             }
         });
     }
@@ -242,7 +236,7 @@ export class Babel {
         }
 
         this.initialized = true;
-        Hooks.callAll('babele.ready');
+        Hooks.callAll('babele.dataLoaded');
     }
 
     getCollection(metadata) {
@@ -338,28 +332,24 @@ export class Babel {
     }
 
     /**
-     * Translate & sort the compendium index.
+     * Translates inplace and returns the compendium index.
      *
      * @param index the untranslated index
      * @param pack the pack name
-     * @returns {*} the translated & sorted index
+     * @returns {*} the translated index
      */
     translateIndex(index, pack) {
-        const prevIndex = game.packs.get(pack).index;
         const lang = game.settings.get('core', 'language');
         const collator = new Intl.Collator(Intl.Collator.supportedLocalesOf([lang]).length > 0 ? lang : 'en');
-        return index
-            .map(data => {
-                let translated = prevIndex.get(data._id)?.translated;
-                if (translated) {
-                    return foundry.utils.mergeObject(data, this.translate(pack, data, true));
-                } else {
-                    return this.translate(pack, data);
-                }
-            })
-            .sort((a, b) => {
-                return collator.compare(a.name, b.name);
-            });
+        for (const entry of index){
+            let translated = entry?.translated;
+            if (translated) {
+                foundry.utils.mergeObject(entry, this.translate(pack, entry, true), { inplace:true });
+            } else {
+                foundry.utils.mergeObject(entry, this.translate(pack, entry), { inplace:true });
+            }
+        }
+        return index;
     }
 
     /**
@@ -556,7 +546,7 @@ export class Babel {
 
         for (let i = 0; i < directories.length; i++) {
             try {
-                let result = await FilePicker.browse('data', directories[i]);
+                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
                 result.files.forEach(file => files.push(file));
             } catch (err) {
                 console.warn('Babele: ' + err);
@@ -601,7 +591,7 @@ export class Babel {
         const files = [];
         for (let i = 0; i < directories.length; i++) {
             try {
-                let result = await FilePicker.browse('data', directories[i]);
+                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
                 result.files
                     .filter(file => file.endsWith('/mapping.json'))
                     .forEach(file => files.push(file));

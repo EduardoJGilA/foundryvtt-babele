@@ -332,11 +332,11 @@ export class Babel {
     }
 
     /**
-     * Translate & sort the compendium index.
+     * Translates inplace and returns the compendium index.
      *
      * @param index the untranslated index
      * @param pack the pack name
-     * @returns {*} the translated & sorted index
+     * @returns {*} the translated index
      */
     translateIndex(index, pack) {
         const lang = game.settings.get('core', 'language');

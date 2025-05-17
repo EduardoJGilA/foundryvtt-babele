@@ -191,6 +191,11 @@ export class Babel {
      * @returns {Promise<void>}
      */
     async init() {
+
+        if(this.initialized) {
+            return;
+        }
+
         if (!this.translations) {
             this.translations = await this.loadTranslations();
         }

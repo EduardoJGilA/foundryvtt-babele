@@ -11,8 +11,12 @@ export function initWrapper() {
 
     libWrapper.register('babele', 'CONFIG.DatabaseBackend._getDocuments', async function (wrapped, ...args) {
         const result = await wrapped(...args);
-        if(!game.babele || !game.babele.initialized) {
+        if(!game.babele) {
             return result;
+        }
+
+        if(!game.babele.initialized) {
+            await game.babele.init();
         }
 
         const documentClass = args[0], query = args[1].query, options = args[1].options, index = args[1].index, pack = args[1].pack, user = args[2];

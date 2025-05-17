@@ -91,13 +91,13 @@ export class Converters {
             if (translations) {
                 const translation = translations[data._id] || translations[`${data.range[0]}-${data.range[1]}`];
                 if (translation) {
-                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject({'text': translation}, {translated: true}));
+                    data = foundry.utils.mergeObject(data, foundry.utils.mergeObject({'description': translation}, {translated: true}));
                 }
             }
-            if (data.documentCollection) {
-                const text = game.babele.translateField('name', data.documentCollection, {'name': data.text});
+            if (data.documentUuid) {
+                const text = game.babele.translateField('name', foundry.utils.parseUuid(data.documentUuid).collection.collection, {'name': data.name});
                 if (text) {
-                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject({'text': text}, {translated: true}));
+                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject({'name': text}, {translated: true}));
                 } else {
                     return data;
                 }

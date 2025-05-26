@@ -49,7 +49,12 @@ export class TranslatedCompendium {
         if(this.types && !this.types.includes(data.type)) {
             return false;
         }
-        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data);
+        /**
+         * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
+         * @type {string | undefined}
+         */
+        const itemId = (data.flags?.core?.sourceId || data._stats?.compendiumSource)?.split(".").pop();
+        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data) || !!this.translations[itemId];
     }
 
     /**
@@ -58,7 +63,12 @@ export class TranslatedCompendium {
      * @returns {*|{}}
      */
     translationsFor(data) {
-        return this.translations[data._id] || this.translations[data.name] || {}
+        /**
+         * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
+         * @type {string | undefined}
+         */
+        const itemId = (data.flags?.core?.sourceId || data._stats?.compendiumSource)?.split(".").pop();
+        return this.translations[data._id] || this.translations[data.name] || this.translations[itemId] || {}
     }
 
     /**

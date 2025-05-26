@@ -23,6 +23,9 @@ Hooks.once('init', () => {
 Hooks.once('ready', async () => {
 
     await game.babele.init();
+
+    await game.babele.shareTranslationFiles();
+
     game.packs.forEach(pack => {
         game.babele.translateIndex(pack.index, pack.collection);
         game.babele.translatePackFolders(pack);
@@ -528,7 +531,21 @@ export class Babel {
         game.collections.get('Folder').forEach((folder) => folder.name = translations[folder.name] ?? folder.name);
     }
 
+    async shareTranslationFiles() {
+        if (game.user.isGM) {
+            let files = await game.babele.#getTranslationsFiles();
+            game.settings.set('babele', 'translationFiles', files);
+        }
+    }
+
+    _files = []
+
     async #getTranslationsFiles() {
+
+        if(this._files.length) {
+            return this._files;
+        }
+
         if (!game.user.hasPermission('FILES_BROWSE')) {
             return game.settings.get('babele', 'translationFiles');
         }
@@ -558,9 +575,7 @@ export class Babel {
             }
         }
 
-        if (game.user.isGM) {
-            game.settings.set('babele', 'translationFiles', files);
-        }
+        this._files = files;
 
         return files;
     }

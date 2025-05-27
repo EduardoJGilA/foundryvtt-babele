@@ -50,7 +50,17 @@ function addTranslateButton(app, html, data){
 
 Hooks.on('renderActorSheet', (app, html, data) => addTranslateButton(app, html[0], data));
 
-Hooks.on('renderActorSheetV2', (app, html, data, _) => addTranslateButton(app, html, data));
+Hooks.on('getHeaderControlsCharacterActorSheet', (sheet, controls) => {
+    const exportEnabled = game.settings.get('babele', 'showTranslateOption');
+    if(exportEnabled && game.user.isGM && sheet.isEditable) {
+        let label = game.i18n.localize("BABELE.TranslateActorHeadBtn");
+        controls.push({
+            icon: 'fas fa-globe',
+            label: label,
+            onClick: () => game.babele.translateActor(sheet.actor),
+        });
+    }
+});
 
 Hooks.on('renderCompendium', (app, html, data) => {
     const exportEnabled = game.settings.get('babele', 'export');

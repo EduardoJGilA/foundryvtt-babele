@@ -53,7 +53,7 @@ export class TranslatedCompendium {
          * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
          * @type {string | undefined}
          */
-        const itemId = (data.flags?.core?.sourceId || data._stats?.compendiumSource)?.split(".").pop();
+        const itemId = foundry.utils.parseUuid(data.flags?.core?.sourceId || data._stats?.compendiumSource)?.id;
         return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data) || !!this.translations[itemId];
     }
 
@@ -67,7 +67,7 @@ export class TranslatedCompendium {
          * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
          * @type {string | undefined}
          */
-        const itemId = (data.flags?.core?.sourceId || data._stats?.compendiumSource)?.split(".").pop();
+        const itemId = foundry.utils.parseUuid(data.flags?.core?.sourceId || data._stats?.compendiumSource)?.id;
         return this.translations[data._id] || this.translations[data.name] || this.translations[itemId] || {}
     }
 

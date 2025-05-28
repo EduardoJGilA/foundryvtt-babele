@@ -51,7 +51,7 @@ function addTranslateButton(app, html, data){
 
 Hooks.on('renderActorSheet', (app, html, data) => addTranslateButton(app, html[0], data));
 
-Hooks.on('getHeaderControlsCharacterActorSheet', (sheet, controls) => {
+Hooks.on('getHeaderControlsActorSheetV2', (sheet, controls) => {
     const exportEnabled = game.settings.get('babele', 'showTranslateOption');
     if(exportEnabled && game.user.isGM && sheet.isEditable) {
         let label = game.i18n.localize("BABELE.TranslateActorHeadBtn");

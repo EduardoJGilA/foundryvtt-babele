@@ -7,7 +7,7 @@ import {Babel} from "./babele.js";
 export class CompendiumMapping {
 
     constructor(entityType, mapping, tc) {
-        this.mapping = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[entityType], mapping || {});
+        this.mapping = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[entityType], mapping || {}, {inplace: false});
         this.fields = Object.keys(this.mapping).map(key => new FieldMapping(key, this.mapping[key], tc));
     }
 

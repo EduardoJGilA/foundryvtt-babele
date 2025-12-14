@@ -15,9 +15,9 @@ export function initWrapper() {
             return result;
         }
 
-        if(!game.babele.initialized) {
-            await game.babele.init();
-        }
+        if(!await game.babele.init()) {
+            return result;
+        };
 
         const documentClass = args[0], query = args[1].query, options = args[1].options, index = args[1].index, pack = args[1].pack, user = args[2];
         if(!pack || !result || !game.babele.isTranslated(pack)) {

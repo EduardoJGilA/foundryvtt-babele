@@ -91,7 +91,19 @@ export class Converters {
             if (translations) {
                 const translation = translations[data._id] || translations[`${data.range[0]}-${data.range[1]}`];
                 if (translation) {
-                    data = foundry.utils.mergeObject(data, foundry.utils.mergeObject({'description': translation}, {translated: true}));
+                    if (typeof translation === "string") {
+                        data = foundry.utils.mergeObject(data, foundry.utils.mergeObject({'description': translation}, {translated: true}));
+                    } else {
+                        const range = translation.range ?? data.range;
+                        data = foundry.utils.mergeObject(data, {
+                            name: translation.name ?? data.name,
+                            img: translation.img ?? data.img,
+                            weight: translation.weight ?? data.weight,
+                            range: { '0': range[0], '1': range[1] },
+                            description: translation.description ?? data.description,
+                            translated: true
+                        });
+                    }
                 }
             }
             if (data.documentUuid) {

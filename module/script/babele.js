@@ -566,7 +566,7 @@ export class Babel {
             return this._files;
         }
 
-        if (!game.user.hasPermission('FILES_BROWSE')) {
+        if (!Babel.#canIndexFiles) {
             return game.settings.get('babele', 'translationFiles');
         }
 
@@ -617,7 +617,7 @@ export class Babel {
             return this._mappingFiles;
         }
 
-        if (!game.user.hasPermission('FILES_BROWSE')) {
+        if (!Babel.#canIndexFiles) {
             return game.settings.get('babele', 'mappingFiles');
         }
 
@@ -648,6 +648,16 @@ export class Babel {
         this.mappingFiles = files;
 
         return files;
+    }
+
+    /**
+     * @type {boolean}
+     */
+    static get #canIndexFiles(){
+        // Needs to check both the permissions and the GM status 
+        // as the file discovery will fail if a folder is hidden
+        // This is checked by the server itself and can't be changed
+        return game.user.hasPermission('FILES_BROWSE') && game.user.isGM;
     }
 }
 

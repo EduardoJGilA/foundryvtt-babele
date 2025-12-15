@@ -69,6 +69,10 @@ export const defaultMappings = {
     "JournalEntry": {
         "name": "name",
         "description": "content",
+        "categories": {
+            "path": "categories",
+            "converter": "nameCollection"
+        },
         "pages": {
             "path": "pages",
             "converter": "pages"

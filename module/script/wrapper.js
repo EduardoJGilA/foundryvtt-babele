@@ -36,7 +36,7 @@ export function initWrapper() {
     /**
      * Necessary to solve a problem caused by the replacement of the index, even if already present, after reading the document.
      */
-    libWrapper.register('babele', 'CompendiumCollection.prototype.indexDocument', function (wrapped, ...args) {
+    libWrapper.register('babele', 'foundry.documents.collections.CompendiumCollection.prototype.indexDocument', function (wrapped, ...args) {
         const document = args[0]
         const id = document.id;
         const idx = this.index.get(id);

@@ -37,9 +37,17 @@ export function initWrapper() {
      * Necessary to solve a problem caused by the replacement of the index, even if already present, after reading the document.
      */
     libWrapper.register('babele', 'CompendiumCollection.prototype.indexDocument', function (wrapped, ...args) {
-        const id = args[0].id;
+        const document = args[0]
+        const id = document.id;
         const idx = this.index.get(id);
+        // needed to fix pack index that is generated from links in chat
+        const flag = document.flags?.babele ?? {};
         wrapped(...args);
-        this.index.set(id, foundry.utils.mergeObject(this.index.get(id), idx));
+        this.index.set(id, foundry.utils.mergeObject(
+            this.index.get(id), 
+            {
+                ...idx, 
+                ...flag
+            }));
     }, 'WRAPPER');
 }

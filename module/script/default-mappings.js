@@ -107,6 +107,10 @@ export const defaultMappings = {
         "notes": {
             "path": "notes",
             "converter": "textCollection"
+        },
+        "regions": {
+            "path": "regions",
+            "converter": "sceneRegions"
         }
     }
 }

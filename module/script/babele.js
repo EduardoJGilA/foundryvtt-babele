@@ -312,22 +312,24 @@ export class Babel {
             }
         };
 
-        for (const metadata of game.data.packs) {
-            if (this.supported(metadata)) {
+        const packPromises = game.data.packs
+            .filter(metadata => this.supported(metadata))
+            .map(metadata => {
                 const collection = this.getCollection(metadata);
                 const collectionFileName = encodeURI(`${collection}.json`);
                 const urls = files.filter(file => file.split('/').pop().split('\\').pop() === collectionFileName);
-
-                await loadTranslations(collection, urls);
-            }
-        }
+                return loadTranslations(collection, urls);
+            });
 
         // Handle specific files for pack folders
-        for (const file of files.filter((file) => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))) {
-            const fileName = file.split('/').pop();
+        const folderPromises = files
+            .filter(file => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))
+            .map(file => {
+                const fileName = file.split('/').pop();
+                return loadTranslations(fileName.replace('.json', ''), [file]);
+            });
 
-            await loadTranslations(fileName.replace('.json', ''), [file]);
-        }
+        await Promise.all([...packPromises, ...folderPromises]);
 
         // Handle global mappings
         const mappingFiles = await this.#getMappingFiles();
@@ -552,16 +554,15 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}/${lang}`);
         }
 
-        const files = [];
-
-        for (let i = 0; i < directories.length; i++) {
-            try {
-                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
-                result.files.forEach(file => files.push(file));
-            } catch (err) {
-                console.warn('Babele: ' + err);
-            }
-        }
+        const results = await Promise.all(
+            directories.map(dir =>
+                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
+                    console.warn('Babele: ' + err);
+                    return { files: [] };
+                })
+            )
+        );
+        const files = results.flatMap(result => result.files);
 
         this._files = files;
 
@@ -601,17 +602,15 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}`);
         }
 
-        const files = [];
-        for (let i = 0; i < directories.length; i++) {
-            try {
-                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
-                result.files
-                    .filter(file => file.endsWith('/mapping.json'))
-                    .forEach(file => files.push(file));
-            } catch (err) {
-                console.warn('Babele: ' + err);
-            }
-        }
+        const results = await Promise.all(
+            directories.map(dir =>
+                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
+                    console.warn('Babele: ' + err);
+                    return { files: [] };
+                })
+            )
+        );
+        const files = results.flatMap(result => result.files.filter(file => file.endsWith('/mapping.json')));
 
         this._mappingFiles = files;
 

@@ -359,7 +359,6 @@ export class Babel {
      */
     translateIndex(index, pack) {
         const lang = game.settings.get('core', 'language');
-        const collator = new Intl.Collator(Intl.Collator.supportedLocalesOf([lang]).length > 0 ? lang : 'en');
         for (const entry of index){
             let translated = entry?.translated;
             if (translated) {

@@ -117,7 +117,7 @@ export class Babel {
      * @returns {Babel}
      */
     static get() {
-        foundry.utils.logCompatibilityWarning('Babele.get is deprecated, use game.babele instead', {since: 3, until: 4});
+        foundry.utils.logCompatibilityWarning('Babele.get is deprecated, use game.babele instead', {since: "2.5.5", until: 4});
         if (!Babel.instance) {
             Babel.instance = new Babel();
         }

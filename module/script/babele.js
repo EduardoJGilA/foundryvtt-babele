@@ -172,7 +172,7 @@ export class Babel {
     registerConverters(converters) {
         this.converters = foundry.utils.mergeObject(this.converters, converters);
     }
-    
+
     /**
      *
      * @param converters
@@ -645,7 +645,7 @@ export class Babel {
             }
         }
 
-        this.mappingFiles = files;
+        this._mappingFiles = files;
 
         return files;
     }

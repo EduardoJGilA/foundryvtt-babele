@@ -20,12 +20,13 @@ export class OnDemandTranslateDialog extends Dialog {
                         let translated = 0;
                         let untranslated = 0;
 
+                        const translatedPacks = game.babele.packs.filter(pack => pack.translated);
                         let updates = [];
                         for (let idx = 0; idx < items; idx++) {
                             let item = actor.items.contents[idx];
                             let data = item.toObject();
 
-                            let pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
+                            let pack = translatedPacks.find(pack => pack.hasTranslation(data));
                             if (pack) {
                                 let translatedData = pack.translate(data, true);
                                 updates.push(foundry.utils.mergeObject(translatedData, {_id: item.id}));

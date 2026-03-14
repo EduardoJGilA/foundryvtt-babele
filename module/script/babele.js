@@ -486,37 +486,6 @@ export class Babel {
         d.render(true);
     }
 
-    importCompendium(folderName, compendiumName) {
-        let compendium = game.packs.find(p => p.collection === compendiumName);
-        let folder = game.folders.entities.filter((f) => f.data.name === folderName)[0];
-        if (compendium && folder) {
-            compendium.getIndex().then(index => {
-                index.forEach(entity => {
-                    compendium.getEntity(entity._id)
-                        .then(entity => {
-                            console.log(entity.data);
-                            if (!entity.data.hasTranslation) {
-                                entity.constructor.create(
-                                    foundry.utils.mergeObject(entity.data, {
-                                        folder: folder.id
-                                    }),
-                                    {displaySheet: false}
-                                ).then(
-                                    e => {
-                                        e.setFlag('world', 'name', entity.data.name);
-                                        console.log(e);
-                                    }
-                                );
-                            }
-                        })
-                        .catch(err => {
-                            console.error(`Unable import entity... ${err}`);
-                        });
-                });
-            });
-        }
-    }
-
     translatePackFolders(pack) {
         if (!pack?.folders?.size) {
             return;

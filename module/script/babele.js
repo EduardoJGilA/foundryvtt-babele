@@ -178,7 +178,13 @@ export class Babel {
      * @param converters
      */
     registerMapping(mapping) {
-        Babel.DEFAULT_MAPPINGS = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS, mapping);
+        for (const [key, value] of Object.entries(mapping)) {
+            if (Babel.DEFAULT_MAPPINGS[key]) {
+                Babel.DEFAULT_MAPPINGS[key] = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[key], value);
+            } else {
+                Babel.DEFAULT_MAPPINGS[key] = value;
+            }
+        }
     }
 
     /**

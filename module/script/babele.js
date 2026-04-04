@@ -149,6 +149,7 @@ export class Babel {
             "pages": Converters.pages(),
             "playlistSounds": Converters.playlistSounds(),
             "deckCards": Converters.deckCards(),
+            "sceneRegions": Converters.sceneRegions(),
             "adventureItems": Converters.fromDefaultMapping("Item", "items"),
             "adventureActors": Converters.fromDefaultMapping("Actor", "actors"),
             "adventureCards": Converters.fromDefaultMapping("Cards", "card"),

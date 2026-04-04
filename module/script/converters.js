@@ -236,4 +236,40 @@ export class Converters {
             return data;
         });
     }
+
+    static sceneRegions() {
+        return function (regions, translations) {
+            return Converters._sceneRegions(regions, translations);
+        }
+    }
+
+    static _sceneRegions(regions, translations) {
+        if (!translations) return regions;
+
+        return regions.map(data => {
+            const translation = translations[data._id] || translations[data.name];
+            if (!translation) return data;
+
+            return foundry.utils.mergeObject(data, {
+                name: translation.name ?? data.name,
+                behaviors: Converters._regionBehaviors(data.behaviors, translation.behaviors),
+                translated: true
+            });            
+        });
+    }
+
+    static _regionBehaviors(behaviors, translations) {
+        if (!translations) return behaviors;
+
+        return behaviors.map(data => {
+            const translation = translations[data._id] || translations[data.name];
+            if (!translation) return data;
+
+            return foundry.utils.mergeObject(data, {
+                name: translation.name ?? data.name,
+                system: { text: translation.text ?? data.system.text },
+                translated: true
+            });            
+        });
+    }
 }

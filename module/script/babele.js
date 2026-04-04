@@ -99,6 +99,8 @@ Hooks.on('importAdventure', () => {
  * Main facade class with init logic and on API for on demand translations based on loaded mapping files.
  */
 export class Babel {
+    /** @type {Promise<boolean> | null} */
+    #initialized
 
     static get PACK_FOLDER_TRANSLATION_NAME_SUFFIX() {
         return '_packs-folders';
@@ -129,7 +131,7 @@ export class Babel {
         this.converters = {};
         this.translations = null;
         this.systemTranslationsDir = null;
-        this.initialized = false;
+        this.#initialized = null;
         this.registerDefaultConverters();
     }
 
@@ -172,7 +174,7 @@ export class Babel {
     registerConverters(converters) {
         this.converters = foundry.utils.mergeObject(this.converters, converters);
     }
-    
+
     /**
      *
      * @param converters
@@ -202,60 +204,63 @@ export class Babel {
      * Initialize babele downloading the available translations files and instantiating the associated
      * translated compendium class.
      *
-     * @returns {Promise<void>}
+     * @returns {Promise<bool>}
      */
     async init() {
+        if(this.#initialized !== null)
+            return await this.#initialized;
 
-        if(this.initialized) {
-            return;
-        }
+        this.#initialized = new Promise(async (resolve) => {
+            if (!this.translations) {
+                this.translations = await this.loadTranslations();
+            }
 
-        if (!this.translations) {
-            this.translations = await this.loadTranslations();
-        }
+            this.packs = new foundry.utils.Collection();
 
-        this.packs = new foundry.utils.Collection();
+            const addTranslations = (metadata) => {
+                const collection = this.getCollection(metadata);
 
-        const addTranslations = (metadata) => {
-            const collection = this.getCollection(metadata);
-
-            if (this.supported(metadata)) {
-                let translation = this.translations.find(t => t.collection === collection);
-                if(translation) {
-                    this.packs.set(collection, new TranslatedCompendium(metadata, translation));
-                    if(metadata.type === 'Adventure' && translation.entries) {
-                        let entries = translation.entries;
-                        Object.values(Array.isArray(entries) ? entries : entries || {}).forEach(adventure =>
-                            this.packs.set(`${collection}-items`, new TranslatedCompendium({
-                                type: 'Item'
-                            }, {
-                                mapping: translation.mapping ? translation.mapping['items'] ?? {} : {},
-                                entries: adventure.items ?? {}
-                            }))
-                        );
+                if (this.supported(metadata)) {
+                    let translation = this.translations.find(t => t.collection === collection);
+                    if(translation) {
+                        this.packs.set(collection, new TranslatedCompendium(metadata, translation));
+                        if(metadata.type === 'Adventure' && translation.entries) {
+                            let entries = translation.entries;
+                            Object.values(Array.isArray(entries) ? entries : entries || {}).forEach(adventure =>
+                                this.packs.set(`${collection}-items`, new TranslatedCompendium({
+                                    type: 'Item'
+                                }, {
+                                    mapping: translation.mapping ? translation.mapping['items'] ?? {} : {},
+                                    entries: adventure.items ?? {}
+                                }))
+                            );
+                        }
                     }
                 }
+            };
+
+            for (const metadata of game.data.packs) {
+                addTranslations(metadata);
             }
-        };
-
-        for (const metadata of game.data.packs) {
-            addTranslations(metadata);
-        }
-
-        // Handle specific files for pack folders
-        this.folders = game.data.folders;
-
-        if (this.folders) {
-            const files = await this.#getTranslationsFiles();
 
             // Handle specific files for pack folders
-            for (const file of files.filter((file) => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))) {
-                addTranslations(this.#getSpecialPacksFoldersMetadata(file.split('/').pop()));
-            }
-        }
+            this.folders = game.data.folders;
 
-        this.initialized = true;
+            if (this.folders) {
+                const files = await this.#getTranslationsFiles();
+
+                // Handle specific files for pack folders
+                for (const file of files.filter((file) => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))) {
+                    addTranslations(this.#getSpecialPacksFoldersMetadata(file.split('/').pop()));
+                }
+            }
+
+            resolve(true)
+        });
+
+        const result = await this.#initialized;
         Hooks.callAll('babele.dataLoaded');
+        return result;
     }
 
     getCollection(metadata) {

@@ -211,7 +211,7 @@ export class Babel {
      * Initialize babele downloading the available translations files and instantiating the associated
      * translated compendium class.
      *
-     * @returns {Promise<bool>}
+     * @returns {Promise<boolean>}
      */
     async init() {
         if(this.#initialized !== null)

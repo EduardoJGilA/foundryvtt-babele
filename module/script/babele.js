@@ -119,7 +119,7 @@ export class Babel {
      * @returns {Babel}
      */
     static get() {
-        foundry.utils.logCompatibilityWarning('Babele.get is deprecated, use game.babele instead', {since: 3, until: 4});
+        foundry.utils.logCompatibilityWarning('Babele.get is deprecated, use game.babele instead', {since: "2.5.5", until: 4});
         if (!Babel.instance) {
             Babel.instance = new Babel();
         }
@@ -181,7 +181,13 @@ export class Babel {
      * @param converters
      */
     registerMapping(mapping) {
-        Babel.DEFAULT_MAPPINGS = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS, mapping);
+        for (const [key, value] of Object.entries(mapping)) {
+            if (Babel.DEFAULT_MAPPINGS[key]) {
+                Babel.DEFAULT_MAPPINGS[key] = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[key], value);
+            } else {
+                Babel.DEFAULT_MAPPINGS[key] = value;
+            }
+        }
     }
 
     /**
@@ -318,22 +324,24 @@ export class Babel {
             }
         };
 
-        for (const metadata of game.data.packs) {
-            if (this.supported(metadata)) {
+        const packPromises = game.data.packs
+            .filter(metadata => this.supported(metadata))
+            .map(metadata => {
                 const collection = this.getCollection(metadata);
                 const collectionFileName = encodeURI(`${collection}.json`);
                 const urls = files.filter(file => file.split('/').pop().split('\\').pop() === collectionFileName);
-
-                await loadTranslations(collection, urls);
-            }
-        }
+                return loadTranslations(collection, urls);
+            });
 
         // Handle specific files for pack folders
-        for (const file of files.filter((file) => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))) {
-            const fileName = file.split('/').pop();
+        const folderPromises = files
+            .filter(file => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))
+            .map(file => {
+                const fileName = file.split('/').pop();
+                return loadTranslations(fileName.replace('.json', ''), [file]);
+            });
 
-            await loadTranslations(fileName.replace('.json', ''), [file]);
-        }
+        await Promise.all([...packPromises, ...folderPromises]);
 
         // Handle global mappings
         const mappingFiles = await this.#getMappingFiles();
@@ -365,7 +373,6 @@ export class Babel {
      */
     translateIndex(index, pack) {
         const lang = game.settings.get('core', 'language');
-        const collator = new Intl.Collator(Intl.Collator.supportedLocalesOf([lang]).length > 0 ? lang : 'en');
         for (const entry of index){
             let translated = entry?.translated;
             if (translated) {
@@ -493,37 +500,6 @@ export class Babel {
         d.render(true);
     }
 
-    importCompendium(folderName, compendiumName) {
-        let compendium = game.packs.find(p => p.collection === compendiumName);
-        let folder = game.folders.entities.filter((f) => f.data.name === folderName)[0];
-        if (compendium && folder) {
-            compendium.getIndex().then(index => {
-                index.forEach(entity => {
-                    compendium.getEntity(entity._id)
-                        .then(entity => {
-                            console.log(entity.data);
-                            if (!entity.data.hasTranslation) {
-                                entity.constructor.create(
-                                    foundry.utils.mergeObject(entity.data, {
-                                        folder: folder.id
-                                    }),
-                                    {displaySheet: false}
-                                ).then(
-                                    e => {
-                                        e.setFlag('world', 'name', entity.data.name);
-                                        console.log(e);
-                                    }
-                                );
-                            }
-                        })
-                        .catch(err => {
-                            console.error(`Unable import entity... ${err}`);
-                        });
-                });
-            });
-        }
-    }
-
     translatePackFolders(pack) {
         if (!pack?.folders?.size) {
             return;
@@ -590,16 +566,15 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}/${lang}`);
         }
 
-        const files = [];
-
-        for (let i = 0; i < directories.length; i++) {
-            try {
-                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
-                result.files.forEach(file => files.push(file));
-            } catch (err) {
-                console.warn('Babele: ' + err);
-            }
-        }
+        const results = await Promise.all(
+            directories.map(dir =>
+                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
+                    console.warn('Babele: ' + err);
+                    return { files: [] };
+                })
+            )
+        );
+        const files = results.flatMap(result => result.files);
 
         this._files = files;
 
@@ -639,19 +614,17 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}`);
         }
 
-        const files = [];
-        for (let i = 0; i < directories.length; i++) {
-            try {
-                let result = await foundry.applications.apps.FilePicker.browse('data', directories[i]);
-                result.files
-                    .filter(file => file.endsWith('/mapping.json'))
-                    .forEach(file => files.push(file));
-            } catch (err) {
-                console.warn('Babele: ' + err);
-            }
-        }
+        const results = await Promise.all(
+            directories.map(dir =>
+                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
+                    console.warn('Babele: ' + err);
+                    return { files: [] };
+                })
+            )
+        );
+        const files = results.flatMap(result => result.files.filter(file => file.endsWith('/mapping.json')));
 
-        this.mappingFiles = files;
+        this._mappingFiles = files;
 
         return files;
     }

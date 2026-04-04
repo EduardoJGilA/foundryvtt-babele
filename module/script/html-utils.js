@@ -4,10 +4,13 @@
 export class HtmlUtils {
 
     static appendHeaderButton(html, title, fn) {
-        let openBtn = $(`<a class="translate" title="${title}"><i class="fas fa-globe"></i>${title}</a>`);
-        openBtn.click(fn);
+        const openBtn = document.createElement('a');
+        openBtn.className = 'translate';
+        openBtn.title = title;
+        openBtn.innerHTML = `<i class="fas fa-globe"></i> ${title}`;
+        openBtn.addEventListener('click', fn);
         html.querySelector('.translate')?.remove();
-        let titleElement = html.querySelector('.window-title');
-        openBtn.insertAfter(titleElement);
+        const titleElement = html.querySelector('.window-title');
+        titleElement?.parentNode.insertBefore(openBtn, titleElement.nextSibling);
     }
 }

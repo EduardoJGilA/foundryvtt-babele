@@ -32,7 +32,7 @@ export class FieldMapping {
     map(data, translations) {
         const map = {};
         const value = this.translate(data, translations);
-        if (value) {
+        if (typeof value !== "undefined" && value !== null) {
             this.path.split('.').reduce((a, f, i, r) => {
                 a[f] = (i < r.length - 1) ? {} : value;
                 return a[f];

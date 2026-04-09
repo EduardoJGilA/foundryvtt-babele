@@ -102,6 +102,17 @@ export class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
 
+    static ADVENTURE_EMBEDDED_PACKS = {
+        Actor: "actors",
+        Cards: "cards",
+        Item: "items",
+        JournalEntry: "journals",
+        Macro: "macros",
+        Playlist: "playlists",
+        RollTable: "tables",
+        Scene: "scenes",
+    };
+
     static get PACK_FOLDER_TRANSLATION_NAME_SUFFIX() {
         return '_packs-folders';
     }
@@ -111,6 +122,10 @@ export class Babel {
     }
 
     static DEFAULT_MAPPINGS = defaultMappings;
+
+    static getAdventureVirtualCollection(parentCollection, entryKey, mappingKey) {
+        return `${parentCollection}::${entryKey}::${mappingKey}`;
+    }
 
     /**
      * Singleton implementation.
@@ -231,16 +246,8 @@ export class Babel {
                     let translation = this.translations.find(t => t.collection === collection);
                     if(translation) {
                         this.packs.set(collection, new TranslatedCompendium(metadata, translation));
-                        if(metadata.type === 'Adventure' && translation.entries) {
-                            let entries = translation.entries;
-                            Object.values(Array.isArray(entries) ? entries : entries || {}).forEach(adventure =>
-                                this.packs.set(`${collection}-items`, new TranslatedCompendium({
-                                    type: 'Item'
-                                }, {
-                                    mapping: translation.mapping ? translation.mapping['items'] ?? {} : {},
-                                    entries: adventure.items ?? {}
-                                }))
-                            );
+                        if (metadata.type === 'Adventure') {
+                            this.#registerAdventureVirtualPacks(collection, metadata, translation);
                         }
                     }
                 }
@@ -273,6 +280,29 @@ export class Babel {
     getCollection(metadata) {
         const collectionPrefix = metadata.packageType === "world" ? "world" : metadata.packageName;
         return `${collectionPrefix}.${metadata.name}`;
+    }
+
+    getAdventureEntryTranslatedCompendium(parent, adventureData, mappingKey) {
+        const parentCollection = typeof parent === "string" ? parent : this.getCollection(parent);
+        const parentTc = this.packs.get(parentCollection);
+        const entryKey = parentTc?.translationKeyFor(adventureData);
+
+        if (!entryKey) {
+            return null;
+        }
+
+        return this.packs.get(Babel.getAdventureVirtualCollection(parentCollection, entryKey, mappingKey)) ?? null;
+    }
+
+    getRelatedAdventureTranslatedCompendium(tc, mappingKey) {
+        const parentCollection = tc?.metadata?.adventureCollection;
+        const entryKey = tc?.metadata?.adventureEntryKey;
+
+        if (!parentCollection || !entryKey) {
+            return null;
+        }
+
+        return this.packs.get(Babel.getAdventureVirtualCollection(parentCollection, entryKey, mappingKey)) ?? null;
     }
 
     /**
@@ -362,6 +392,38 @@ export class Babel {
         }
 
         return allTranslations;
+    }
+
+    #registerAdventureVirtualPacks(collection, metadata, translation) {
+        for (const [entryKey, adventure] of this.#translationEntries(translation.entries)) {
+            for (const [type, mappingKey] of Object.entries(Babel.ADVENTURE_EMBEDDED_PACKS)) {
+                const virtualCollection = Babel.getAdventureVirtualCollection(collection, entryKey, mappingKey);
+
+                this.packs.set(virtualCollection, new TranslatedCompendium({
+                    id: virtualCollection,
+                    type,
+                    virtual: true,
+                    packageName: metadata.packageName,
+                    packageType: metadata.packageType,
+                    name: virtualCollection,
+                    adventureCollection: collection,
+                    adventureEntryKey: entryKey,
+                }, {
+                    mapping: translation.mapping?.[mappingKey] ?? {},
+                    entries: adventure?.[mappingKey] ?? {},
+                }));
+            }
+        }
+    }
+
+    #translationEntries(entries) {
+        if (Array.isArray(entries)) {
+            return entries
+                .filter((entry) => entry?.id)
+                .map((entry) => [entry.id, entry]);
+        }
+
+        return Object.entries(entries || {});
     }
 
     /**

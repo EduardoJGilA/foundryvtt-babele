@@ -1,4 +1,16 @@
 import {CompendiumMapping} from "./compendium-mapping.js";
+import {TranslatedCompendium} from "./translated-compendium.js";
+
+const embeddedMappingKeys = {
+    Actor: "actors",
+    Cards: "cards",
+    Item: "items",
+    JournalEntry: "journals",
+    Macro: "macros",
+    Playlist: "playlists",
+    RollTable: "tables",
+    Scene: "scenes",
+};
 
 /**
  * Utility class with all predefined converters
@@ -12,29 +24,45 @@ export class Converters {
      * @returns {function(*, *=): *}
      */
     static fromPack(mapping, entityType = 'Item') {
-        let dynamicMapping = new CompendiumMapping(entityType, mapping);
-        return function (items, translations) {
-            return Converters._fromPack(items, translations, dynamicMapping);
+        return function (items, translations, data, tc) {
+            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[entityType]);
+            if (!contextPack) {
+                const dynamicMapping = new CompendiumMapping(entityType, mapping);
+                return Converters._fromPack(items, translations, dynamicMapping);
+            }
+
+            const dynamicMapping = new CompendiumMapping(entityType, mapping, contextPack);
+            return Converters._fromPack(items, translations, dynamicMapping, contextPack);
         }
     }
 
     static fromDefaultMapping(entityType, mappingKey) {
         return function (entities, translations, data, tc) {
-            const babeleTranslations = game.babele.translations.find((item) => item.collection === tc.metadata.id);
+            const collection = game.babele.getCollection(tc.metadata);
+            const babeleTranslations = game.babele.translations.find((item) => item.collection === collection);
             const customMapping = babeleTranslations && babeleTranslations.mapping
                 ? babeleTranslations?.mapping[mappingKey] ?? {}
                 : {};
+            const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
+                ?? new TranslatedCompendium({
+                    type: entityType,
+                    adventureCollection: collection,
+                    adventureEntryKey: tc.translationKeyFor(data),
+                }, {
+                    mapping: customMapping,
+                    entries: translations ?? {},
+                });
             const dynamicMapping = new CompendiumMapping(
                 entityType,
                 customMapping,
-                game.babele.packs.find(pack => pack.translated)
+                contextPack
             );
 
-            return Converters._fromPack(entities, translations, dynamicMapping);
+            return Converters._fromPack(entities, translations, dynamicMapping, contextPack);
         };
     }
 
-    static _fromPack(entities, translations, dynamicMapping) {
+    static _fromPack(entities, translations, dynamicMapping, priorityPack = null) {
         return entities.map((data) => {
             if (translations) {
                 let translation;
@@ -52,7 +80,9 @@ export class Converters {
                 }
             }
 
-            const pack = game.babele.packs.find(pack => pack.translated && pack.hasTranslation(data));
+            const pack = priorityPack?.translated && priorityPack.hasTranslation(data)
+                ? priorityPack
+                : game.babele.packs.find(pack => !pack.metadata?.virtual && pack.translated && pack.hasTranslation(data));
 
             return pack ? pack.translate(data) : data;
         });

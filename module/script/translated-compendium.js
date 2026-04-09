@@ -49,12 +49,7 @@ export class TranslatedCompendium {
         if(this.types && !this.types.includes(data.type)) {
             return false;
         }
-        /**
-         * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
-         * @type {string | undefined}
-         */
-        const itemId = foundry.utils.parseUuid(data.flags?.core?.sourceId || data._stats?.compendiumSource)?.id;
-        return !!this.translations[data._id] || !!this.translations[data.name] || this.hasReferenceTranslations(data) || !!this.translations[itemId];
+        return !!this.translationKeyFor(data) || this.hasReferenceTranslations(data);
     }
 
     /**
@@ -63,12 +58,30 @@ export class TranslatedCompendium {
      * @returns {*|{}}
      */
     translationsFor(data) {
+        const key = this.translationKeyFor(data);
+        return key ? this.translations[key] : {}
+    }
+
+    /**
+     * Resolve the translation key used for a document.
+     *
+     * @param data
+     * @returns {string|null}
+     */
+    translationKeyFor(data) {
         /**
          * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
          * @type {string | undefined}
          */
         const itemId = foundry.utils.parseUuid(data.flags?.core?.sourceId || data._stats?.compendiumSource)?.id;
-        return this.translations[data._id] || this.translations[data.name] || this.translations[itemId] || {}
+
+        for (const key of [data._id, data.name, itemId]) {
+            if (key && this.translations[key]) {
+                return key;
+            }
+        }
+
+        return null;
     }
 
     /**

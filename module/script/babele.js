@@ -321,6 +321,7 @@ export class Babel {
         }
 
         const allTranslations = [];
+        const filesByName = this.#groupFilesByBasename(files);
         const loadTranslations = async (collection, urls) => {
             if (urls.length === 0) {
                 console.log(`Babele | no translation file found for ${collection} pack`);
@@ -348,7 +349,11 @@ export class Babel {
                 });
 
                 if (translation) {
-                    console.log(`Babele | translation for ${collection} pack successfully loaded`);
+                    if (urls.length > 1) {
+                        console.log(`Babele | translation for ${collection} pack successfully loaded from ${urls.length} source file(s)`, urls);
+                    } else {
+                        console.log(`Babele | translation for ${collection} pack successfully loaded from ${urls[0]}`);
+                    }
                     allTranslations.push(foundry.utils.mergeObject(translation, {collection: collection}));
                 }
             }
@@ -359,7 +364,7 @@ export class Babel {
             .map(metadata => {
                 const collection = this.getCollection(metadata);
                 const collectionFileName = encodeURI(`${collection}.json`);
-                const urls = files.filter(file => file.split('/').pop().split('\\').pop() === collectionFileName);
+                const urls = filesByName.get(collectionFileName) ?? [];
                 return loadTranslations(collection, urls);
             });
 
@@ -377,7 +382,7 @@ export class Babel {
         const mappingFiles = await this.#getMappingFiles();
 
         if (mappingFiles.length > 0) {
-            console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`);
+            console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`, mappingFiles);
 
             const loadMappings = async () => {
                 const [mappings] = await Promise.all(
@@ -680,9 +685,9 @@ export class Babel {
 
         const lang = game.settings.get('core', 'language');
         const directory = game.settings.get('babele', 'directory');
-        const directories = this.modules
+        const directories = this.#uniqueEntries(this.modules
             .filter(module => module.lang === lang)
-            .map(module => `modules/${module.module}/${module.dir}`);
+            .map(module => `modules/${module.module}/${module.dir}`));
 
         if (directory && directory.trim && directory.trim()) {
             directories.push(`${directory}/${lang}`);
@@ -692,15 +697,19 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}/${lang}`);
         }
 
+        const uniqueDirectories = this.#uniqueEntries(directories);
         const results = await Promise.all(
-            directories.map(dir =>
+            uniqueDirectories.map(dir =>
                 foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
                     console.warn('Babele: ' + err);
                     return { files: [] };
                 })
             )
         );
-        const files = results.flatMap(result => result.files);
+        const rawFiles = results.flatMap(result => result.files);
+        const files = this.#uniqueEntries(rawFiles);
+
+        this.#logFileDiscovery("translation", uniqueDirectories, results, rawFiles, files);
 
         this._files = files;
 
@@ -729,8 +738,8 @@ export class Babel {
         }
 
         const directory = game.settings.get('babele', 'directory');
-        const directories = this.modules
-            .map(module => `modules/${module.module}/${module.dir}`);
+        const directories = this.#uniqueEntries(this.modules
+            .map(module => `modules/${module.module}/${module.dir}`));
 
         if (directory && directory.trim && directory.trim()) {
             directories.push(`${directory}`);
@@ -740,19 +749,51 @@ export class Babel {
             directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}`);
         }
 
+        const uniqueDirectories = this.#uniqueEntries(directories);
         const results = await Promise.all(
-            directories.map(dir =>
+            uniqueDirectories.map(dir =>
                 foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
                     console.warn('Babele: ' + err);
                     return { files: [] };
                 })
             )
         );
-        const files = results.flatMap(result => result.files.filter(file => file.endsWith('/mapping.json')));
+        const rawFiles = results.flatMap(result => result.files.filter(file => file.endsWith('/mapping.json')));
+        const files = this.#uniqueEntries(rawFiles);
+
+        this.#logFileDiscovery("mapping", uniqueDirectories, results, rawFiles, files);
 
         this._mappingFiles = files;
 
         return files;
+    }
+
+    #logFileDiscovery(kind, directories, results, rawFiles, uniqueFiles) {
+        console.log(`Babele | discovered ${uniqueFiles.length} unique ${kind} file(s) across ${directories.length} directorie(s)`, {
+            directories: directories.map((dir, index) => ({
+                dir,
+                files: results[index]?.files?.length ?? 0,
+            })),
+            duplicatesDiscarded: rawFiles.length - uniqueFiles.length,
+        });
+    }
+
+    #groupFilesByBasename(files) {
+        return files.reduce((acc, file) => {
+            const name = this.#basename(file);
+            const urls = acc.get(name) ?? [];
+            urls.push(file);
+            acc.set(name, urls);
+            return acc;
+        }, new Map());
+    }
+
+    #basename(file) {
+        return file.split('/').pop().split('\\').pop();
+    }
+
+    #uniqueEntries(entries) {
+        return [...new Set(entries)];
     }
 
     /**

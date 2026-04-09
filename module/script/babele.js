@@ -106,6 +106,8 @@ export class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
     #dataLoaded
+    static LEGACY_MAPPING_FILENAME = "mapping.json";
+    static MAPPING_FILENAME = "mappings.json";
 
     static ADVENTURE_EMBEDDED_PACKS = {
         Actor: "actors",
@@ -790,8 +792,8 @@ export class Babel {
                 })
             )
         );
-        const rawFiles = results.flatMap(result => result.files.filter(file => file.endsWith('/mapping.json')));
-        const files = this.#uniqueEntries(rawFiles);
+        const rawFiles = results.flatMap(result => result.files.filter(file => this.#isMappingFile(file)));
+        const files = this.#normalizeMappingFiles(rawFiles);
 
         this.#logFileDiscovery("mapping", uniqueDirectories, results, rawFiles, files);
 
@@ -826,6 +828,46 @@ export class Babel {
 
     #uniqueEntries(entries) {
         return [...new Set(entries)];
+    }
+
+    #isMappingFile(file) {
+        return file.endsWith(`/${Babel.MAPPING_FILENAME}`) || file.endsWith(`/${Babel.LEGACY_MAPPING_FILENAME}`);
+    }
+
+    #normalizeMappingFiles(files) {
+        const byDirectory = new Map();
+
+        for (const file of this.#uniqueEntries(files)) {
+            const directory = file.slice(0, file.length - this.#basename(file).length);
+            const entry = byDirectory.get(directory) ?? {};
+            const baseName = this.#basename(file);
+
+            if (baseName === Babel.MAPPING_FILENAME) {
+                entry.canonical = file;
+            } else if (baseName === Babel.LEGACY_MAPPING_FILENAME) {
+                entry.legacy = file;
+            }
+
+            byDirectory.set(directory, entry);
+        }
+
+        const normalized = [];
+        for (const [directory, entry] of byDirectory.entries()) {
+            if (entry.canonical) {
+                if (entry.legacy) {
+                    console.warn(`Babele | both '${Babel.MAPPING_FILENAME}' and deprecated '${Babel.LEGACY_MAPPING_FILENAME}' found in '${directory}'. Using '${Babel.MAPPING_FILENAME}'.`);
+                }
+                normalized.push(entry.canonical);
+                continue;
+            }
+
+            if (entry.legacy) {
+                console.warn(`Babele | deprecated mapping filename '${Babel.LEGACY_MAPPING_FILENAME}' found in '${directory}'. Please rename it to '${Babel.MAPPING_FILENAME}'.`);
+                normalized.push(entry.legacy);
+            }
+        }
+
+        return normalized;
     }
 
     /**

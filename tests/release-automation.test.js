@@ -66,7 +66,7 @@ test("buildFoundryReleasePayload mirrors manifest compatibility and notes URL", 
     manifest: {
       id: "babele",
       version: "2.7.8",
-      manifest: "https://gitlab.com/example/raw/2.7.8/module/module.json",
+      manifest: "https://gitlab.com/example/-/jobs/artifacts/2.7.8/raw/module/module.json?job=build",
       compatibility: {
         minimum: 13,
         verified: "13.351",

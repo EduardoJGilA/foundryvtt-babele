@@ -12,7 +12,7 @@ if (!releaseTag) {
     process.exit(1);
 }
 
-const manifestUrl = `${projectUrl}/raw/${encodeURIComponent(releaseTag)}/module/module.json`;
+const manifestUrl = `${projectUrl}/-/jobs/artifacts/${encodeURIComponent(releaseTag)}/raw/module/module.json?job=${encodeURIComponent(jobName)}`;
 const downloadUrl = `${projectUrl}/-/jobs/artifacts/${encodeURIComponent(releaseTag)}/raw/babele.zip?job=${encodeURIComponent(jobName)}`;
 
 const rawManifest = await readFile(manifestPath, "utf8");

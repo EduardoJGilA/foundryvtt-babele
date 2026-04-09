@@ -54,7 +54,7 @@ async function createReleaseFixture() {
       minimum: 13,
       verified: "13.351",
     },
-    manifest: "https://gitlab.example.com/babele/raw/2.7.8/module/module.json",
+    manifest: "https://gitlab.example.com/babele/-/jobs/artifacts/2.7.8/raw/module/module.json?job=build",
     download: "https://gitlab.example.com/babele/-/jobs/artifacts/2.7.8/raw/babele.zip?job=build",
   }, null, 2));
   await writeFile(notesPath, "# Babele 2.7.8\n\nGenerated notes.\n");

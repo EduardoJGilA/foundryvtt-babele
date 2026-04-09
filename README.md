@@ -26,7 +26,8 @@ Workflow:
 1. Create and push a version tag such as `2.7.8`.
 2. CI prepares a release-specific `module.json` and builds `babele.zip`.
 3. CI generates release notes from the matching milestone, unless `release-notes/<tag>.md` exists.
-4. CI creates or updates the GitLab Release, validates the Foundry payload with a dry-run, publishes the Foundry release, and then closes the matching milestone.
+4. CI publishes the release manifest from the tagged build artifact, not from the repository blob at the tag.
+5. CI creates or updates the GitLab Release, validates the Foundry payload with a dry-run, publishes the Foundry release, and then closes the matching milestone.
 
 ## Example
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:

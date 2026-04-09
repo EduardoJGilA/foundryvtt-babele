@@ -36,7 +36,7 @@ test("prepare-release-manifest pins manifest and download URLs to the tagged art
   assert.equal(manifest.version, "2.7.8");
   assert.equal(
     manifest.manifest,
-    "https://gitlab.com/riccisi/foundryvtt-babele/raw/2.7.8/module/module.json",
+    "https://gitlab.com/riccisi/foundryvtt-babele/-/jobs/artifacts/2.7.8/raw/module/module.json?job=build",
   );
   assert.equal(
     manifest.download,

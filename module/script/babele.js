@@ -360,9 +360,11 @@ export class Babel {
             if (urls.length === 0) {
                 console.log(`Babele | no translation file found for ${collection} pack`);
             } else {
-                const [translations] = await Promise.all(
-                    [Promise.all(urls.map((url) => fetch(url).then((r) => r.json()).catch(e => {
-                    })))],
+                const translations = await Promise.all(
+                    urls.map((url) => this.#loadJsonFile(url, {
+                        kind: "translation",
+                        collection,
+                    })),
                 );
 
                 let translation;
@@ -419,12 +421,16 @@ export class Babel {
             console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`, mappingFiles);
 
             const loadMappings = async () => {
-                const [mappings] = await Promise.all(
-                    [Promise.all(mappingFiles.map((file) => fetch(file).then((r) => r.json()).catch(e => {
-                    })))],
+                const mappings = await Promise.all(
+                    mappingFiles.map((file) => this.#loadJsonFile(file, {
+                        kind: "mapping",
+                        phase: "global defaults enrichment",
+                    })),
                 );
                 mappings.forEach(mapping => {
-                    this.registerMapping(mapping);
+                    if (mapping) {
+                        this.registerMapping(mapping);
+                    }
                 })
             }
             await loadMappings();
@@ -810,6 +816,44 @@ export class Babel {
             })),
             duplicatesDiscarded: rawFiles.length - uniqueFiles.length,
         });
+    }
+
+    async #loadJsonFile(file, context = {}) {
+        try {
+            const response = await fetch(file);
+
+            if (response?.ok === false) {
+                const status = response.status ?? "unknown";
+                const statusText = response.statusText ? ` ${response.statusText}` : "";
+                throw new Error(`HTTP ${status}${statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            this.#logJsonLoadFailure(file, context, error);
+            return null;
+        }
+    }
+
+    #logJsonLoadFailure(file, context, error) {
+        const details = {
+            file,
+            error: error?.message ?? String(error),
+        };
+
+        if (context.kind) {
+            details.kind = context.kind;
+        }
+
+        if (context.collection) {
+            details.collection = context.collection;
+        }
+
+        if (context.phase) {
+            details.phase = context.phase;
+        }
+
+        console.error(`Babele | failed to load ${context.kind ?? "JSON"} file '${file}'`, details);
     }
 
     #groupFilesByBasename(files) {

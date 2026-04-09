@@ -17,6 +17,7 @@ console.warn = (...args) => warnCalls.push(args);
 console.error = (...args) => errorCalls.push(args);
 
 const {Babel} = await import("../module/script/babele.js");
+const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
 
 test.beforeEach(() => {
   logCalls.length = 0;
@@ -243,6 +244,52 @@ test("Babel.loadTranslations logs and skips invalid mapping JSON files", async (
   assert.match(String(errorCalls[0][1].error), /mapping fetch failed/);
 
   Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
+});
+
+test("Babel.translate fails open for translated packs when a converter throws", () => {
+  const babele = new Babel();
+  const originalConverter = game.babele.converters.explode;
+
+  game.babele.converters.explode = () => {
+    throw new Error("import converter boom");
+  };
+
+  const tc = new TranslatedCompendium({
+    id: "test.actors",
+    name: "actors",
+    type: "Actor",
+  }, {
+    mapping: {
+      items: {
+        path: "items",
+        converter: "explode",
+      },
+    },
+    entries: {
+      "actor-1": {
+        items: {},
+      },
+    },
+  });
+
+  babele.packs = new foundry.utils.Collection([["test.actors", tc]]);
+
+  const data = {
+    _id: "actor-1",
+    name: "Bestiary Entry",
+    items: [{_id: "item-1", name: "Broken Item"}],
+  };
+
+  assert.doesNotThrow(() => babele.translate("test.actors", structuredClone(data)));
+  assert.deepEqual(babele.translate("test.actors", structuredClone(data)), data);
+  assert.equal(errorCalls.length >= 1, true);
+  assert.match(String(errorCalls.at(-1)[0]), /converter 'explode' failed during translate/);
+
+  if (typeof originalConverter === "undefined") {
+    delete game.babele.converters.explode;
+  } else {
+    game.babele.converters.explode = originalConverter;
+  }
 });
 
 test.after(() => {

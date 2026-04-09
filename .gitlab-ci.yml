@@ -1,4 +1,4 @@
-image: python:3-alpine
+image: node:22-alpine
 
 before_script:
   - apk update
@@ -10,12 +10,14 @@ stages:
 build:
   stage: build
   script:
+    - node scripts/prepare-release-manifest.mjs
     - zip babele.zip -r module -x ".*"
   artifacts:
     name: babele
     when: on_success
     expire_in: never
     paths:
+      - module/module.json
       - babele.zip
   when: on_success
   only:

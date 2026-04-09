@@ -9,6 +9,10 @@ Babele accomplishes this task by obtaining translation from configuration files 
 ## Documentation
 Make sure to read the complete documentation available at the following [link](https://gitlab.com/riccisi/foundryvtt-babele/-/wikis/Docs)
 
+## Compatibility
+Babele `2.7.x` targets Foundry VTT `13`.
+For Foundry `12`, stay on the last compatible `2.6.x` release line.
+
 ## Example
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:
 [https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it](https://gitlab.com/riccisi/foundryvtt-dnd5e-lang-it-it)

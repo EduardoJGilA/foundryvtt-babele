@@ -8,6 +8,7 @@ export class TranslatedCompendium {
     constructor(metadata, translations) {
         this.metadata = metadata;
         this.translations = [];
+        this.customMapping = translations?.mapping ?? null;
         this.mapping = new CompendiumMapping(metadata.type, translations ? translations.mapping : null, this);
         if (translations) {
             if(translations.label) {
@@ -108,8 +109,8 @@ export class TranslatedCompendium {
      * @param data
      * @returns {*}
      */
-    extract(data) {
-        return this.mapping.extract(data);
+    extract(data, options = {}) {
+        return this.mapping.extract(data, options);
     }
 
     /**

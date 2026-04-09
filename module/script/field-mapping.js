@@ -10,6 +10,7 @@ export class FieldMapping {
     constructor(field, mapping, tc) {
         this.field = field;
         this.tc = tc;
+        this.mapping = mapping;
         if (typeof mapping === "object") {
             this.path = mapping["path"];
             this.converter = game.babele.converters[mapping["converter"]];
@@ -86,10 +87,35 @@ export class FieldMapping {
      * @param data
      * @returns {*}
      */
-    extract(data) {
-        const extract = {};
-        extract[this.field] = this.extractValue(data);
-        return extract;
+    extract(data, options = {}) {
+        const value = this.extractValue(data);
+
+        if (!this.converter) {
+            return {[this.field]: value};
+        }
+
+        if (typeof this.converter.extract !== "function") {
+            options.onSkippedDynamicField?.({
+                field: this.field,
+                path: this.path,
+                mapping: this.mapping,
+                reason: "missing_converter_extract",
+            });
+            return undefined;
+        }
+
+        const extracted = this.converter.extract(value, data, this.tc, {
+            field: this.field,
+            path: this.path,
+            mapping: this.mapping,
+            options,
+        });
+
+        if (typeof extracted === "undefined") {
+            return undefined;
+        }
+
+        return {[this.field]: extracted};
     }
 
     /**

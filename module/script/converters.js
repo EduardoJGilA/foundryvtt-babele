@@ -17,6 +17,48 @@ const embeddedMappingKeys = {
  */
 export class Converters {
 
+    static _asArray(collection) {
+        if (!collection) {
+            return [];
+        }
+
+        if (Array.isArray(collection)) {
+            return collection;
+        }
+
+        return collection.contents ?? Array.from(collection);
+    }
+
+    static _exportKeyFor(data, usedKeys, fallbackPrefix = "entry") {
+        const candidates = [data?.name, data?._id, data?.id].filter(Boolean);
+
+        for (const key of candidates) {
+            if (!usedKeys.has(key)) {
+                usedKeys.add(key);
+                return key;
+            }
+        }
+
+        let index = usedKeys.size;
+        let fallback = `${fallbackPrefix}-${index}`;
+        while (usedKeys.has(fallback)) {
+            index += 1;
+            fallback = `${fallbackPrefix}-${index}`;
+        }
+        usedKeys.add(fallback);
+        return fallback;
+    }
+
+    static _extractEmbeddedCollection(entities, dynamicMapping, options = {}) {
+        const usedKeys = new Set();
+
+        return Converters._asArray(entities).reduce((out, entity) => {
+            const key = Converters._exportKeyFor(entity, usedKeys, "embedded");
+            out[key] = dynamicMapping.extract(entity, options);
+            return out;
+        }, {});
+    }
+
     /**
      *
      * @param mapping
@@ -24,7 +66,7 @@ export class Converters {
      * @returns {function(*, *=): *}
      */
     static fromPack(mapping, entityType = 'Item') {
-        return function (items, translations, data, tc) {
+        const fn = function (items, translations, data, tc) {
             const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[entityType]);
             if (!contextPack) {
                 const dynamicMapping = new CompendiumMapping(entityType, mapping);
@@ -33,11 +75,20 @@ export class Converters {
 
             const dynamicMapping = new CompendiumMapping(entityType, mapping, contextPack);
             return Converters._fromPack(items, translations, dynamicMapping, contextPack);
-        }
+        };
+
+        fn.extract = function (items, data, tc, context) {
+            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[entityType]);
+            const dynamicMapping = new CompendiumMapping(entityType, mapping, contextPack ?? tc);
+
+            return Converters._extractEmbeddedCollection(items, dynamicMapping, context.options);
+        };
+
+        return fn;
     }
 
     static fromDefaultMapping(entityType, mappingKey) {
-        return function (entities, translations, data, tc) {
+        const fn = function (entities, translations, data, tc) {
             const collection = game.babele.getCollection(tc.metadata);
             const babeleTranslations = game.babele.translations.find((item) => item.collection === collection);
             const customMapping = babeleTranslations && babeleTranslations.mapping
@@ -60,6 +111,27 @@ export class Converters {
 
             return Converters._fromPack(entities, translations, dynamicMapping, contextPack);
         };
+
+        fn.extract = function (entities, data, tc, context) {
+            const collection = game.babele.getCollection(tc.metadata);
+            const customMapping = tc.customMapping?.[mappingKey] ?? {};
+            const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
+                ?? new TranslatedCompendium({
+                    type: entityType,
+                    packageName: tc.metadata.packageName,
+                    packageType: tc.metadata.packageType,
+                    adventureCollection: collection,
+                    adventureEntryKey: tc.translationKeyFor?.(data) ?? null,
+                }, {
+                    mapping: customMapping,
+                    entries: {},
+                });
+            const dynamicMapping = new CompendiumMapping(entityType, customMapping, contextPack);
+
+            return Converters._extractEmbeddedCollection(entities, dynamicMapping, context.options);
+        };
+
+        return fn;
     }
 
     static _fromPack(entities, translations, dynamicMapping, priorityPack = null) {
@@ -100,7 +172,7 @@ export class Converters {
     }
 
     static fieldCollection(field) {
-        return function (collection, translations) {
+        const fn = function (collection, translations) {
             if (!translations) {
                 return collection;
             }
@@ -114,6 +186,18 @@ export class Converters {
                 return foundry.utils.mergeObject(data, {[field]: translation, translated: true});
             });
         };
+
+        fn.extract = function (collection) {
+            return Converters._asArray(collection).reduce((out, data) => {
+                const key = data?.[field];
+                if (key) {
+                    out[key] = key;
+                }
+                return out;
+            }, {});
+        };
+
+        return fn;
     }
 
     static _tableResults(results, translations) {
@@ -149,13 +233,36 @@ export class Converters {
     }
 
     static tableResults() {
-        return function (results, translations) {
+        const fn = function (results, translations) {
             return Converters._tableResults(results, translations);
         };
+
+        fn.extract = function (results) {
+            const out = {};
+
+            for (const data of Converters._asArray(results)) {
+                const key = data?._id || `${data.range?.[0]}-${data.range?.[1]}`;
+                if (!key) {
+                    continue;
+                }
+
+                out[key] = {
+                    name: data.name,
+                    img: data.img,
+                    range: data.range,
+                    weight: data.weight,
+                    description: data.description,
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static tableResultsCollection() {
-        return function (collection, translations) {
+        const fn = function (collection, translations) {
             if (!translations) {
                 return collection;
             }
@@ -174,6 +281,24 @@ export class Converters {
                 });
             });
         };
+
+        fn.extract = function (collection) {
+            const out = {};
+            const usedKeys = new Set();
+
+            for (const data of Converters._asArray(collection)) {
+                const key = Converters._exportKeyFor(data, usedKeys, "table");
+                out[key] = {
+                    name: data.name,
+                    description: data.description,
+                    results: Converters.tableResults().extract(data.results),
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static _pages(pages, translations) {
@@ -202,15 +327,64 @@ export class Converters {
     }
 
     static pages() {
-        return function (pages, translations) {
+        const fn = function (pages, translations) {
             return Converters._pages(pages, translations);
         };
+
+        fn.extract = function (pages) {
+            const out = {};
+            const usedKeys = new Set();
+
+            for (const data of Converters._asArray(pages)) {
+                const key = Converters._exportKeyFor(data, usedKeys, "page");
+                out[key] = {
+                    name: data.name,
+                    caption: data.image?.caption,
+                    src: data.src,
+                    text: data.text?.content,
+                    width: data.video?.width,
+                    height: data.video?.height,
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static deckCards() {
-        return function (cards, translations) {
+        const fn = function (cards, translations) {
             return Converters._deckCards(cards, translations);
         }
+
+        fn.extract = function (cards) {
+            const out = {};
+            const usedKeys = new Set();
+
+            for (const data of Converters._asArray(cards)) {
+                const key = Converters._exportKeyFor(data, usedKeys, "card");
+                out[key] = {
+                    name: data.name,
+                    description: data.description,
+                    suit: data.suit,
+                    faces: (data.faces ?? []).map(face => ({
+                        img: face.img,
+                        name: face.name,
+                        text: face.text,
+                    })),
+                    back: {
+                        img: data.back?.img,
+                        name: data.back?.name,
+                        text: data.back?.text,
+                    },
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static _deckCards(cards, translations) {
@@ -245,9 +419,26 @@ export class Converters {
     }
 
     static playlistSounds() {
-        return function (sounds, translations) {
+        const fn = function (sounds, translations) {
             return Converters._playlistSounds(sounds, translations);
         }
+
+        fn.extract = function (sounds) {
+            const out = {};
+            const usedKeys = new Set();
+
+            for (const data of Converters._asArray(sounds)) {
+                const key = Converters._exportKeyFor(data, usedKeys, "sound");
+                out[key] = {
+                    name: data.name,
+                    description: data.description,
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static _playlistSounds(sounds, translations) {
@@ -268,9 +459,26 @@ export class Converters {
     }
 
     static sceneRegions() {
-        return function (regions, translations) {
+        const fn = function (regions, translations) {
             return Converters._sceneRegions(regions, translations);
         }
+
+        fn.extract = function (regions) {
+            const out = {};
+            const usedKeys = new Set();
+
+            for (const data of Converters._asArray(regions)) {
+                const key = Converters._exportKeyFor(data, usedKeys, "region");
+                out[key] = {
+                    name: data.name,
+                    behaviors: Converters._extractRegionBehaviors(data.behaviors),
+                };
+            }
+
+            return out;
+        };
+
+        return fn;
     }
 
     static _sceneRegions(regions, translations) {
@@ -301,5 +509,20 @@ export class Converters {
                 translated: true
             });            
         });
+    }
+
+    static _extractRegionBehaviors(behaviors) {
+        const out = {};
+        const usedKeys = new Set();
+
+        for (const data of Converters._asArray(behaviors)) {
+            const key = Converters._exportKeyFor(data, usedKeys, "behavior");
+            out[key] = {
+                name: data.name,
+                text: data.system?.text,
+            };
+        }
+
+        return out;
     }
 }

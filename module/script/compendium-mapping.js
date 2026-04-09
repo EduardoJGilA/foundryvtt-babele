@@ -94,12 +94,19 @@ export class CompendiumMapping {
     /**
      *
      * @param data
+     * @param options
      * @returns {*}
      */
-    extract(data) {
-        return this._getFieldsForType(data.type)
-            .filter(f => !f.isDynamic())
-            .reduce((m, f) => foundry.utils.mergeObject(m, f.extract(data)), {});
+    extract(data, options = {}) {
+        return this._getFieldsForType(data.type).reduce((m, f) => {
+            const extracted = f.extract(data, options);
+
+            if (typeof extracted === "undefined") {
+                return m;
+            }
+
+            return foundry.utils.mergeObject(m, extracted);
+        }, {});
     }
 
     /**

@@ -497,8 +497,8 @@ export class Babel {
      * @param data
      * @returns {*}
      */
-    extract(pack, data) {
-        return this.packs.get(pack)?.extract(data);
+    extract(pack, data, options = {}) {
+        return this.getOrCreateExtractionCompendium(pack)?.extract(data, options);
     }
 
     /**
@@ -510,6 +510,55 @@ export class Babel {
      */
     extractField(pack, field, data) {
         return this.packs.get(pack)?.extractField(field, data);
+    }
+
+    getOrCreateExtractionCompendium(pack) {
+        const existing = this.packs.get(pack);
+        if (existing) {
+            return existing;
+        }
+
+        const sourcePack = game.packs.get(pack);
+        if (!sourcePack) {
+            return null;
+        }
+
+        return new TranslatedCompendium({
+            id: sourcePack.collection,
+            type: sourcePack.metadata.type,
+            packageName: sourcePack.metadata.packageName,
+            packageType: sourcePack.metadata.packageType,
+            name: sourcePack.metadata.name,
+            label: sourcePack.metadata.label,
+        }, null);
+    }
+
+    pruneExportData(value) {
+        if (typeof value === "undefined" || value === null || value === "") {
+            return undefined;
+        }
+
+        if (Array.isArray(value)) {
+            const pruned = value
+                .map(item => this.pruneExportData(item))
+                .filter(item => typeof item !== "undefined");
+
+            return pruned.length ? pruned : undefined;
+        }
+
+        if (typeof value === "object") {
+            const pruned = Object.entries(value).reduce((out, [key, entryValue]) => {
+                const nextValue = this.pruneExportData(entryValue);
+                if (typeof nextValue !== "undefined") {
+                    out[key] = nextValue;
+                }
+                return out;
+            }, {});
+
+            return Object.keys(pruned).length ? pruned : undefined;
+        }
+
+        return value;
     }
 
     /**
@@ -526,18 +575,33 @@ export class Babel {
                     label: pack.metadata.label,
                     entries: conf.format === 'legacy' ? [] : {}
                 };
+                const skippedDynamicFields = [];
 
                 let index = await pack.getIndex();
                 Promise.all(index.map(entry => pack.getDocument(entry._id))).then(entities => {
                     entities.forEach((entity, idx) => {
                         const name = entity.getFlag("babele", "translated") ? entity.getFlag("babele", "originalName") : entity.name;
+                        const extracted = this.pruneExportData(this.extract(pack.collection, entity, {
+                            format: conf.format,
+                            onSkippedDynamicField: info => skippedDynamicFields.push({
+                                entry: name,
+                                ...info,
+                            }),
+                        })) ?? {};
                         if (conf.format === 'legacy') {
-                            let entry = foundry.utils.mergeObject({id: name}, this.extract(pack.collection, entity));
+                            let entry = foundry.utils.mergeObject({id: name}, extracted);
                             file.entries.push(entry);
                         } else {
-                            file.entries[`${name}`] = this.extract(pack.collection, entity);
+                            file.entries[`${name}`] = extracted;
                         }
                     });
+
+                    if (skippedDynamicFields.length) {
+                        console.warn("Babele | skipped dynamic export fields", {
+                            pack: pack.collection,
+                            fields: skippedDynamicFields,
+                        });
+                    }
 
                     let dataStr = JSON.stringify(file, null, '\t');
                     let exportFileDefaultName = pack.collection + '.json';

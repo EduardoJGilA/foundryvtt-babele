@@ -5,6 +5,7 @@ import {CompendiumMapping} from "./compendium-mapping.js";
  */
 export class TranslatedCompendium {
     static #warnedMissingReferences = new Set();
+    static #warnedTranslationFailures = new Set();
 
     constructor(metadata, translations) {
         this.metadata = metadata;
@@ -141,7 +142,13 @@ export class TranslatedCompendium {
             return this.mapping.extractField(field, data);
         }
 
-        return this.mapping.translateField(field, data, this.translationsFor(data));
+        try {
+            const translated = this.mapping.translateField(field, data, this.translationsFor(data));
+            return typeof translated === "undefined" ? this.mapping.extractField(field, data) : translated;
+        } catch (error) {
+            this.#logTranslationFailure(data, error, {field, phase: "translateField"});
+            return this.mapping.extractField(field, data);
+        }
     }
 
     /**
@@ -160,41 +167,52 @@ export class TranslatedCompendium {
             return data;
         }
 
-        let translatedData = this.mapping.map(data, this.translationsFor(data));
+        let translatedData = {};
 
-        if (this.reference) {
-            for (let ref of this.reference) {
-                const referencePack = this.#resolveReferencePack(ref);
-                if (referencePack?.translated && referencePack.hasTranslation(data)) {
-                    let fromReference = referencePack.translate(data, true);
-                    translatedData = foundry.utils.mergeObject(fromReference, translatedData);
+        try {
+            translatedData = this.mapping.map(data, this.translationsFor(data));
+
+            if (this.reference) {
+                for (let ref of this.reference) {
+                    const referencePack = this.#resolveReferencePack(ref);
+                    if (referencePack?.translated && referencePack.hasTranslation(data)) {
+                        let fromReference = referencePack.translate(data, true);
+                        translatedData = foundry.utils.mergeObject(fromReference, translatedData);
+                    }
                 }
             }
+        } catch (error) {
+            this.#logTranslationFailure(data, error, {phase: "translate"});
+            return translationsOnly ? {} : data;
         }
 
         if (translationsOnly) {
             return translatedData;
-        } else {
-            return foundry.utils.mergeObject(
-                data,
-                foundry.utils.mergeObject(
-                    translatedData, {
-                        translated: true,
-                        hasTranslation: this.hasTranslation(data),
-                        originalName: data.name,
-                        flags: {
-                            babele: {
-                                translated: true,
-                                hasTranslation: this.hasTranslation(data),
-                                originalName: data.name
-                            }
-                        }
-                    },
-                    {inplace: false}
-                ),
-                {inplace: false}
-            );
         }
+
+        if (!this.#hasTranslatedData(translatedData)) {
+            return data;
+        }
+
+        return foundry.utils.mergeObject(
+            data,
+            foundry.utils.mergeObject(
+                translatedData, {
+                    translated: true,
+                    hasTranslation: this.hasTranslation(data),
+                    originalName: data.name,
+                    flags: {
+                        babele: {
+                            translated: true,
+                            hasTranslation: this.hasTranslation(data),
+                            originalName: data.name
+                        }
+                    }
+                },
+                {inplace: false}
+            ),
+            {inplace: false}
+        );
     }
 
     #resolveReferencePack(ref) {
@@ -210,5 +228,29 @@ export class TranslatedCompendium {
         }
 
         return null;
+    }
+
+    #hasTranslatedData(translatedData) {
+        return !!translatedData && Object.keys(translatedData).length > 0;
+    }
+
+    #logTranslationFailure(data, error, context = {}) {
+        const pack = this.metadata?.id ?? this.metadata?.name ?? "unknown";
+        const errorMessage = error?.message ?? String(error);
+        const warningKey = `${context.phase ?? "translate"}::${pack}::${context.field ?? "*"}::${data?._id ?? data?.name ?? "unknown"}::${errorMessage}`;
+
+        if (TranslatedCompendium.#warnedTranslationFailures.has(warningKey)) {
+            return;
+        }
+
+        TranslatedCompendium.#warnedTranslationFailures.add(warningKey);
+        console.error(`Babele | translation failed for document in '${pack}'`, {
+            pack,
+            phase: context.phase ?? "translate",
+            field: context.field ?? null,
+            documentId: data?._id ?? null,
+            documentName: data?.name ?? null,
+            error: errorMessage,
+        });
     }
 }

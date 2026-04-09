@@ -6,6 +6,7 @@ import {Babel} from "./babele.js";
  * ex: new FieldMapping("desc", "data.description.value", tc)
  */
 export class FieldMapping {
+    static #warnedConverterFailures = new Set();
 
     constructor(field, mapping, tc) {
         this.field = field;
@@ -13,10 +14,12 @@ export class FieldMapping {
         this.mapping = mapping;
         if (typeof mapping === "object") {
             this.path = mapping["path"];
-            this.converter = game.babele.converters[mapping["converter"]];
+            this.converterName = mapping["converter"];
+            this.converter = game.babele.converters[this.converterName];
             this.dynamic = true;
         } else {
             this.path = mapping;
+            this.converterName = null;
             this.converter = null;
             this.dynamic = false;
         }
@@ -52,7 +55,12 @@ export class FieldMapping {
         if (typeof originalValue === "undefined" || originalValue === null)
             return originalValue;
         if (this.converter) {
-            return this.converter(originalValue, translations[this.field], data, this.tc, translations)
+            try {
+                return this.converter(originalValue, translations[this.field], data, this.tc, translations)
+            } catch (error) {
+                this.#logConverterFailure("translate", data, error);
+                return undefined;
+            }
         } else {
             return translations[this.field];
         }
@@ -104,18 +112,47 @@ export class FieldMapping {
             return undefined;
         }
 
-        const extracted = this.converter.extract(value, data, this.tc, {
-            field: this.field,
-            path: this.path,
-            mapping: this.mapping,
-            options,
-        });
+        let extracted;
+        try {
+            extracted = this.converter.extract(value, data, this.tc, {
+                field: this.field,
+                path: this.path,
+                mapping: this.mapping,
+                options,
+            });
+        } catch (error) {
+            this.#logConverterFailure("extract", data, error);
+            return undefined;
+        }
 
         if (typeof extracted === "undefined") {
             return undefined;
         }
 
         return {[this.field]: extracted};
+    }
+
+    #logConverterFailure(phase, data, error) {
+        const pack = this.tc?.metadata?.id ?? this.tc?.metadata?.name ?? "unknown";
+        const converter = this.converterName ?? "anonymous";
+        const errorMessage = error?.message ?? String(error);
+        const warningKey = `${phase}::${pack}::${this.field}::${converter}::${errorMessage}`;
+
+        if (FieldMapping.#warnedConverterFailures.has(warningKey)) {
+            return;
+        }
+
+        FieldMapping.#warnedConverterFailures.add(warningKey);
+        console.error(`Babele | converter '${converter}' failed during ${phase}`, {
+            pack,
+            field: this.field,
+            path: this.path,
+            converter,
+            phase,
+            documentId: data?._id ?? null,
+            documentName: data?.name ?? null,
+            error: errorMessage,
+        });
     }
 
     /**

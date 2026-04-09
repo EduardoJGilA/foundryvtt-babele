@@ -25,6 +25,7 @@ test("prepare-release-manifest pins manifest and download URLs to the tagged art
       ...process.env,
       BABELE_MANIFEST_PATH: manifestPath,
       RELEASE_TAG: "2.7.8",
+      CI_COMMIT_TAG: "",
       RELEASE_PROJECT_URL: "https://gitlab.com/riccisi/foundryvtt-babele",
       RELEASE_JOB_NAME: "build",
       CI_JOB_NAME: "",

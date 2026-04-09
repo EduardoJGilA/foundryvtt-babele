@@ -3,7 +3,7 @@ import path from "node:path";
 
 const DEFAULT_PROJECT_URL = "https://gitlab.com/riccisi/foundryvtt-babele";
 const manifestPath = path.resolve(process.env.BABELE_MANIFEST_PATH ?? "module/module.json");
-const releaseTag = process.env.CI_COMMIT_TAG ?? process.env.RELEASE_TAG;
+const releaseTag = process.env.RELEASE_TAG ?? process.env.CI_COMMIT_TAG;
 const projectUrl = process.env.CI_PROJECT_URL ?? process.env.RELEASE_PROJECT_URL ?? DEFAULT_PROJECT_URL;
 const jobName = process.env.RELEASE_JOB_NAME ?? process.env.CI_JOB_NAME ?? "build";
 

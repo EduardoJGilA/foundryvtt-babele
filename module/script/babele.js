@@ -22,7 +22,11 @@ Hooks.once('init', () => {
 
 Hooks.once('ready', async () => {
 
-    await game.babele.init();
+    const initialized = await game.babele.init();
+
+    if (!initialized) {
+        return;
+    }
 
     await game.babele.shareTranslationFiles();
     await game.babele.shareGlobalMappingFiles();
@@ -101,6 +105,7 @@ Hooks.on('importAdventure', () => {
 export class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
+    #dataLoaded
 
     static ADVENTURE_EMBEDDED_PACKS = {
         Actor: "actors",
@@ -147,6 +152,7 @@ export class Babel {
         this.translations = null;
         this.systemTranslationsDir = null;
         this.#initialized = null;
+        this.#dataLoaded = false;
         this.registerDefaultConverters();
     }
 
@@ -232,11 +238,28 @@ export class Babel {
         if(this.#initialized !== null)
             return await this.#initialized;
 
-        this.#initialized = new Promise(async (resolve) => {
+        this.#initialized = this.#initialize().catch((error) => {
+            this.#initialized = null;
+            return false;
+        });
+
+        const result = await this.#initialized;
+        if (result && !this.#dataLoaded) {
+            this.#dataLoaded = true;
+            Hooks.callAll('babele.dataLoaded');
+        }
+        return result;
+    }
+
+    async #initialize() {
+        let step = "load translations";
+
+        try {
             if (!this.translations) {
                 this.translations = await this.loadTranslations();
             }
 
+            step = "build translated compendium registry";
             this.packs = new foundry.utils.Collection();
 
             const addTranslations = (metadata) => {
@@ -258,6 +281,7 @@ export class Babel {
             }
 
             // Handle specific files for pack folders
+            step = "load pack folder translations";
             this.folders = game.data.folders;
 
             if (this.folders) {
@@ -268,13 +292,12 @@ export class Babel {
                     addTranslations(this.#getSpecialPacksFoldersMetadata(file.split('/').pop()));
                 }
             }
+        } catch (error) {
+            console.error(`Babele | initialization failed during step: ${step}`, error);
+            throw error;
+        }
 
-            resolve(true)
-        });
-
-        const result = await this.#initialized;
-        Hooks.callAll('babele.dataLoaded');
-        return result;
+        return true;
     }
 
     getCollection(metadata) {

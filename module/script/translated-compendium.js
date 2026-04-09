@@ -4,6 +4,7 @@ import {CompendiumMapping} from "./compendium-mapping.js";
  *
  */
 export class TranslatedCompendium {
+    static #warnedMissingReferences = new Set();
 
     constructor(metadata, translations) {
         this.metadata = metadata;
@@ -93,8 +94,8 @@ export class TranslatedCompendium {
     hasReferenceTranslations(data) {
         if (this.reference) {
             for (let ref of this.reference) {
-                let referencePack = game.babele.packs.get(ref);
-                if (referencePack.translated && referencePack.hasTranslation(data)) {
+                const referencePack = this.#resolveReferencePack(ref);
+                if (referencePack?.translated && referencePack.hasTranslation(data)) {
                     return true;
                 }
             }
@@ -163,8 +164,8 @@ export class TranslatedCompendium {
 
         if (this.reference) {
             for (let ref of this.reference) {
-                let referencePack = game.babele.packs.get(ref);
-                if (referencePack.translated && referencePack.hasTranslation(data)) {
+                const referencePack = this.#resolveReferencePack(ref);
+                if (referencePack?.translated && referencePack.hasTranslation(data)) {
                     let fromReference = referencePack.translate(data, true);
                     translatedData = foundry.utils.mergeObject(fromReference, translatedData);
                 }
@@ -194,5 +195,20 @@ export class TranslatedCompendium {
                 {inplace: false}
             );
         }
+    }
+
+    #resolveReferencePack(ref) {
+        const referencePack = game.babele?.packs?.get(ref);
+        if (referencePack) {
+            return referencePack;
+        }
+
+        const warningKey = `${this.metadata?.id ?? this.metadata?.name ?? "unknown"}::${ref}`;
+        if (!TranslatedCompendium.#warnedMissingReferences.has(warningKey)) {
+            TranslatedCompendium.#warnedMissingReferences.add(warningKey);
+            console.warn(`Babele | invalid reference pack '${ref}' declared for '${this.metadata?.id ?? this.metadata?.name ?? "unknown"}'`);
+        }
+
+        return null;
     }
 }

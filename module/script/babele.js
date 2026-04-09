@@ -191,6 +191,15 @@ export class Babel {
 
     /**
      *
+     * @param name
+     * @param converter
+     */
+    registerConverter(name, converter) {
+        this.registerConverters({[name]: converter});
+    }
+
+    /**
+     *
      * @param converters
      */
     registerConverters(converters) {

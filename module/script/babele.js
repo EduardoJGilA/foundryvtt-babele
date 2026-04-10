@@ -6,6 +6,7 @@ import {TranslatedCompendium} from "./translated-compendium.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
 import {defaultMappings} from "./default-mappings.js"
+import {TranslationRegistry} from "./translation-registry.js";
 
 /****************
  * HOOKS
@@ -106,6 +107,7 @@ export class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
     #dataLoaded
+    #translationRegistry
     static LEGACY_MAPPING_FILENAME = "mapping.json";
     static MAPPING_FILENAME = "mappings.json";
 
@@ -155,6 +157,7 @@ export class Babel {
         this.systemTranslationsDir = null;
         this.#initialized = null;
         this.#dataLoaded = false;
+        this.#translationRegistry = null;
         this.registerDefaultConverters();
     }
 
@@ -296,11 +299,12 @@ export class Babel {
             this.folders = game.data.folders;
 
             if (this.folders) {
-                const files = await this.#getTranslationsFiles();
+                const files = (await this.#registry().translationSources())
+                    .filter((source) => source.baseName.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`));
 
                 // Handle specific files for pack folders
-                for (const file of files.filter((file) => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))) {
-                    addTranslations(this.#getSpecialPacksFoldersMetadata(file.split('/').pop()));
+                for (const file of files) {
+                    addTranslations(this.#getSpecialPacksFoldersMetadata(file.baseName));
                 }
             }
         } catch (error) {
@@ -346,7 +350,13 @@ export class Babel {
      * @returns {Promise<[]>}
      */
     async loadTranslations() {
-        const files = await this.#getTranslationsFiles();
+        const registry = this.#registry();
+        const diagnostics = await registry.diagnostics();
+        this.#logRegistryDiscovery(diagnostics.translation);
+        this.#logRegistryDiscovery(diagnostics.mapping);
+
+        const translationSources = await registry.translationSources();
+        const files = translationSources.map((source) => source.file);
 
         if (files.length === 0) {
             console.log(`Babele | no compendium translation files found for ${game.settings.get('core', 'language')} language.`);
@@ -355,7 +365,6 @@ export class Babel {
         }
 
         const allTranslations = [];
-        const filesByName = this.#groupFilesByBasename(files);
         const loadTranslations = async (collection, urls) => {
             if (urls.length === 0) {
                 console.log(`Babele | no translation file found for ${collection} pack`);
@@ -397,25 +406,25 @@ export class Babel {
 
         const packPromises = game.data.packs
             .filter(metadata => this.supported(metadata))
-            .map(metadata => {
+            .map(async (metadata) => {
                 const collection = this.getCollection(metadata);
-                const collectionFileName = encodeURI(`${collection}.json`);
-                const urls = filesByName.get(collectionFileName) ?? [];
+                const urls = (await registry.sourcesFor(collection)).map((source) => source.file);
                 return loadTranslations(collection, urls);
             });
 
         // Handle specific files for pack folders
-        const folderPromises = files
-            .filter(file => file.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))
-            .map(file => {
-                const fileName = file.split('/').pop();
+        const folderPromises = translationSources
+            .filter((source) => source.baseName.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))
+            .map((source) => {
+                const fileName = source.baseName;
+                const file = source.file;
                 return loadTranslations(fileName.replace('.json', ''), [file]);
             });
 
         await Promise.all([...packPromises, ...folderPromises]);
 
         // Handle global mappings
-        const mappingFiles = await this.#getMappingFiles();
+        const mappingFiles = (await registry.mappingSources()).map((source) => source.file);
 
         if (mappingFiles.length > 0) {
             console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`, mappingFiles);
@@ -697,63 +706,16 @@ export class Babel {
 
     async shareTranslationFiles() {
         if (game.user.isGM) {
-            let files = await game.babele.#getTranslationsFiles();
+            let files = (await game.babele.#registry().translationSources()).map((source) => source.file);
             game.settings.set('babele', 'translationFiles', files);
         }
     }
 
     async shareGlobalMappingFiles() {
         if (game.user.isGM) {
-            let files = await game.babele.#getMappingFiles();
+            let files = (await game.babele.#registry().mappingSources()).map((source) => source.file);
             game.settings.set('babele', 'mappingFiles', files);
         }
-    }
-
-    _files = []
-
-    _mappingFiles = []
-
-    async #getTranslationsFiles() {
-
-        if(this._files.length) {
-            return this._files;
-        }
-
-        if (!Babel.#canIndexFiles) {
-            return game.settings.get('babele', 'translationFiles');
-        }
-
-        const lang = game.settings.get('core', 'language');
-        const directory = game.settings.get('babele', 'directory');
-        const directories = this.#uniqueEntries(this.modules
-            .filter(module => module.lang === lang)
-            .map(module => `modules/${module.module}/${module.dir}`));
-
-        if (directory && directory.trim && directory.trim()) {
-            directories.push(`${directory}/${lang}`);
-        }
-
-        if (this.systemTranslationsDir) {
-            directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}/${lang}`);
-        }
-
-        const uniqueDirectories = this.#uniqueEntries(directories);
-        const results = await Promise.all(
-            uniqueDirectories.map(dir =>
-                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
-                    console.warn('Babele: ' + err);
-                    return { files: [] };
-                })
-            )
-        );
-        const rawFiles = results.flatMap(result => result.files);
-        const files = this.#uniqueEntries(rawFiles);
-
-        this.#logFileDiscovery("translation", uniqueDirectories, results, rawFiles, files);
-
-        this._files = files;
-
-        return files;
     }
 
     #getSpecialPacksFoldersMetadata(file) {
@@ -767,56 +729,6 @@ export class Babel {
         };
     }
 
-    async #getMappingFiles() {
-
-        if(this._mappingFiles.length) {
-            return this._mappingFiles;
-        }
-
-        if (!Babel.#canIndexFiles) {
-            return game.settings.get('babele', 'mappingFiles');
-        }
-
-        const directory = game.settings.get('babele', 'directory');
-        const directories = this.#uniqueEntries(this.modules
-            .map(module => `modules/${module.module}/${module.dir}`));
-
-        if (directory && directory.trim && directory.trim()) {
-            directories.push(`${directory}`);
-        }
-
-        if (this.systemTranslationsDir) {
-            directories.push(`systems/${game.system.id}/${this.systemTranslationsDir}`);
-        }
-
-        const uniqueDirectories = this.#uniqueEntries(directories);
-        const results = await Promise.all(
-            uniqueDirectories.map(dir =>
-                foundry.applications.apps.FilePicker.browse('data', dir).catch(err => {
-                    console.warn('Babele: ' + err);
-                    return { files: [] };
-                })
-            )
-        );
-        const rawFiles = results.flatMap(result => result.files.filter(file => this.#isMappingFile(file)));
-        const files = this.#normalizeMappingFiles(rawFiles);
-
-        this.#logFileDiscovery("mapping", uniqueDirectories, results, rawFiles, files);
-
-        this._mappingFiles = files;
-
-        return files;
-    }
-
-    #logFileDiscovery(kind, directories, results, rawFiles, uniqueFiles) {
-        console.log(`Babele | discovered ${uniqueFiles.length} unique ${kind} file(s) across ${directories.length} directorie(s)`, {
-            directories: directories.map((dir, index) => ({
-                dir,
-                files: results[index]?.files?.length ?? 0,
-            })),
-            duplicatesDiscarded: rawFiles.length - uniqueFiles.length,
-        });
-    }
 
     async #loadJsonFile(file, context = {}) {
         try {
@@ -856,62 +768,22 @@ export class Babel {
         console.error(`Babele | failed to load ${context.kind ?? "JSON"} file '${file}'`, details);
     }
 
-    #groupFilesByBasename(files) {
-        return files.reduce((acc, file) => {
-            const name = this.#basename(file);
-            const urls = acc.get(name) ?? [];
-            urls.push(file);
-            acc.set(name, urls);
-            return acc;
-        }, new Map());
+    #logRegistryDiscovery(diagnostics) {
+        console.log(
+            `Babele | discovered ${diagnostics.uniqueFiles.length} unique ${diagnostics.kind} file(s) across ${diagnostics.directories.length} directorie(s)`,
+            {
+                directories: diagnostics.browseResults ?? [],
+                duplicatesDiscarded: diagnostics.duplicateFilesDiscarded,
+            },
+        );
     }
 
-    #basename(file) {
-        return file.split('/').pop().split('\\').pop();
-    }
-
-    #uniqueEntries(entries) {
-        return [...new Set(entries)];
-    }
-
-    #isMappingFile(file) {
-        return file.endsWith(`/${Babel.MAPPING_FILENAME}`) || file.endsWith(`/${Babel.LEGACY_MAPPING_FILENAME}`);
-    }
-
-    #normalizeMappingFiles(files) {
-        const byDirectory = new Map();
-
-        for (const file of this.#uniqueEntries(files)) {
-            const directory = file.slice(0, file.length - this.#basename(file).length);
-            const entry = byDirectory.get(directory) ?? {};
-            const baseName = this.#basename(file);
-
-            if (baseName === Babel.MAPPING_FILENAME) {
-                entry.canonical = file;
-            } else if (baseName === Babel.LEGACY_MAPPING_FILENAME) {
-                entry.legacy = file;
-            }
-
-            byDirectory.set(directory, entry);
+    #registry() {
+        if (!this.#translationRegistry) {
+            this.#translationRegistry = new TranslationRegistry(this.modules);
         }
 
-        const normalized = [];
-        for (const [directory, entry] of byDirectory.entries()) {
-            if (entry.canonical) {
-                if (entry.legacy) {
-                    console.warn(`Babele | both '${Babel.MAPPING_FILENAME}' and deprecated '${Babel.LEGACY_MAPPING_FILENAME}' found in '${directory}'. Using '${Babel.MAPPING_FILENAME}'.`);
-                }
-                normalized.push(entry.canonical);
-                continue;
-            }
-
-            if (entry.legacy) {
-                console.warn(`Babele | deprecated mapping filename '${Babel.LEGACY_MAPPING_FILENAME}' found in '${directory}'. Please rename it to '${Babel.MAPPING_FILENAME}'.`);
-                normalized.push(entry.legacy);
-            }
-        }
-
-        return normalized;
+        return this.#translationRegistry;
     }
 
     /**

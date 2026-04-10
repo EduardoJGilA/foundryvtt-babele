@@ -18,6 +18,7 @@ console.error = (...args) => errorCalls.push(args);
 
 const {Babel} = await import("../module/script/babele.js");
 const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
+const {ExportTranslationsDialog} = await import("../module/script/export-translations-dialog.js");
 
 test.beforeEach(() => {
   logCalls.length = 0;
@@ -348,6 +349,96 @@ test("Babel.translatePackFolders uses the compendium translation folders payload
 
   assert.equal(pack.folders.get("folder-a").name, "Equipaggiamento");
   assert.equal(pack.folders.get("folder-b").name, "Treasure");
+});
+
+test("Babel.exportTranslationsFile includes compendium folders using original names", async () => {
+  const babele = new Babel();
+  const originalDialogCreate = ExportTranslationsDialog.create;
+  const originalZip = globalThis.JSZip;
+  const originalSaveAs = globalThis.saveAs;
+  let savedContent = null;
+  let savedName = null;
+  let zipInstance = null;
+
+  try {
+    ExportTranslationsDialog.create = async () => ({format: "weblate"});
+    globalThis.JSZip = class {
+      constructor() {
+        this.files = {};
+        zipInstance = this;
+      }
+
+      file(name, data) {
+        this.files[name] = data;
+      }
+
+      async generateAsync() {
+        return this.files;
+      }
+    };
+    globalThis.saveAs = (content, name) => {
+      savedContent = content;
+      savedName = name;
+    };
+
+    const pack = {
+      collection: "test.items",
+      metadata: {
+        id: "test.items",
+        label: "Items",
+      },
+      folders: new foundry.utils.Collection([
+        ["folder-a", {name: "Equipment"}],
+      ]),
+      async getIndex() {
+        return [{_id: "item-1"}];
+      },
+      async getDocument() {
+        return {
+          name: "Sword",
+          getFlag() {
+            return null;
+          },
+        };
+      },
+    };
+
+    babele.extract = () => ({
+      name: "Sword",
+    });
+    babele.packs = new foundry.utils.Collection([[
+      "test.items",
+      {
+        folders: {
+          Equipment: "Equipaggiamento",
+        },
+      },
+    ]]);
+    babele.translatePackFolders(pack);
+
+    babele.exportTranslationsFile(pack);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const exported = JSON.parse(zipInstance.files["test.items.json"]);
+
+    assert.equal(pack.folders.get("folder-a").name, "Equipaggiamento");
+    assert.equal(pack.folders.get("folder-a").originalName, "Equipment");
+    assert.deepEqual(exported.folders, {
+      Equipment: "Equipment",
+    });
+    assert.deepEqual(exported.entries, {
+      Sword: {
+        name: "Sword",
+      },
+    });
+    assert.equal(savedName, "test.items.zip");
+    assert.equal(savedContent, zipInstance.files);
+  } finally {
+    ExportTranslationsDialog.create = originalDialogCreate;
+    globalThis.JSZip = originalZip;
+    globalThis.saveAs = originalSaveAs;
+  }
 });
 
 test.after(() => {

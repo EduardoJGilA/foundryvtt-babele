@@ -628,6 +628,22 @@ export class Babel {
         return value;
     }
 
+    folderTranslationsForExport(pack) {
+        if (!pack?.folders?.size) {
+            return undefined;
+        }
+
+        const folders = {};
+        pack.folders.forEach((folder) => {
+            const name = folder?.originalName ?? folder?.name;
+            if (name) {
+                folders[name] = name;
+            }
+        });
+
+        return Object.keys(folders).length ? folders : undefined;
+    }
+
     /**
      *
      * @param pack
@@ -637,9 +653,10 @@ export class Babel {
         ExportTranslationsDialog.create(pack).then(async conf => {
 
             if (conf) {
-
+                const folders = this.folderTranslationsForExport(pack);
                 let file = {
                     label: pack.metadata.label,
+                    ...(folders ? {folders} : {}),
                     entries: conf.format === 'legacy' ? [] : {}
                 };
                 const skippedDynamicFields = [];
@@ -700,7 +717,15 @@ export class Babel {
 
         const tcFolders = this.packs.get(pack.metadata.id)?.folders ?? [];
 
-        pack.folders.forEach((folder) => folder.name = tcFolders[folder.name] ?? folder.name);
+        pack.folders.forEach((folder) => {
+            const originalName = folder.originalName ?? folder.name;
+            const translatedName = tcFolders[originalName];
+
+            if (translatedName) {
+                folder.originalName = originalName;
+                folder.name = translatedName;
+            }
+        });
     }
 
     translateSystemPackFolders() {

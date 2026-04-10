@@ -47,6 +47,80 @@ test("invalid reference packs do not throw and warn only once per target", () =>
   assert.match(String(warnings[0][0]), /invalid reference pack 'missing\.pack'/);
 });
 
+test("TranslatedCompendium resolves entries with _id, then name, then sourceId precedence", () => {
+  const tc = new TranslatedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "doc-1": {name: "By Id"},
+      "Longsword": {name: "By Name"},
+      "source-1": {name: "By Source"},
+    },
+  });
+
+  assert.equal(tc.translationKeyFor({
+    _id: "doc-1",
+    name: "Longsword",
+    flags: {core: {sourceId: "Compendium.test.items.source-1"}},
+  }), "doc-1");
+
+  assert.equal(tc.translationKeyFor({
+    _id: "missing-id",
+    name: "Longsword",
+    flags: {core: {sourceId: "Compendium.test.items.source-1"}},
+  }), "Longsword");
+
+  assert.equal(tc.translationKeyFor({
+    _id: "missing-id",
+    name: "Missing Name",
+    _stats: {compendiumSource: "Compendium.test.items.source-1"},
+  }), "source-1");
+});
+
+test("TranslatedCompendium translationsFor returns an empty object when no entry matches", () => {
+  const tc = new TranslatedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "doc-1": {name: "By Id"},
+    },
+  });
+
+  assert.deepEqual(tc.translationsFor({
+    _id: "missing-id",
+    name: "Missing Name",
+  }), {});
+});
+
+test("TranslatedCompendium hasTranslation rejects mismatched top-level document types", () => {
+  const tc = new TranslatedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "shared-id": {name: "Translated"},
+    },
+  });
+
+  assert.equal(tc.hasTranslation({_id: "shared-id", name: "Shared"}, "Item"), true);
+  assert.equal(tc.hasTranslation({_id: "shared-id", name: "Shared"}, "Actor"), false);
+});
+
+test("TranslatedCompendium hasTranslation is always false when the pack is not translated", () => {
+  const tc = new TranslatedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, null);
+
+  assert.equal(tc.hasTranslation({_id: "shared-id", name: "Shared"}, "Item"), false);
+});
+
 test("converter failures do not throw and leave the original document untouched when nothing else translates", () => {
   game.babele.converters.explode = () => {
     throw new Error("converter boom");

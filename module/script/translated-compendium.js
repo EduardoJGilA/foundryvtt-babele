@@ -1,15 +1,26 @@
 import {CompendiumMapping} from "./compendium-mapping.js";
+import {TranslationResolver} from "./translation-resolver.js";
 
 /**
+ * Runtime representation of a translated compendium pack.
  *
+ * A translated compendium couples pack metadata, the effective field mapping,
+ * and the translation entry set used to translate or extract compendium
+ * Documents. It may also delegate missing matches to reference packs.
  */
 export class TranslatedCompendium {
+
     static #warnedMissingReferences = new Set();
     static #warnedTranslationFailures = new Set();
 
+    /**
+     * @param {object} metadata Foundry pack metadata or equivalent virtual-pack metadata.
+     * @param {object|null} translations Loaded Babele translation payload for the pack.
+     */
     constructor(metadata, translations) {
         this.metadata = metadata;
         this.translations = [];
+        this.translated = false;
         this.customMapping = translations?.mapping ?? null;
         this.mapping = new CompendiumMapping(metadata.type, translations ? translations.mapping : null, this);
         if (translations) {
@@ -41,28 +52,46 @@ export class TranslatedCompendium {
                 this.types = translations.types;
             }
         }
+
+        this.resolver = new TranslationResolver(this.translations);
     }
 
     /**
+     * Determine whether this translated compendium can provide a translation for
+     * the given document. This is narrower than the `translated` pack state:
+     * a pack may be marked as translated and still have no matching entry for a
+     * specific document.
+     *
      *
      * @param data
+     * @param {string|null} [documentType]
      * @returns {boolean|*|{translated}}
      */
-    hasTranslation(data) {
+    hasTranslation(data, documentType = this.metadata?.type ?? null) {
+        if (!this.translated) {
+            return false;
+        }
+
+        if (documentType && this.metadata?.type && this.metadata.type !== documentType) {
+            return false;
+        }
+
         if(this.types && !this.types.includes(data.type)) {
             return false;
         }
-        return !!this.translationKeyFor(data) || this.hasReferenceTranslations(data);
+        return this.resolver.hasTranslationFor(data) || this.hasReferenceTranslations(data);
     }
 
     /**
+     * Return the raw translation entry matched for a document, or an empty object
+     * when no entry exists.
+     *
      *
      * @param data
-     * @returns {*|{}}
+     * @returns {object}
      */
     translationsFor(data) {
-        const key = this.translationKeyFor(data);
-        return key ? this.translations[key] : {}
+        return this.resolver.translationFor(data) ?? {}
     }
 
     /**
@@ -72,31 +101,22 @@ export class TranslatedCompendium {
      * @returns {string|null}
      */
     translationKeyFor(data) {
-        /**
-         * The compendium item id. Using both the core sourceId and the _stats compendiumSource to support prior v13
-         * @type {string | undefined}
-         */
-        const itemId = foundry.utils.parseUuid(data.flags?.core?.sourceId || data._stats?.compendiumSource)?.id;
-
-        for (const key of [data._id, data.name, itemId]) {
-            if (key && this.translations[key]) {
-                return key;
-            }
-        }
-
-        return null;
+        return this.resolver.resolutionFor(data).key;
     }
 
     /**
+     * Determine whether a referenced translated pack can translate the same
+     * document when this pack has no direct entry.
+     *
      *
      * @param data
-     * @returns {boolean|boolean|*|{translated}}
+     * @returns {boolean}
      */
     hasReferenceTranslations(data) {
         if (this.reference) {
             for (let ref of this.reference) {
                 const referencePack = this.#resolveReferencePack(ref);
-                if (referencePack?.translated && referencePack.hasTranslation(data)) {
+                if (referencePack?.hasTranslation(data)) {
                     return true;
                 }
             }
@@ -109,6 +129,7 @@ export class TranslatedCompendium {
      *
      * @see CompendiumMapping.extract()
      * @param data
+     * @param {object} [options]
      * @returns {*}
      */
     extract(data, options = {}) {
@@ -119,6 +140,7 @@ export class TranslatedCompendium {
      * Delegate extractField to the compendium mapping relative method.
      *
      * @see CompendiumMapping.extractField()
+     * @param {string} field
      * @param data
      * @returns {*}
      */
@@ -128,8 +150,11 @@ export class TranslatedCompendium {
 
 
     /**
+     * Translate a single mapped field for a document, falling back to the
+     * original extracted field value on missing translations or converter
+     * failures.
      *
-     * @param field
+     * @param {string} field
      * @param data
      * @returns {*}
      */
@@ -152,9 +177,14 @@ export class TranslatedCompendium {
     }
 
     /**
+     * Translate a document using this compendium mapping and translation entries.
+     *
+     * When `translationsOnly` is truthy, the method returns only the translated
+     * payload without merging it into the original document shape.
+     *
      *
      * @param data
-     * @param translationsOnly
+     * @param {boolean} [translationsOnly]
      * @returns {{translated}|*}
      */
     translate(data, translationsOnly) {
@@ -175,7 +205,7 @@ export class TranslatedCompendium {
             if (this.reference) {
                 for (let ref of this.reference) {
                     const referencePack = this.#resolveReferencePack(ref);
-                    if (referencePack?.translated && referencePack.hasTranslation(data)) {
+                    if (referencePack?.hasTranslation(data)) {
                         let fromReference = referencePack.translate(data, true);
                         translatedData = foundry.utils.mergeObject(fromReference, translatedData);
                     }

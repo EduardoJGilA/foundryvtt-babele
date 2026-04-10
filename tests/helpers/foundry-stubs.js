@@ -105,6 +105,18 @@ export function installFoundryStubs() {
       converters: {},
       packs: new TestCollection(),
       translations: [],
+      translatedPackFor(documentType, data, options = {}) {
+        const {
+          includeVirtual = false,
+          registry = this.packs,
+        } = options;
+
+        const matches = (pack) =>
+          (!!includeVirtual || !pack.metadata?.virtual)
+          && pack.hasTranslation(data, documentType);
+
+        return registry?.find(matches) ?? null;
+      },
       getCollection(metadata) {
         const prefix = metadata.packageType === "world" ? "world" : metadata.packageName;
         return `${prefix}.${metadata.name}`;

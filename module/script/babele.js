@@ -343,6 +343,19 @@ export class Babel {
         return this.packs.get(Babel.getAdventureVirtualCollection(parentCollection, entryKey, mappingKey)) ?? null;
     }
 
+    translatedPackFor(documentType, data, options = {}) {
+        const {
+            includeVirtual = false,
+            registry = this.packs,
+        } = options;
+
+        const matches = (pack) =>
+            (!!includeVirtual || !pack.metadata?.virtual)
+            && pack.hasTranslation(data, documentType);
+
+        return registry?.find(matches) ?? null;
+    }
+
     /**
      * Find and download the translation files for each compendium present on the world.
      * Verify the effective presence of each file using the FilePicker API.
@@ -699,7 +712,7 @@ export class Babel {
 
         this.packs
             .filter((pack) => pack.metadata.name === Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX)
-            .forEach((pack) => Object.assign(translations, pack.translations));
+            .forEach((pack) => Object.assign(translations, pack.translations ?? {}, pack.folders ?? {}));
 
         game.collections.get('Folder').forEach((folder) => folder.name = translations[folder.name] ?? folder.name);
     }

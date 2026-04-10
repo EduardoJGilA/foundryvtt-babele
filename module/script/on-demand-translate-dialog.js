@@ -3,6 +3,13 @@
  */
 export class OnDemandTranslateDialog extends Dialog {
 
+    static translatedPackFor(documentType, data, translatedPacks) {
+        return game.babele.translatedPackFor(documentType, data, {
+            includeVirtual: true,
+            registry: translatedPacks,
+        });
+    }
+
     constructor(actor) {
         super({
             title: game.i18n.localize("BABELE.TranslateActorTitle"),
@@ -26,7 +33,7 @@ export class OnDemandTranslateDialog extends Dialog {
                             let item = actor.items.contents[idx];
                             let data = item.toObject();
 
-                            let pack = translatedPacks.find(pack => pack.hasTranslation(data));
+                            let pack = OnDemandTranslateDialog.translatedPackFor("Item", data, translatedPacks);
                             if (pack) {
                                 let translatedData = pack.translate(data, true);
                                 updates.push(foundry.utils.mergeObject(translatedData, {_id: item.id}));

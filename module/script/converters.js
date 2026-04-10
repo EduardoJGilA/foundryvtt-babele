@@ -1,5 +1,6 @@
 import {CompendiumMapping} from "./compendium-mapping.js";
 import {TranslatedCompendium} from "./translated-compendium.js";
+import {TranslationResolver} from "./translation-resolver.js";
 
 const embeddedMappingKeys = {
     Actor: "actors",
@@ -57,6 +58,31 @@ export class Converters {
             out[key] = dynamicMapping.extract(entity, options);
             return out;
         }, {});
+    }
+
+    static _translationMap(translations) {
+        if (!translations) {
+            return {};
+        }
+
+        if (!Array.isArray(translations)) {
+            return translations;
+        }
+
+        return translations.reduce((out, translation) => {
+            if (translation?.id) {
+                out[translation.id] = translation;
+            }
+            return out;
+        }, {});
+    }
+
+    static _resolvedTranslation(data, translations) {
+        if (!translations) {
+            return null;
+        }
+
+        return new TranslationResolver(Converters._translationMap(translations)).translationFor(data);
     }
 
     /**
@@ -137,13 +163,7 @@ export class Converters {
     static _fromPack(entities, translations, dynamicMapping, priorityPack = null) {
         return entities.map((data) => {
             if (translations) {
-                let translation;
-
-                if (Array.isArray(translations)) {
-                    translation = translations.find(t => t.id === data._id || t.id === data.name);
-                } else {
-                    translation = translations[data._id] || translations[data.name];
-                }
+                const translation = Converters._resolvedTranslation(data, translations);
 
                 if (translation) {
                     const translatedData = dynamicMapping.map(data, translation);
@@ -152,9 +172,10 @@ export class Converters {
                 }
             }
 
-            const pack = priorityPack?.translated && priorityPack.hasTranslation(data)
+            const entityType = dynamicMapping?.entityType ?? null;
+            const pack = priorityPack?.hasTranslation(data, entityType)
                 ? priorityPack
-                : game.babele.packs.find(pack => !pack.metadata?.virtual && pack.translated && pack.hasTranslation(data));
+                : game.babele.translatedPackFor(entityType, data);
 
             return pack ? pack.translate(data) : data;
         });
@@ -307,7 +328,7 @@ export class Converters {
                 return data;
             }
 
-            const translation = translations[data._id] || translations[data.name];
+            const translation = Converters._resolvedTranslation(data, translations);
             if (!translation) {
                 return data;
             }
@@ -485,7 +506,7 @@ export class Converters {
         if (!translations) return regions;
 
         return regions.map(data => {
-            const translation = translations[data._id] || translations[data.name];
+            const translation = Converters._resolvedTranslation(data, translations);
             if (!translation) return data;
 
             return foundry.utils.mergeObject(data, {
@@ -500,7 +521,7 @@ export class Converters {
         if (!translations) return behaviors;
 
         return behaviors.map(data => {
-            const translation = translations[data._id] || translations[data.name];
+            const translation = Converters._resolvedTranslation(data, translations);
             if (!translation) return data;
 
             return foundry.utils.mergeObject(data, {

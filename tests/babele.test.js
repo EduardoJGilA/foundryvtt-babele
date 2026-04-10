@@ -292,6 +292,64 @@ test("Babel.translate fails open for translated packs when a converter throws", 
   }
 });
 
+test("Babel.translateSystemPackFolders uses special _packs-folders translations from pack folders payload", () => {
+  const babele = new Babel();
+  const worldFolders = [
+    {name: "Bestiary"},
+    {name: "Rules"},
+  ];
+
+  babele.packs = new foundry.utils.Collection([[
+    "test-system._packs-folders",
+    {
+      metadata: {
+        name: "_packs-folders",
+      },
+      translations: {
+        Bestiary: "Bestiario",
+      },
+      folders: {
+        Rules: "Regole",
+      },
+    },
+  ]]);
+
+  game.data.folders = worldFolders;
+  game.collections.set("Folder", worldFolders);
+
+  babele.translateSystemPackFolders();
+
+  assert.equal(worldFolders[0].name, "Bestiario");
+  assert.equal(worldFolders[1].name, "Regole");
+});
+
+test("Babel.translatePackFolders uses the compendium translation folders payload", () => {
+  const babele = new Babel();
+  const pack = {
+    metadata: {
+      id: "test.items",
+    },
+    folders: new foundry.utils.Collection([
+      ["folder-a", {name: "Equipment"}],
+      ["folder-b", {name: "Treasure"}],
+    ]),
+  };
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      folders: {
+        Equipment: "Equipaggiamento",
+      },
+    },
+  ]]);
+
+  babele.translatePackFolders(pack);
+
+  assert.equal(pack.folders.get("folder-a").name, "Equipaggiamento");
+  assert.equal(pack.folders.get("folder-b").name, "Treasure");
+});
+
 test.after(() => {
   console.log = originalLog;
   console.warn = originalWarn;

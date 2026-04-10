@@ -180,3 +180,150 @@ test("adventure embedded extraction uses entry-specific translated compendium co
     },
   });
 });
+
+test("fromPack uses TranslationResolver fallback order for sourceId-based matches", () => {
+  const items = [
+    {
+      _id: "item-1",
+      name: "Original Sword",
+      flags: {
+        core: {
+          sourceId: "Compendium.test.items.shared-source",
+        },
+      },
+      system: {
+        description: {
+          value: "Original description",
+        },
+      },
+    },
+  ];
+
+  const translations = {
+    "shared-source": {
+      name: "Translated Sword",
+      description: "Translated description",
+    },
+  };
+
+  const translated = Converters._fromPack(
+    items,
+    translations,
+    {
+      map(data, translation) {
+        return {
+          name: translation.name,
+          system: {
+            description: {
+              value: translation.description,
+            },
+          },
+        };
+      },
+    },
+  );
+
+  assert.equal(translated[0].name, "Translated Sword");
+  assert.equal(translated[0].system.description.value, "Translated description");
+  assert.equal(translated[0].translated, true);
+});
+
+test("pages converter uses TranslationResolver fallback order", () => {
+  const pages = [
+    {
+      _id: "page-1",
+      name: "Original Page",
+      _stats: {
+        compendiumSource: "Compendium.test.journal.page-source",
+      },
+      image: {
+        caption: "Original caption",
+      },
+      src: "original.png",
+      text: {
+        content: "<p>Original</p>",
+      },
+      video: {
+        width: 640,
+        height: 480,
+      },
+    },
+  ];
+
+  const translated = Converters.pages()(pages, {
+    "page-source": {
+      name: "Translated Page",
+      caption: "Translated caption",
+      src: "translated.png",
+      text: "<p>Translated</p>",
+      width: 800,
+      height: 600,
+    },
+  });
+
+  assert.equal(translated[0].name, "Translated Page");
+  assert.equal(translated[0].image.caption, "Translated caption");
+  assert.equal(translated[0].src, "translated.png");
+  assert.equal(translated[0].text.content, "<p>Translated</p>");
+  assert.equal(translated[0].video.width, 800);
+  assert.equal(translated[0].video.height, 600);
+});
+
+test("fromPack fallback only uses translated packs with the same document type", () => {
+  const item = {
+    _id: "shared-id",
+    name: "Shared Name",
+    system: {
+      description: {
+        value: "Original description",
+      },
+    },
+  };
+
+  const actorPack = {
+    translated: true,
+    metadata: {
+      type: "Actor",
+      virtual: false,
+    },
+    hasTranslation(data, documentType) {
+      return documentType === this.metadata.type && data._id === "shared-id";
+    },
+    translate() {
+      return {
+        name: "Wrong Actor Translation",
+        translated: true,
+      };
+    },
+  };
+
+  const itemPack = {
+    translated: true,
+    metadata: {
+      type: "Item",
+      virtual: false,
+    },
+    hasTranslation(data, documentType) {
+      return documentType === this.metadata.type && data._id === "shared-id";
+    },
+    translate(data) {
+      return {
+        ...data,
+        name: "Correct Item Translation",
+        translated: true,
+      };
+    },
+  };
+
+  game.babele.packs = [actorPack, itemPack];
+
+  const translated = Converters._fromPack(
+    [item],
+    null,
+    {
+      entityType: "Item",
+    },
+  );
+
+  assert.equal(translated[0].name, "Correct Item Translation");
+});

@@ -1,5 +1,5 @@
-import {CompendiumMapping} from "./compendium-mapping.js";
-import {TranslatedCompendium} from "./translated-compendium.js";
+import {DocumentMapping} from "./document-mapping.js";
+import {MappedCompendium} from "./mapped-compendium.js";
 import {TranslationResolver} from "./translation-resolver.js";
 
 const embeddedMappingKeys = {
@@ -88,24 +88,24 @@ export class Converters {
     /**
      *
      * @param mapping
-     * @param entityType
+     * @param documentType
      * @returns {function(*, *=): *}
      */
-    static fromPack(mapping, entityType = 'Item') {
+    static fromPack(mapping, documentType = 'Item') {
         const fn = function (items, translations, data, tc) {
-            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[entityType]);
+            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[documentType]);
             if (!contextPack) {
-                const dynamicMapping = new CompendiumMapping(entityType, mapping);
+                const dynamicMapping = new DocumentMapping(documentType, mapping);
                 return Converters._fromPack(items, translations, dynamicMapping);
             }
 
-            const dynamicMapping = new CompendiumMapping(entityType, mapping, contextPack);
+            const dynamicMapping = new DocumentMapping(documentType, mapping, contextPack);
             return Converters._fromPack(items, translations, dynamicMapping, contextPack);
         };
 
         fn.extract = function (items, data, tc, context) {
-            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[entityType]);
-            const dynamicMapping = new CompendiumMapping(entityType, mapping, contextPack ?? tc);
+            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[documentType]);
+            const dynamicMapping = new DocumentMapping(documentType, mapping, contextPack ?? tc);
 
             return Converters._extractEmbeddedCollection(items, dynamicMapping, context.options);
         };
@@ -113,7 +113,7 @@ export class Converters {
         return fn;
     }
 
-    static fromDefaultMapping(entityType, mappingKey) {
+    static fromDefaultMapping(documentType, mappingKey) {
         const fn = function (entities, translations, data, tc) {
             const collection = game.babele.getCollection(tc.metadata);
             const babeleTranslations = game.babele.translations.find((item) => item.collection === collection);
@@ -121,16 +121,16 @@ export class Converters {
                 ? babeleTranslations?.mapping[mappingKey] ?? {}
                 : {};
             const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
-                ?? new TranslatedCompendium({
-                    type: entityType,
+                ?? new MappedCompendium({
+                    type: documentType,
                     adventureCollection: collection,
                     adventureEntryKey: tc.translationKeyFor(data),
                 }, {
                     mapping: customMapping,
                     entries: translations ?? {},
                 });
-            const dynamicMapping = new CompendiumMapping(
-                entityType,
+            const dynamicMapping = new DocumentMapping(
+                documentType,
                 customMapping,
                 contextPack
             );
@@ -142,8 +142,8 @@ export class Converters {
             const collection = game.babele.getCollection(tc.metadata);
             const customMapping = tc.customMapping?.[mappingKey] ?? {};
             const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
-                ?? new TranslatedCompendium({
-                    type: entityType,
+                ?? new MappedCompendium({
+                    type: documentType,
                     packageName: tc.metadata.packageName,
                     packageType: tc.metadata.packageType,
                     adventureCollection: collection,
@@ -152,7 +152,7 @@ export class Converters {
                     mapping: customMapping,
                     entries: {},
                 });
-            const dynamicMapping = new CompendiumMapping(entityType, customMapping, contextPack);
+            const dynamicMapping = new DocumentMapping(documentType, customMapping, contextPack);
 
             return Converters._extractEmbeddedCollection(entities, dynamicMapping, context.options);
         };
@@ -172,10 +172,10 @@ export class Converters {
                 }
             }
 
-            const entityType = dynamicMapping?.entityType ?? null;
-            const pack = priorityPack?.hasTranslation(data, entityType)
+            const documentType = dynamicMapping?.documentType ?? null;
+            const pack = priorityPack?.hasTranslation(data, documentType)
                 ? priorityPack
-                : game.babele.translatedPackFor(entityType, data);
+                : game.babele.translatedPackFor(documentType, data);
 
             return pack ? pack.translate(data) : data;
         });

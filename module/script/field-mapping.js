@@ -1,4 +1,4 @@
-import {Babel} from "./babele.js";
+import Babel from "./babele.js";
 
 /**
  * Class to map, translate or extract value for a single field defined by a mapping.

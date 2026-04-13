@@ -321,7 +321,7 @@ test("fromPack fallback only uses translated packs with the same document type",
     [item],
     null,
     {
-      entityType: "Item",
+      documentType: "Item",
     },
   );
 

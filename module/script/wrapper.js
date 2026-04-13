@@ -1,4 +1,3 @@
-
 /**
  * Since foundry 0.8.+, translations are directly applied replacing the default ClientDatabaseBackend _getDocuments implementation
  * with a code that merge the incoming data with the mapped translations using LibWrapper.
@@ -11,43 +10,116 @@ export function initWrapper() {
 
     libWrapper.register('babele', 'CONFIG.DatabaseBackend._getDocuments', async function (wrapped, ...args) {
         const result = await wrapped(...args);
-        if(!game.babele) {
-            return result;
-        }
-
-        if(!await game.babele.init()) {
-            return result;
-        };
-
-        const documentClass = args[0], query = args[1].query, options = args[1].options, index = args[1].index, pack = args[1].pack, user = args[2];
-        if(!pack || !result || !game.babele.isTranslated(pack)) {
-            return result;
-        }
-
-        if(index ?? options?.index) {
-            return game.babele.translateIndex(result, pack);
-        } else {
-            return result.map(data => {
-                return new documentClass(game.babele.translate(pack, data.toObject()), {pack});
-            });
-        }
+        return await translateResult(result, contextFromArgs(args));
     }, 'WRAPPER');
 
     /**
      * Necessary to solve a problem caused by the replacement of the index, even if already present, after reading the document.
      */
     libWrapper.register('babele', 'foundry.documents.collections.CompendiumCollection.prototype.indexDocument', function (wrapped, ...args) {
-        const document = args[0]
-        const id = document.id;
-        const idx = this.index.get(id);
-        // needed to fix pack index that is generated from links in chat
-        const flag = document.flags?.babele ?? {};
-        wrapped(...args);
-        this.index.set(id, foundry.utils.mergeObject(
-            this.index.get(id), 
-            {
-                ...idx, 
-                ...flag
-            }));
+        return preserveIndexFlags(this, wrapped, args);
     }, 'WRAPPER');
+}
+
+export function contextFromArgs(args = []) {
+    const [documentClass, request = {}] = args;
+    return {
+        documentClass: typeof documentClass === "function" ? documentClass : null,
+        request,
+        pack: request?.pack ?? null,
+        index: !!(request?.index ?? request?.options?.index),
+    };
+}
+
+export async function translateResult(result, context = {}, babele = game?.babele ?? null) {
+    if (!babele || !Array.isArray(result) || result.length === 0) {
+        return result;
+    }
+
+    if (!await babele.init()) {
+        return result;
+    }
+
+    const {
+        documentClass = null,
+        pack = null,
+        index = false,
+    } = context;
+
+    if (!pack) {
+        return result;
+    }
+
+    const compendium = babele.translatedCompendiumFor(pack);
+    if (!compendium) {
+        return result;
+    }
+
+    if (index) {
+        return compendium.translateIndex(result);
+    }
+
+    return result.map((document) => translateDocument(document, documentClass, pack, compendium));
+}
+
+export function preserveIndexFlags(collection, wrapped, args = []) {
+    const [document] = args;
+    const id = document?.id;
+    const idx = id ? collection.index.get(id) : null;
+    const flag = document?.flags?.babele ?? {};
+
+    const result = wrapped(...args);
+
+    if (id) {
+        collection.index.set(id, foundry.utils.mergeObject(
+            collection.index.get(id),
+            {
+                ...idx,
+                ...flag
+            }
+        ));
+    }
+
+    return result;
+}
+
+function translateDocument(document, documentClass, pack, compendium) {
+    const source = documentSource(document);
+    if (!source) {
+        return document;
+    }
+
+    try {
+        const translated = compendium.translate(source);
+
+        if (!documentClass) {
+            return translated;
+        }
+
+        return new documentClass(translated, {pack});
+    } catch (error) {
+        console.error(`Babele | failed to translate loaded compendium document from '${pack}'`, {
+            pack,
+            documentId: source?._id ?? null,
+            documentName: source?.name ?? null,
+            error: error?.message ?? String(error),
+        });
+        return document;
+    }
+}
+
+function documentSource(document) {
+    if (!document) {
+        return null;
+    }
+
+    if (typeof document.toObject === "function") {
+        return document.toObject();
+    }
+
+    if (typeof document === "object") {
+        return document;
+    }
+
+    return null;
 }

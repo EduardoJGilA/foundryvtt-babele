@@ -2,7 +2,7 @@ import {registerModuleSettings} from "./settings.js";
 import {initWrapper} from "./wrapper.js";
 import {HtmlUtils} from "./html-utils.js";
 import {Converters} from "./converters.js";
-import {TranslatedCompendium} from "./translated-compendium.js";
+import {MappedCompendium} from "./mapped-compendium.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
 import {defaultMappings} from "./default-mappings.js"
@@ -103,14 +103,11 @@ Hooks.on('importAdventure', () => {
 /**
  * Main facade class with init logic and on API for on demand translations based on loaded mapping files.
  */
-export class Babel {
+class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
     #dataLoaded
     #translationRegistry
-    static LEGACY_MAPPING_FILENAME = "mapping.json";
-    static MAPPING_FILENAME = "mappings.json";
-
     static ADVENTURE_EMBEDDED_PACKS = {
         Actor: "actors",
         Cards: "cards",
@@ -273,25 +270,25 @@ export class Babel {
                 this.translations = await this.loadTranslations();
             }
 
-            step = "build translated compendium registry";
+            step = "build mapped compendium registry";
             this.packs = new foundry.utils.Collection();
 
-            const addTranslations = (metadata) => {
+            const registerMappedCompendium = (metadata, translation = null) => {
                 const collection = this.getCollection(metadata);
 
                 if (this.supported(metadata)) {
-                    let translation = this.translations.find(t => t.collection === collection);
-                    if(translation) {
-                        this.packs.set(collection, new TranslatedCompendium(metadata, translation));
-                        if (metadata.type === 'Adventure') {
-                            this.#registerAdventureVirtualPacks(collection, metadata, translation);
-                        }
+                    this.packs.set(collection, new MappedCompendium(metadata, translation));
+
+                    if (translation && metadata.type === 'Adventure') {
+                        this.#registerAdventureVirtualPacks(collection, metadata, translation);
                     }
                 }
             };
 
             for (const metadata of game.data.packs) {
-                addTranslations(metadata);
+                const collection = this.getCollection(metadata);
+                const translation = this.translations.find(t => t.collection === collection) ?? null;
+                registerMappedCompendium(metadata, translation);
             }
 
             // Handle specific files for pack folders
@@ -304,7 +301,13 @@ export class Babel {
 
                 // Handle specific files for pack folders
                 for (const file of files) {
-                    addTranslations(this.#getSpecialPacksFoldersMetadata(file.baseName));
+                    const metadata = this.#getSpecialPacksFoldersMetadata(file.baseName);
+                    const collection = this.getCollection(metadata);
+                    const translation = this.translations.find(t => t.collection === collection) ?? null;
+
+                    if (translation) {
+                        registerMappedCompendium(metadata, translation);
+                    }
                 }
             }
         } catch (error) {
@@ -466,7 +469,7 @@ export class Babel {
             for (const [type, mappingKey] of Object.entries(Babel.ADVENTURE_EMBEDDED_PACKS)) {
                 const virtualCollection = Babel.getAdventureVirtualCollection(collection, entryKey, mappingKey);
 
-                this.packs.set(virtualCollection, new TranslatedCompendium({
+                this.packs.set(virtualCollection, new MappedCompendium({
                     id: virtualCollection,
                     type,
                     virtual: true,
@@ -501,16 +504,7 @@ export class Babel {
      * @returns {*} the translated index
      */
     translateIndex(index, pack) {
-        const lang = game.settings.get('core', 'language');
-        for (const entry of index){
-            let translated = entry?.translated;
-            if (translated) {
-                foundry.utils.mergeObject(entry, this.translate(pack, entry, true), { inplace:true });
-            } else {
-                foundry.utils.mergeObject(entry, this.translate(pack, entry), { inplace:true });
-            }
-        }
-        return index;
+        return this.translatedCompendiumFor(pack)?.translateIndex(index) ?? index;
     }
 
     /**
@@ -520,8 +514,7 @@ export class Babel {
      * @returns {boolean|*} true if the compendium is translated.
      */
     isTranslated(pack) {
-        const tc = this.packs.get(pack);
-        return tc && tc.translated;
+        return !!this.translatedCompendiumFor(pack);
     }
 
     /**
@@ -533,11 +526,7 @@ export class Babel {
      * @returns {*}
      */
     translate(pack, data, translationsOnly) {
-        const tc = this.packs.get(pack);
-        if (!tc || !(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
-            return data;
-        }
-        return tc.translate(data, translationsOnly);
+        return this.translatedCompendiumFor(pack)?.translate(data, translationsOnly) ?? data;
     }
 
     /**
@@ -548,14 +537,7 @@ export class Babel {
      * @returns {*}
      */
     translateField(field, pack, data) {
-        const tc = this.packs.get(pack);
-        if (!tc) {
-            return null;
-        }
-        if (!(tc.hasTranslation(data) || tc.mapping.isDynamic())) {
-            return tc.extractField(field, data);
-        }
-        return tc.translateField(field, data);
+        return this.mappedCompendiumFor(pack)?.translateField(field, data) ?? null;
     }
 
     /**
@@ -565,7 +547,7 @@ export class Babel {
      * @returns {*}
      */
     extract(pack, data, options = {}) {
-        return this.getOrCreateExtractionCompendium(pack)?.extract(data, options);
+        return this.mappedCompendiumFor(pack)?.extract(data, options);
     }
 
     /**
@@ -576,28 +558,16 @@ export class Babel {
      * @returns {*}
      */
     extractField(pack, field, data) {
-        return this.packs.get(pack)?.extractField(field, data);
+        return this.mappedCompendiumFor(pack)?.extractField(field, data);
     }
 
-    getOrCreateExtractionCompendium(pack) {
-        const existing = this.packs.get(pack);
-        if (existing) {
-            return existing;
-        }
+    translatedCompendiumFor(pack) {
+        const compendium = this.mappedCompendiumFor(pack);
+        return compendium?.translated ? compendium : null;
+    }
 
-        const sourcePack = game.packs.get(pack);
-        if (!sourcePack) {
-            return null;
-        }
-
-        return new TranslatedCompendium({
-            id: sourcePack.collection,
-            type: sourcePack.metadata.type,
-            packageName: sourcePack.metadata.packageName,
-            packageType: sourcePack.metadata.packageType,
-            name: sourcePack.metadata.name,
-            label: sourcePack.metadata.label,
-        }, null);
+    mappedCompendiumFor(pack) {
+        return this.packs?.get(pack) ?? null;
     }
 
     pruneExportData(value) {
@@ -834,5 +804,7 @@ export class Babel {
         return game.user.hasPermission('FILES_BROWSE') && game.user.isGM;
     }
 }
+
+export default Babel
 
 window.Babele = Babel;

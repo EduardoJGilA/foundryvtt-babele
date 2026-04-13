@@ -16,7 +16,7 @@ console.log = (...args) => logCalls.push(args);
 console.warn = (...args) => warnCalls.push(args);
 console.error = (...args) => errorCalls.push(args);
 
-const {Babel} = await import("../module/script/babele.js");
+const {default: Babel} = await import("../module/script/babele.js");
 const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
 const {ExportTranslationsDialog} = await import("../module/script/export-translations-dialog.js");
 

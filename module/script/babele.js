@@ -10,6 +10,7 @@ import {BabeleBootstrap} from "./babele-bootstrap.js";
 import {BabeleRuntimeApplier} from "./babele-runtime-applier.js";
 import {BabeleState} from "./babele-state.js";
 import {BabeleUiBridge} from "./babele-ui-bridge.js";
+import {TranslationResolver} from "./translation-resolver.js";
 
 /****************
  * HOOKS
@@ -59,6 +60,7 @@ class Babel {
     #initialized
     #dataLoaded
     #translationRegistry
+    #translationMatchStrategies
 
     static get PACK_FOLDER_TRANSLATION_NAME_SUFFIX() {
         return '_packs-folders';
@@ -95,6 +97,7 @@ class Babel {
         this.#initialized = null;
         this.#dataLoaded = false;
         this.#translationRegistry = null;
+        this.#translationMatchStrategies = [];
         this.mappings = new BabeleMappings(defaultMappings);
         Babel.DEFAULT_MAPPINGS = this.mappings.current();
         this.registerDefaultConverters();
@@ -148,6 +151,39 @@ class Babel {
      */
     registerConverters(converters) {
         this.converters = foundry.utils.mergeObject(this.converters, converters);
+    }
+
+    /**
+     * Register an additional translation match strategy. Custom strategies are
+     * evaluated before Babele built-ins.
+     *
+     * @param {import("./translation-resolver.js").TranslationStrategy} strategy
+     */
+    registerTranslationMatchStrategy(strategy) {
+        this.registerTranslationMatchStrategies([strategy]);
+    }
+
+    /**
+     * Register additional translation match strategies. Custom strategies are
+     * evaluated before Babele built-ins.
+     *
+     * @param {import("./translation-resolver.js").TranslationStrategy[]} strategies
+     */
+    registerTranslationMatchStrategies(strategies) {
+        this.#translationMatchStrategies.push(...(strategies ?? []).filter(Boolean));
+        this.#applyTranslationMatchStrategies();
+    }
+
+    /**
+     * Return the effective translation match strategies in precedence order.
+     *
+     * @returns {import("./translation-resolver.js").TranslationStrategy[]}
+     */
+    translationMatchStrategies() {
+        return [
+            ...this.#translationMatchStrategies,
+            ...TranslationResolver.defaultStrategies(),
+        ];
     }
 
     /**
@@ -604,10 +640,22 @@ class Babel {
         this.packs = state.packs;
         this.folders = state.folders;
         this.#translationRegistry = state.translationRegistry;
+        this.#applyTranslationMatchStrategies();
     }
 
     #applyEffectiveMappings(mappings) {
         Babel.DEFAULT_MAPPINGS = mappings;
+    }
+
+    #applyTranslationMatchStrategies() {
+        if (!this.packs?.values) {
+            return;
+        }
+
+        const strategies = this.translationMatchStrategies();
+        for (const pack of this.packs.values()) {
+            pack.useTranslationMatchStrategies?.(strategies);
+        }
     }
 
 }

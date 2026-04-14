@@ -18,8 +18,10 @@ export class MappedCompendium {
     /**
      * @param {object} metadata Foundry pack metadata or equivalent virtual-pack metadata.
      * @param {object|null} translations Loaded Babele translation payload for the pack.
+     * @param {object} [options]
+     * @param {import("./translation-resolver.js").TranslationStrategy[]} [options.translationStrategies]
      */
-    constructor(metadata, translations) {
+    constructor(metadata, translations, {translationStrategies} = {}) {
         this.metadata = metadata;
         this.translations = [];
         this.translated = false;
@@ -57,7 +59,27 @@ export class MappedCompendium {
             }
         }
 
-        this.resolver = new TranslationResolver(this.translations);
+        this.useTranslationMatchStrategies(translationStrategies);
+    }
+
+    /**
+     * Replace the effective translation match strategies used by this
+     * compendium resolver.
+     *
+     * @param {import("./translation-resolver.js").TranslationStrategy[]} [strategies]
+     */
+    useTranslationMatchStrategies(strategies = TranslationResolver.defaultStrategies()) {
+        this.resolver = new TranslationResolver(this.translations, strategies);
+    }
+
+    /**
+     * Return the effective translation match strategies used by this
+     * compendium.
+     *
+     * @returns {import("./translation-resolver.js").TranslationStrategy[]}
+     */
+    translationMatchStrategies() {
+        return [...this.resolver.strategies];
     }
 
     /**
@@ -83,7 +105,7 @@ export class MappedCompendium {
             return false;
         }
 
-        return this.resolver.hasTranslationFor(data) || this.hasReferenceTranslations(data);
+        return this.resolver.hasTranslationFor(data, this.#resolverContext(documentType)) || this.hasReferenceTranslations(data);
     }
 
     /**
@@ -108,8 +130,8 @@ export class MappedCompendium {
      * @param data
      * @returns {object}
      */
-    translationsFor(data) {
-        return this.resolver.translationFor(data) ?? {};
+    translationsFor(data, documentType = this.metadata?.type ?? null) {
+        return this.resolver.translationFor(data, this.#resolverContext(documentType)) ?? {};
     }
 
     /**
@@ -118,8 +140,8 @@ export class MappedCompendium {
      * @param data
      * @returns {string|null}
      */
-    translationKeyFor(data) {
-        return this.resolver.resolutionFor(data).key;
+    translationKeyFor(data, documentType = this.metadata?.type ?? null) {
+        return this.resolver.resolutionFor(data, this.#resolverContext(documentType)).key;
     }
 
     /**
@@ -210,7 +232,9 @@ export class MappedCompendium {
             return data;
         }
 
-        if (!(this.hasTranslation(data) || this.mapping.isDynamic())) {
+        const hasTranslation = this.hasTranslation(data);
+
+        if (!(hasTranslation || this.mapping.isDynamic())) {
             return data;
         }
 
@@ -233,28 +257,27 @@ export class MappedCompendium {
             return translatedData;
         }
 
-        if (!this.#hasTranslatedData(translatedData)) {
+        const translatedDocument = foundry.utils.mergeObject(data, translatedData, {inplace: false});
+        const translated = this.#documentChanged(data, translatedDocument);
+
+        if (!hasTranslation && !translated) {
             return data;
         }
 
         return foundry.utils.mergeObject(
-            data,
-            foundry.utils.mergeObject(
-                translatedData,
-                {
-                    translated: true,
-                    hasTranslation: this.hasTranslation(data),
-                    originalName: data.name,
-                    flags: {
-                        babele: {
-                            translated: true,
-                            hasTranslation: this.hasTranslation(data),
-                            originalName: data.name,
-                        },
+            translatedDocument,
+            {
+                translated,
+                hasTranslation,
+                originalName: data.name,
+                flags: {
+                    babele: {
+                        translated,
+                        hasTranslation,
+                        originalName: data.name,
                     },
                 },
-                {inplace: false},
-            ),
+            },
             {inplace: false},
         );
     }
@@ -311,8 +334,55 @@ export class MappedCompendium {
         return !!translatedData && Object.keys(translatedData).length > 0;
     }
 
+    #documentChanged(originalData, translatedData) {
+        if (!this.#hasTranslatedData(translatedData)) {
+            return false;
+        }
+
+        return !this.#sameValue(originalData, translatedData);
+    }
+
+    #sameValue(left, right) {
+        if (left === right) {
+            return true;
+        }
+
+        if (Array.isArray(left) || Array.isArray(right)) {
+            if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+                return false;
+            }
+
+            return left.every((value, index) => this.#sameValue(value, right[index]));
+        }
+
+        if (!this.#isPlainObject(left) || !this.#isPlainObject(right)) {
+            return false;
+        }
+
+        const leftKeys = Object.keys(left);
+        const rightKeys = Object.keys(right);
+
+        if (leftKeys.length !== rightKeys.length) {
+            return false;
+        }
+
+        return leftKeys.every((key) => Object.hasOwn(right, key) && this.#sameValue(left[key], right[key]));
+    }
+
+    #isPlainObject(value) {
+        return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
     #normalizeRuntime(runtime = {}) {
         return CompendiumRuntime.from(runtime);
+    }
+
+    #resolverContext(documentType = this.metadata?.type ?? null) {
+        return {
+            documentType,
+            pack: this,
+            metadata: this.metadata,
+        };
     }
 
     #activeRuntime(runtime = {}) {

@@ -198,14 +198,15 @@ export class Converters {
      *
      * @param {object} data
      * @param {object|Array<object>|null} translations
+     * @param {object} [context]
      * @returns {object|null}
      */
-    static _resolvedTranslation(data, translations) {
+    static _resolvedTranslation(data, translations, context = {}) {
         if (!translations) {
             return null;
         }
 
-        return new TranslationResolver(Converters._translationMap(translations)).translationFor(data);
+        return new TranslationResolver(Converters._translationMap(translations)).translationFor(data, context);
     }
 
     /**
@@ -259,6 +260,10 @@ export class Converters {
         return createMappedCompendium(
             scopedPack?.metadata ? {...scopedPack.metadata} : {type: documentType},
             Object.keys(payload).length > 0 ? payload : null,
+            {
+                translationStrategies: scopedPack?.translationMatchStrategies?.()
+                    ?? game.babele?.translationMatchStrategies?.(),
+            },
         );
     }
 
@@ -546,7 +551,7 @@ export class Converters {
                 return data;
             }
 
-            const translation = Converters._resolvedTranslation(data, translations);
+            const translation = Converters._resolvedTranslation(data, translations, {documentType: "JournalEntryPage"});
             if (!translation) {
                 return data;
             }
@@ -724,7 +729,7 @@ export class Converters {
         if (!translations) return regions;
 
         return regions.map(data => {
-            const translation = Converters._resolvedTranslation(data, translations);
+            const translation = Converters._resolvedTranslation(data, translations, {documentType: "Region"});
             if (!translation) return data;
 
             return foundry.utils.mergeObject(data, {
@@ -739,7 +744,7 @@ export class Converters {
         if (!translations) return behaviors;
 
         return behaviors.map(data => {
-            const translation = Converters._resolvedTranslation(data, translations);
+            const translation = Converters._resolvedTranslation(data, translations, {documentType: "RegionBehavior"});
             if (!translation) return data;
 
             return foundry.utils.mergeObject(data, {

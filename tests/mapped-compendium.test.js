@@ -70,6 +70,32 @@ test("MappedCompendium leaves documents unchanged when no translation entry matc
   assert.deepEqual(compendium.translate(data), data);
 });
 
+test("MappedCompendium marks hasTranslation without marking translated when the merged payload is unchanged", () => {
+  const compendium = new MappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "item-1": {
+        name: "Sword",
+      },
+    },
+  });
+  const data = {
+    _id: "item-1",
+    name: "Sword",
+  };
+
+  const translated = compendium.translate(data);
+
+  assert.equal(translated.name, "Sword");
+  assert.equal(translated.hasTranslation, true);
+  assert.equal(translated.translated, false);
+  assert.equal(translated.flags.babele.hasTranslation, true);
+  assert.equal(translated.flags.babele.translated, false);
+});
+
 test("MappedCompendium extracts document payloads without requiring translations", () => {
   const compendium = new MappedCompendium({
     id: "test.items",
@@ -228,6 +254,35 @@ test("Babel delegates translation and extraction operations to MappedCompendium"
   assert.equal(babele.translate("test.items", {_id: "item-1", name: "Sword"}).name, "Spada");
   assert.equal(babele.translateField("name", "test.items", {_id: "item-1", name: "Sword"}), "Spada");
   assert.equal(babele.translateIndex([{_id: "item-1", name: "Sword"}], "test.items")[0].name, "Spada");
+});
+
+test("Babel propagates registered translation match strategies to existing mapped compendiums", () => {
+  const babele = new Babel();
+  const translatedCompendium = new MappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      feat: {
+        name: "Talento Tradotto",
+        type: "feat",
+      },
+    },
+  });
+
+  babele.packs = new foundry.utils.Collection([["test.items", translatedCompendium]]);
+  babele.registerTranslationMatchStrategy({
+    name: "entry-type",
+    matches: (data, _key, translation, context) => (
+      context.documentType === "Item" && translation.type === data?.type
+    ),
+  });
+
+  assert.equal(
+    translatedCompendium.hasTranslation({_id: "missing-id", name: "Shared", type: "feat"}),
+    true,
+  );
 });
 
 test("Babel.init registers supported packs as mapped compendiums even without translations", async () => {

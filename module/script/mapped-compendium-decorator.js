@@ -47,6 +47,14 @@ class MappedCompendiumDecorator {
         return this.compendium.types;
     }
 
+    useTranslationMatchStrategies(strategies) {
+        this.compendium.useTranslationMatchStrategies(strategies);
+    }
+
+    translationMatchStrategies() {
+        return this.compendium.translationMatchStrategies();
+    }
+
     hasTranslation(data, documentType = this.metadata?.type ?? null) {
         return this.compendium.hasTranslation(data, documentType);
     }
@@ -196,6 +204,8 @@ export class AdventureMappedCompendium extends MappedCompendiumDecorator {
         }, {
             mapping: this.customMapping?.[mappingKey] ?? {},
             entries: this.translationsFor(data)?.[mappingKey] ?? {},
+        }, {
+            translationStrategies: this.translationMatchStrategies(),
         });
     }
 
@@ -227,8 +237,8 @@ export class AdventureMappedCompendium extends MappedCompendiumDecorator {
  * @param {object|null} translations
  * @returns {*}
  */
-export function createMappedCompendium(metadata, translations) {
-    const compendium = new MappedCompendium(metadata, translations);
+export function createMappedCompendium(metadata, translations, options = {}) {
+    const compendium = new MappedCompendium(metadata, translations, options);
 
     if (metadata?.type === "Adventure") {
         return new AdventureMappedCompendium(compendium);

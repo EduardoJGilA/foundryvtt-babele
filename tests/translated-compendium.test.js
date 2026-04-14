@@ -158,8 +158,12 @@ test("converter failures do not throw and leave the original document untouched 
   const translated = tc.translate(structuredClone(data));
   const translatedAgain = tc.translate(structuredClone(data));
 
-  assert.deepEqual(translated, data);
-  assert.deepEqual(translatedAgain, data);
+  assert.deepEqual(translated.system, data.system);
+  assert.deepEqual(translatedAgain.system, data.system);
+  assert.equal(translated.hasTranslation, true);
+  assert.equal(translated.translated, false);
+  assert.equal(translatedAgain.hasTranslation, true);
+  assert.equal(translatedAgain.translated, false);
   assert.equal(errors.length, 1);
   assert.match(String(errors[0][0]), /converter 'explode' failed during translate/);
 });

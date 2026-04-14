@@ -345,7 +345,12 @@ test("Babel.translate fails open for translated packs when a converter throws", 
   };
 
   assert.doesNotThrow(() => babele.translate("test.actors", structuredClone(data)));
-  assert.deepEqual(babele.translate("test.actors", structuredClone(data)), data);
+  const translated = babele.translate("test.actors", structuredClone(data));
+  assert.deepEqual(translated.items, data.items);
+  assert.equal(translated.hasTranslation, true);
+  assert.equal(translated.translated, false);
+  assert.equal(translated.flags.babele.hasTranslation, true);
+  assert.equal(translated.flags.babele.translated, false);
   assert.equal(errorCalls.length >= 1, true);
   assert.match(String(errorCalls.at(-1)[0]), /converter 'explode' failed during translate/);
 

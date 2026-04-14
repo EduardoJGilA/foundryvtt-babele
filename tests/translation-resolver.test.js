@@ -105,3 +105,60 @@ test("TranslationResolver accepts explicit strategies without changing the resol
   assert.equal(resolution.strategy, "name+type");
   assert.deepEqual(resolution.candidates, ["missing-id", "spell", "spell::feat"]);
 });
+
+test("TranslationResolver accepts custom match strategies that inspect translation entries", () => {
+  const resolver = new TranslationResolver(
+    {
+      spell: {name: "Incantesimo", type: "spell"},
+      feat: {name: "Talento", type: "feat"},
+    },
+    [
+      {
+        name: "entry-type",
+        matches: (data, _key, translation) => translation.type === data?.type,
+      },
+      ...TranslationResolver.defaultStrategies(),
+    ],
+  );
+
+  const resolution = resolver.resolutionFor({
+    _id: "missing-id",
+    name: "Shared Name",
+    type: "feat",
+  }, {
+    documentType: "Item",
+  });
+
+  assert.equal(resolution.matched, true);
+  assert.equal(resolution.key, "feat");
+  assert.equal(resolution.strategy, "entry-type");
+  assert.deepEqual(resolution.candidates, ["missing-id", "Shared Name", "feat"]);
+});
+
+test("TranslationResolver passes documentType through context to custom match strategies", () => {
+  const resolver = new TranslationResolver(
+    {
+      feat: {name: "Shared Name", type: "feat"},
+    },
+    [
+      {
+        name: "item-type-only",
+        matches: (data, _key, translation, context) => (
+          context.documentType === "Item"
+          && translation.name === data?.name
+          && translation.type === data?.type
+        ),
+      },
+      ...TranslationResolver.defaultStrategies(),
+    ],
+  );
+
+  assert.equal(
+    resolver.hasTranslationFor({name: "Shared Name", type: "feat"}, {documentType: "Item"}),
+    true,
+  );
+  assert.equal(
+    resolver.hasTranslationFor({name: "Shared Name", type: "feat"}, {documentType: "Actor"}),
+    false,
+  );
+});

@@ -53,7 +53,9 @@ export class BabeleBootstrap {
             const collection = this.babele.getCollection(metadata);
 
             if (this.babele.supported(metadata)) {
-                packs.set(collection, createMappedCompendium(metadata, translation));
+                packs.set(collection, createMappedCompendium(metadata, translation, {
+                    translationStrategies: this.babele.translationMatchStrategies(),
+                }));
             }
         };
 

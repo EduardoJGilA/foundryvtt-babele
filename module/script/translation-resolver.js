@@ -10,7 +10,15 @@
 /**
  * @typedef {Object} TranslationStrategy
  * @property {string} name
- * @property {(data: Object) => (string|null|undefined)} keyFor
+ * @property {(data: Object, context?: Object) => (string|null|undefined)} [keyFor]
+ * @property {(data: Object, key: string, translation: Object, context?: Object) => boolean} [matches]
+ */
+
+/**
+ * @typedef {Object} TranslationResolverContext
+ * @property {string|null} [documentType]
+ * @property {Object} [pack]
+ * @property {Object} [metadata]
  */
 
 /**
@@ -59,13 +67,18 @@ export class TranslationResolver {
      * Return candidate keys with the winning strategy associated with each key.
      *
      * @param {Object} data
+     * @param {TranslationResolverContext} [context]
      * @returns {{key: string, strategy: string}[]}
      */
-    candidatesFor(data) {
+    candidatesFor(data, context = {}) {
         const candidates = [];
 
         for (const strategy of this.strategies) {
-            const key = strategy.keyFor(data);
+            if (typeof strategy.keyFor !== "function") {
+                continue;
+            }
+
+            const key = strategy.keyFor(data, context);
 
             if (!key || candidates.some((candidate) => candidate.key === key)) {
                 continue;
@@ -84,35 +97,32 @@ export class TranslationResolver {
      * Return candidate keys in deterministic precedence order.
      *
      * @param {Object} data
+     * @param {TranslationResolverContext} [context]
      * @returns {string[]}
      */
-    keysFor(data) {
-        return this.candidatesFor(data).map((candidate) => candidate.key);
+    keysFor(data, context = {}) {
+        return this.candidatesFor(data, context).map((candidate) => candidate.key);
     }
 
     /**
      * Resolve the effective translation entry for a document.
      *
      * @param {Object} data
+     * @param {TranslationResolverContext} [context]
      * @returns {TranslationResolution}
      */
-    resolutionFor(data) {
-        const candidates = this.candidatesFor(data);
+    resolutionFor(data, context = {}) {
+        const candidates = this.candidatesFor(data, context);
         const keys = candidates.map((candidate) => candidate.key);
 
-        for (const candidate of candidates) {
-            const key = candidate.key;
-            const translation = this.translations[key];
+        for (const strategy of this.strategies) {
+            const resolution = this.#resolutionFromStrategy(strategy, data, context, keys);
 
-            if (translation) {
-                return {
-                    matched: true,
-                    key,
-                    translation,
-                    strategy: candidate.strategy,
-                    candidates: keys,
-                };
+            if (!resolution) {
+                continue;
             }
+
+            return resolution;
         }
 
         return {
@@ -128,29 +138,79 @@ export class TranslationResolver {
      * Return the translation entry for a document or null when no match exists.
      *
      * @param {Object} data
+     * @param {TranslationResolverContext} [context]
      * @returns {Object|null}
      */
-    translationFor(data) {
-        return this.resolutionFor(data).translation;
+    translationFor(data, context = {}) {
+        return this.resolutionFor(data, context).translation;
     }
 
     /**
      * Determine whether a document has a matching translation entry.
      *
      * @param {Object} data
+     * @param {TranslationResolverContext} [context]
      * @returns {boolean}
      */
-    hasTranslationFor(data) {
-        return this.resolutionFor(data).matched;
+    hasTranslationFor(data, context = {}) {
+        return this.resolutionFor(data, context).matched;
     }
 
     /**
      * Return the same resolution payload for diagnostics-oriented call sites.
      *
      * @param {Object} data
+     * @param {Object} [context]
      * @returns {TranslationResolution}
      */
-    diagnosticsFor(data) {
-        return this.resolutionFor(data);
+    diagnosticsFor(data, context = {}) {
+        return this.resolutionFor(data, context);
+    }
+
+    #resolutionFromStrategy(strategy, data, context, keys) {
+        if (typeof strategy.matches === "function") {
+            const matched = this.#resolutionFromMatches(strategy, data, context, keys);
+
+            if (matched) {
+                return matched;
+            }
+        }
+
+        if (typeof strategy.keyFor !== "function") {
+            return null;
+        }
+
+        const key = strategy.keyFor(data, context);
+        const translation = key ? this.translations[key] : null;
+
+        if (!key || !translation) {
+            return null;
+        }
+
+        return {
+            matched: true,
+            key,
+            translation,
+            strategy: strategy.name,
+            candidates: keys,
+        };
+    }
+
+    #resolutionFromMatches(strategy, data, context, keys) {
+        for (const [key, translation] of Object.entries(this.translations)) {
+            if (!strategy.matches(data, key, translation, context)) {
+                continue;
+            }
+
+            return {
+                matched: true,
+                key,
+                translation,
+                strategy: strategy.name,
+                candidates: keys.includes(key) ? keys : [...keys, key],
+            };
+        }
+
+        return null;
     }
 }

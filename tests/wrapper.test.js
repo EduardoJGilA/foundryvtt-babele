@@ -145,6 +145,72 @@ test("wrapper fails open when loaded document translation throws", async () => {
   assert.match(String(errors[0][0]), /failed to translate loaded compendium document/);
 });
 
+test("wrapper fails open when translated document reconstruction triggers validation errors", async () => {
+  class FakeDocument {
+    constructor(data, context = {}) {
+      if (data?.prototypeToken?.ring?.subject?.texture === "") {
+        throw new Error("DataModelValidationError: texture may not be a blank string");
+      }
+
+      this.data = data;
+      this.context = context;
+    }
+
+    toObject() {
+      return this.data;
+    }
+  }
+
+  errors.length = 0;
+  const original = new FakeDocument({
+    _id: "npc-1",
+    name: "NPC",
+    prototypeToken: {
+      ring: {
+        subject: {
+          texture: "icons/original.webp",
+        },
+      },
+    },
+  });
+  const babele = {
+    async init() {
+      return true;
+    },
+    translatedCompendiumFor() {
+      return {
+        translate(data) {
+          return {
+            ...data,
+            prototypeToken: {
+              ring: {
+                subject: {
+                  texture: "",
+                },
+              },
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await translateResult(
+    [original],
+    {
+      pack: "test.actors",
+      documentClass: FakeDocument,
+      index: false,
+    },
+    babele,
+  );
+
+  assert.equal(result[0], original);
+  assert.equal(errors.length, 1);
+  assert.match(String(errors[0][0]), /failed to translate loaded compendium document/);
+  assert.match(String(errors[0][1]?.error ?? ""), /DataModelValidationError/);
+});
+
 test("wrapper fails open on unsupported result shapes", async () => {
   const babele = {
     async init() {

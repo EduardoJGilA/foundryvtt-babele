@@ -6,7 +6,10 @@ import {FakeElement, installFakeDom} from "./helpers/fake-dom.js";
 installFoundryStubs();
 installFakeDom();
 
-const {BabeleUiBridge} = await import("../module/script/babele-ui-bridge.js");
+const {
+  BabeleUiBridge,
+  matchOriginalNameEntries,
+} = await import("../module/script/babele-ui-bridge.js");
 
 function createCompendiumRoot() {
   const root = new FakeElement("section");
@@ -249,4 +252,139 @@ test("BabeleUiBridge resolves translated entries from Collection-backed compendi
   });
 
   assert.equal(name.querySelector(".babele-original-name")?.textContent, "Greatsword +1");
+});
+
+test("BabeleUiBridge matches original names during directory name search and expands parent folders", () => {
+  globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  const entryIds = new Set();
+  const folderIds = new Set();
+  const autoExpandIds = new Set();
+  const collection = {
+    searchMode: "name",
+    index: new foundry.utils.Collection([
+      ["entry-6", {
+        _id: "entry-6",
+        name: "Spadone +1",
+        originalName: "Greatsword +1",
+        folder: "folder-a",
+      }],
+    ]),
+    folders: new foundry.utils.Collection([
+      ["folder-a", {_id: "folder-a", folder: "folder-root"}],
+      ["folder-root", {_id: "folder-root"}],
+    ]),
+  };
+
+  matchOriginalNameEntries(
+    {collection},
+    /greatsword/,
+    entryIds,
+    folderIds,
+    autoExpandIds,
+  );
+
+  assert.deepEqual([...entryIds], ["entry-6"]);
+  assert.deepEqual([...folderIds], ["folder-a", "folder-root"]);
+  assert.deepEqual([...autoExpandIds], ["folder-a", "folder-root"]);
+});
+
+test("BabeleUiBridge original-name enrichment does not pull unrelated siblings from folders already matched by Foundry", () => {
+  globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  const entryIds = new Set(["entry-translated"]);
+  const folderIds = new Set(["folder-a"]);
+  const autoExpandIds = new Set(["folder-a"]);
+  const collection = {
+    searchMode: "name",
+    index: [
+      {
+        _id: "entry-translated",
+        name: "Amuleto della Salute",
+        originalName: "Amulet of Health",
+        folder: "folder-a",
+      },
+      {
+        _id: "entry-sibling",
+        name: "Abiti, Costume",
+        originalName: "Costume Clothes",
+        folder: "folder-a",
+      },
+    ],
+    folders: new foundry.utils.Collection([
+      ["folder-a", {_id: "folder-a"}],
+    ]),
+  };
+
+  matchOriginalNameEntries(
+    {collection},
+    /amuleto/,
+    entryIds,
+    folderIds,
+    autoExpandIds,
+  );
+
+  assert.deepEqual([...entryIds], ["entry-translated"]);
+});
+
+test("BabeleUiBridge ignores original-name search enrichment outside name-only mode", () => {
+  globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  const entryIds = new Set();
+  const folderIds = new Set();
+  const autoExpandIds = new Set();
+
+  matchOriginalNameEntries(
+    {
+      collection: {
+        searchMode: "full",
+        index: [
+          {
+            _id: "entry-7",
+            name: "Spada",
+            flags: {
+              babele: {
+                originalName: "Sword",
+              },
+            },
+          },
+        ],
+      },
+    },
+    /sword/,
+    entryIds,
+    folderIds,
+    autoExpandIds,
+  );
+
+  assert.equal(entryIds.size, 0);
+  assert.equal(folderIds.size, 0);
+  assert.equal(autoExpandIds.size, 0);
 });

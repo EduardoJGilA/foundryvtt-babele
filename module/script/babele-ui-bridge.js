@@ -1,15 +1,40 @@
 import {HtmlUtils} from "./html-utils.js";
 
 /**
- * UI hook bridge that isolates Foundry render hooks from the Babele facade.
+ * UI integration bridge that isolates Foundry hooks and wrappers from the
+ * Babele facade.
  */
 export class BabeleUiBridge {
+    #searchWrapperRegistered = false;
 
     registerHooks() {
+        this.registerSearchWrapper();
         Hooks.on("getActorSheetHeaderButtons", (app, buttons) => this.extendLegacyActorSheetHeaderButtons(app, buttons));
         Hooks.on("getHeaderControlsActorSheetV2", (sheet, controls) => this.extendActorSheetHeaderControls(sheet, controls));
         Hooks.on("getHeaderControlsCompendium", (app, controls) => this.extendCompendiumHeaderControls(app, controls));
         Hooks.on("renderCompendium", (app, html, data) => this.renderCompendium(app, html, data));
+    }
+
+    /**
+     * Extend Foundry directory name search so translated compendium rows can
+     * still match their original untranslated names.
+     */
+    registerSearchWrapper() {
+        if (this.#searchWrapperRegistered || typeof libWrapper?.register !== "function") {
+            return;
+        }
+
+        libWrapper.register(
+            "babele",
+            "foundry.applications.sidebar.DocumentDirectory.prototype._matchSearchEntries",
+            function (wrapped, query, entryIds, folderIds, autoExpandIds, options = {}) {
+                wrapped(query, entryIds, folderIds, autoExpandIds, options);
+                matchOriginalNameEntries(this, query, entryIds, folderIds, autoExpandIds);
+            },
+            "WRAPPER",
+        );
+
+        this.#searchWrapperRegistered = true;
     }
 
     /**
@@ -98,7 +123,13 @@ export class BabeleUiBridge {
             return;
         }
 
-        const index = this.#indexEntries(app, data);
+        const index = indexEntriesFor(
+            data?.collection?.index
+            ?? app?.collection?.index
+            ?? data?.collection?.contents
+            ?? app?.collection?.contents
+            ?? [],
+        );
         const entriesById = new Map(
             index
                 .map((entry) => [entry?._id ?? entry?.id, entry])
@@ -145,26 +176,96 @@ export class BabeleUiBridge {
 
         return index.find((entry) => entry?.name === text) ?? null;
     }
+}
 
-    #indexEntries(app, data) {
-        const source = data?.collection?.index
-            ?? app?.collection?.index
-            ?? data?.collection?.contents
-            ?? app?.collection?.contents
-            ?? [];
-
-        if (Array.isArray(source)) {
-            return source;
-        }
-
-        if (Array.isArray(source?.contents)) {
-            return source.contents;
-        }
-
-        if (typeof source?.values === "function") {
-            return Array.from(source.values());
-        }
-
-        return [];
+/**
+ * Add matches for translated entries whose original untranslated name satisfies
+ * the current name-only directory query.
+ *
+ * @param {object} directory
+ * @param {RegExp} query
+ * @param {Set<string>} entryIds
+ * @param {Set<string>} folderIds
+ * @param {Set<string>} autoExpandIds
+ */
+export function matchOriginalNameEntries(directory, query, entryIds, folderIds, autoExpandIds) {
+    if (!game.settings.get("babele", "showOriginalName")) {
+        return;
     }
+
+    if (!isNameOnlySearch(directory?.collection)) {
+        return;
+    }
+
+    const entries = indexEntriesFor(directory?.collection?.index ?? directory?.collection?.contents ?? []);
+
+    for (const entry of entries) {
+        const entryId = entry?._id ?? entry?.id;
+        if (!entryId) {
+            continue;
+        }
+
+        const originalName = entry?.originalName ?? entry?.flags?.babele?.originalName;
+        if (!originalName) {
+            continue;
+        }
+
+        if (query.test(cleanSearchQuery(originalName))) {
+            entryIds.add(entryId);
+            includeMatchedFolder(directory?.collection, entry?.folder, folderIds, autoExpandIds);
+        }
+    }
+}
+
+function isNameOnlySearch(collection) {
+    const nameMode = globalThis.DIRECTORY_SEARCH_MODES?.NAME ?? "name";
+    const searchMode = collection?.searchMode;
+    return !searchMode || searchMode === nameMode;
+}
+
+function cleanSearchQuery(text) {
+    const clean = foundry.applications?.ux?.SearchFilter?.cleanQuery;
+    return typeof clean === "function" ? clean(text) : text;
+}
+
+function includeMatchedFolder(collection, folder, folderIds, autoExpandIds, {autoExpand = true} = {}) {
+    if (typeof folder === "string") {
+        folder = collection?.folders?.get?.(folder);
+    }
+
+    if (!folder) {
+        return;
+    }
+
+    const folderId = folder?._id ?? folder?.id;
+    if (!folderId) {
+        return;
+    }
+
+    const visited = folderIds.has(folderId);
+    folderIds.add(folderId);
+
+    if (autoExpand) {
+        autoExpandIds.add(folderId);
+    }
+
+    if (!visited && folder.folder) {
+        includeMatchedFolder(collection, folder.folder, folderIds, autoExpandIds);
+    }
+}
+
+function indexEntriesFor(source) {
+    if (Array.isArray(source)) {
+        return source;
+    }
+
+    if (Array.isArray(source?.contents)) {
+        return source.contents;
+    }
+
+    if (typeof source?.values === "function") {
+        return Array.from(source.values());
+    }
+
+    return [];
 }

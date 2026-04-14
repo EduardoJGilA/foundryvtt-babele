@@ -6,6 +6,24 @@ import {TranslationResolver} from "./translation-resolver.js";
  * Utility class with all predefined converters
  */
 export class Converters {
+    static REGION_BEHAVIOR_TRANSLATION_FIELDS = Object.freeze({
+        displayScrollingText: [
+            {
+                translationPath: ["text"],
+                dataPath: ["system", "text"],
+            },
+        ],
+        teleportToken: [
+            {
+                translationPath: ["dialog", "revealed"],
+                dataPath: ["system", "dialog", "revealed"],
+            },
+            {
+                translationPath: ["dialog", "unrevealed"],
+                dataPath: ["system", "dialog", "unrevealed"],
+            },
+        ],
+    });
 
     /**
      * Normalize Foundry collections, arrays, and collection-like objects to a
@@ -53,6 +71,79 @@ export class Converters {
         }
         usedKeys.add(fallback);
         return fallback;
+    }
+
+    /**
+     * Read a nested property by path without depending on Foundry helpers.
+     *
+     * @param {object|null|undefined} value
+     * @param {string[]} path
+     * @returns {*}
+     */
+    static _readPath(value, path) {
+        return path.reduce((current, segment) => current?.[segment], value);
+    }
+
+    /**
+     * Assign a nested property by path, creating missing intermediate objects.
+     *
+     * @param {object} target
+     * @param {string[]} path
+     * @param {*} value
+     */
+    static _writePath(target, path, value) {
+        let current = target;
+
+        for (let index = 0; index < path.length - 1; index += 1) {
+            const segment = path[index];
+            current[segment] ??= {};
+            current = current[segment];
+        }
+
+        current[path.at(-1)] = value;
+    }
+
+    /**
+     * Return the supported translation field descriptors for a RegionBehavior type.
+     *
+     * @param {string} type
+     * @returns {Array<{translationPath: string[], dataPath: string[]}>}
+     */
+    static _regionBehaviorFields(type) {
+        return Converters.REGION_BEHAVIOR_TRANSLATION_FIELDS[type] ?? [];
+    }
+
+    /**
+     * Extract supported text-bearing RegionBehavior fields into translation JSON.
+     *
+     * @param {object} data
+     * @returns {object}
+     */
+    static _extractRegionBehaviorFields(data) {
+        return Converters._regionBehaviorFields(data?.type).reduce((out, descriptor) => {
+            const value = Converters._readPath(data, descriptor.dataPath);
+            if (typeof value !== "undefined" && value !== null && value !== "") {
+                Converters._writePath(out, descriptor.translationPath, value);
+            }
+            return out;
+        }, {});
+    }
+
+    /**
+     * Build the merge payload for supported RegionBehavior text fields.
+     *
+     * @param {object} data
+     * @param {object} translation
+     * @returns {object}
+     */
+    static _translatedRegionBehaviorFields(data, translation) {
+        return Converters._regionBehaviorFields(data?.type).reduce((out, descriptor) => {
+            const value = Converters._readPath(translation, descriptor.translationPath);
+            if (typeof value !== "undefined") {
+                Converters._writePath(out, descriptor.dataPath, value);
+            }
+            return out;
+        }, {});
     }
 
     /**
@@ -653,9 +744,9 @@ export class Converters {
 
             return foundry.utils.mergeObject(data, {
                 name: translation.name ?? data.name,
-                system: { text: translation.text ?? data.system.text },
+                ...Converters._translatedRegionBehaviorFields(data, translation),
                 translated: true
-            });            
+            });
         });
     }
 
@@ -667,7 +758,7 @@ export class Converters {
             const key = Converters._exportKeyFor(data, usedKeys, "behavior");
             out[key] = {
                 name: data.name,
-                text: data.system?.text,
+                ...Converters._extractRegionBehaviorFields(data),
             };
         }
 

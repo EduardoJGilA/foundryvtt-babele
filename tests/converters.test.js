@@ -435,3 +435,138 @@ test("fromPack fallback re-branches runtime to the translated root compendium", 
   assert.equal(translated[0].name, "Goblin IT");
   assert.equal(translated[0].prototypeToken.name, "Goblin IT");
 });
+
+test("sceneRegions translates supported behavior text fields and ignores script source", () => {
+  const regions = [
+    {
+      _id: "region-1",
+      name: "Haunted Hall",
+      behaviors: [
+        {
+          _id: "behavior-1",
+          type: "displayScrollingText",
+          name: "Warning",
+          system: {
+            text: "Keep out",
+            color: "#ffffff",
+          },
+        },
+        {
+          _id: "behavior-2",
+          type: "teleportToken",
+          name: "Portal",
+          system: {
+            dialog: {
+              revealed: "Step through?",
+              unrevealed: "Enter the mist?",
+            },
+          },
+        },
+        {
+          _id: "behavior-3",
+          type: "executeScript",
+          name: "Automation",
+          system: {
+            source: "console.log('do not translate');",
+          },
+        },
+      ],
+    },
+  ];
+
+  const translated = Converters.sceneRegions()(regions, {
+    "region-1": {
+      name: "Corridoio infestato",
+      behaviors: {
+        "behavior-1": {
+          name: "Avviso",
+          text: "Non entrare",
+        },
+        "behavior-2": {
+          name: "Portale",
+          dialog: {
+            revealed: "Attraversare?",
+            unrevealed: "Entrare nella nebbia?",
+          },
+        },
+        "behavior-3": {
+          name: "Automazione",
+          source: "console.log('tradotto');",
+        },
+      },
+    },
+  });
+
+  assert.equal(translated[0].name, "Corridoio infestato");
+  assert.equal(translated[0].behaviors[0].name, "Avviso");
+  assert.equal(translated[0].behaviors[0].system.text, "Non entrare");
+  assert.equal(translated[0].behaviors[1].name, "Portale");
+  assert.equal(translated[0].behaviors[1].system.dialog.revealed, "Attraversare?");
+  assert.equal(translated[0].behaviors[1].system.dialog.unrevealed, "Entrare nella nebbia?");
+  assert.equal(translated[0].behaviors[2].name, "Automazione");
+  assert.equal(translated[0].behaviors[2].system.source, "console.log('do not translate');");
+});
+
+test("sceneRegions.extract exports supported behavior text fields only", () => {
+  const extracted = Converters.sceneRegions().extract([
+    {
+      _id: "region-1",
+      name: "Haunted Hall",
+      behaviors: [
+        {
+          _id: "behavior-1",
+          type: "displayScrollingText",
+          name: "Warning",
+          system: {
+            text: "Keep out",
+            color: "#ffffff",
+          },
+        },
+        {
+          _id: "behavior-2",
+          type: "teleportToken",
+          name: "Portal",
+          system: {
+            dialog: {
+              revealed: "Step through?",
+              unrevealed: "Enter the mist?",
+            },
+            transition: {
+              type: "fade",
+            },
+          },
+        },
+        {
+          _id: "behavior-3",
+          type: "executeScript",
+          name: "Automation",
+          system: {
+            source: "console.log('do not export');",
+          },
+        },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(extracted, {
+    "Haunted Hall": {
+      name: "Haunted Hall",
+      behaviors: {
+        Warning: {
+          name: "Warning",
+          text: "Keep out",
+        },
+        Portal: {
+          name: "Portal",
+          dialog: {
+            revealed: "Step through?",
+            unrevealed: "Enter the mist?",
+          },
+        },
+        Automation: {
+          name: "Automation",
+        },
+      },
+    },
+  });
+});

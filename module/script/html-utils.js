@@ -25,11 +25,18 @@ export class HtmlUtils {
         }
 
         target.querySelector(".babele-original-name")?.remove();
+        target.style.display = "flex";
+        target.style.flexDirection = "column";
+        target.style.alignItems = "flex-start";
         target.style.lineHeight = "normal";
-        target.style.paddingTop = "10px";
+        target.style.paddingTop = "2px";
+        target.style.whiteSpace = "normal";
+        target.style.overflow = "visible";
+        target.style.textOverflow = "initial";
 
-        const label = document.createElement("div");
+        const label = document.createElement("span");
         label.className = "babele-original-name";
+        label.style.display = "block";
         label.style.lineHeight = "normal";
         label.style.fontSize = "12px";
         label.style.color = "gray";

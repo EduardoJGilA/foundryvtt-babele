@@ -145,3 +145,108 @@ test("BabeleUiBridge falls back to text lookup when compendium rows do not expos
 
   assert.equal(name.querySelector(".babele-original-name")?.textContent, "Shield");
 });
+
+test("BabeleUiBridge decorates anchor-based compendium entry names used by newer Foundry markup", () => {
+  const bridge = new BabeleUiBridge();
+  const {root, list} = createCompendiumRoot();
+
+  const row = list.appendChild(new FakeElement("li"));
+  row.className = "directory-item entry document item flexrow";
+  row.dataset.entryId = "entry-3";
+
+  const thumbnail = row.appendChild(new FakeElement("img"));
+  thumbnail.className = "thumbnail";
+
+  const name = row.appendChild(new FakeElement("a"));
+  name.className = "entry-name ellipsis";
+  name.textContent = "Dotazione da Avventuriero";
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  bridge.renderCompendium({collection: {collection: "test.pack"}}, root, {
+    collection: {
+      index: [
+        {
+          _id: "entry-3",
+          name: "Dotazione da Avventuriero",
+          translated: true,
+          hasTranslation: true,
+          originalName: "Adventurer's Pack",
+        },
+      ],
+    },
+  });
+
+  assert.equal(name.querySelector(".babele-original-name")?.textContent, "Adventurer's Pack");
+  assert.equal(name.style.display, "flex");
+  assert.equal(name.style.flexDirection, "column");
+  assert.equal(name.style.whiteSpace, "normal");
+});
+
+test("BabeleUiBridge decorates entries when renderCompendium receives a subdirectory list as root", () => {
+  const bridge = new BabeleUiBridge();
+  const root = new FakeElement("ol");
+  root.className = "subdirectory plain";
+
+  const row = root.appendChild(new FakeElement("li"));
+  row.className = "directory-item entry document item flexrow";
+  row.dataset.entryId = "entry-4";
+
+  const thumbnail = row.appendChild(new FakeElement("img"));
+  thumbnail.className = "thumbnail";
+
+  const name = row.appendChild(new FakeElement("a"));
+  name.className = "entry-name ellipsis";
+  name.textContent = "Dotazione da Diplomatico";
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  bridge.renderCompendium({collection: {collection: "test.pack"}}, root, {
+    collection: {
+      index: [
+        {
+          _id: "entry-4",
+          name: "Dotazione da Diplomatico",
+          translated: true,
+          hasTranslation: true,
+          originalName: "Diplomat's Pack",
+        },
+      ],
+    },
+  });
+
+  assert.equal(name.querySelector(".babele-original-name")?.textContent, "Diplomat's Pack");
+});
+
+test("BabeleUiBridge resolves translated entries from Collection-backed compendium indexes", () => {
+  const bridge = new BabeleUiBridge();
+  const root = new FakeElement("ol");
+  root.className = "subdirectory plain";
+
+  const row = root.appendChild(new FakeElement("li"));
+  row.className = "directory-item entry document item flexrow";
+  row.dataset.entryId = "entry-5";
+
+  const name = row.appendChild(new FakeElement("a"));
+  name.className = "entry-name ellipsis";
+  name.textContent = "Spadone +1";
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  bridge.renderCompendium({collection: {collection: "test.pack"}}, root, {
+    collection: {
+      index: new foundry.utils.Collection([[
+        "entry-5",
+        {
+          id: "entry-5",
+          name: "Spadone +1",
+          translated: true,
+          hasTranslation: true,
+          originalName: "Greatsword +1",
+        },
+      ]]),
+    },
+  });
+
+  assert.equal(name.querySelector(".babele-original-name")?.textContent, "Greatsword +1");
+});

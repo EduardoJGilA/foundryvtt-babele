@@ -98,16 +98,22 @@ export class BabeleUiBridge {
             return;
         }
 
-        const index = Array.isArray(data?.collection?.index) ? data.collection.index : [];
+        const index = this.#indexEntries(app, data);
         const entriesById = new Map(
             index
                 .map((entry) => [entry?._id ?? entry?.id, entry])
                 .filter(([id]) => !!id),
         );
+        const items = root.querySelectorAll([
+            "[data-entry-id] .entry-name",
+            "[data-entry-id] .document-name",
+            "[data-document-id] .entry-name",
+            "[data-document-id] .document-name",
+            ".directory-list .entry-name",
+            ".directory-list .document-name",
+        ].join(", "));
 
-        root
-            .querySelectorAll(".directory-list .entry-name, .directory-list .document-name")
-            .forEach((item) => {
+        items.forEach((item) => {
                 const entry = this.#compendiumEntryFor(item, entriesById, index);
                 if (!entry?.translated || !entry?.hasTranslation || !entry?.originalName) {
                     return;
@@ -138,5 +144,27 @@ export class BabeleUiBridge {
         }
 
         return index.find((entry) => entry?.name === text) ?? null;
+    }
+
+    #indexEntries(app, data) {
+        const source = data?.collection?.index
+            ?? app?.collection?.index
+            ?? data?.collection?.contents
+            ?? app?.collection?.contents
+            ?? [];
+
+        if (Array.isArray(source)) {
+            return source;
+        }
+
+        if (Array.isArray(source?.contents)) {
+            return source.contents;
+        }
+
+        if (typeof source?.values === "function") {
+            return Array.from(source.values());
+        }
+
+        return [];
     }
 }

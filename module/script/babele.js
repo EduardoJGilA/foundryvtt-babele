@@ -1,6 +1,5 @@
 import {registerModuleSettings} from "./settings.js";
 import {initWrapper} from "./wrapper.js";
-import {HtmlUtils} from "./html-utils.js";
 import {Converters} from "./converters.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
@@ -10,10 +9,13 @@ import {BabeleMappings} from "./babele-mappings.js";
 import {BabeleBootstrap} from "./babele-bootstrap.js";
 import {BabeleRuntimeApplier} from "./babele-runtime-applier.js";
 import {BabeleState} from "./babele-state.js";
+import {BabeleUiBridge} from "./babele-ui-bridge.js";
 
 /****************
  * HOOKS
  ***************/
+
+const uiBridge = new BabeleUiBridge();
 
 Hooks.once('init', () => {
     let babele = new Babel();
@@ -21,6 +23,7 @@ Hooks.once('init', () => {
     game["babele"] = babele;
     registerModuleSettings();
     initWrapper();
+    uiBridge.registerHooks();
     Hooks.callAll('babele.init', babele);
 });
 
@@ -35,51 +38,6 @@ Hooks.once('ready', async () => {
     await game.babele.applyRuntimeTranslations({shareSources: true, renderCompendium: false});
     Hooks.callAll('babele.ready');
     await ui.compendium.render();
-});
-
-function addTranslateButton(app, html, data){
-    const exportEnabled = game.settings.get('babele', 'showTranslateOption');
-    if(exportEnabled && game.user.isGM && data.editable) {
-        let title = game.i18n.localize("BABELE.TranslateActorHeadBtn");
-        HtmlUtils.appendHeaderButton(html, title, ev => {
-            game.babele.translateActor(app.actor);
-        });
-    }
-}
-
-Hooks.on('renderActorSheet', (app, html, data) => addTranslateButton(app, html[0], data));
-
-Hooks.on('getHeaderControlsActorSheetV2', (sheet, controls) => {
-    const exportEnabled = game.settings.get('babele', 'showTranslateOption');
-    if(exportEnabled && game.user.isGM && sheet.isEditable) {
-        let label = game.i18n.localize("BABELE.TranslateActorHeadBtn");
-        controls.push({
-            icon: 'fas fa-globe',
-            label: label,
-            onClick: () => game.babele.translateActor(sheet.actor),
-        });
-    }
-});
-
-Hooks.on('renderCompendium', (app, html, data) => {
-    const exportEnabled = game.settings.get('babele', 'export');
-    if(game.user.isGM && exportEnabled) {
-        let title = game.i18n.localize("BABELE.CompendiumTranslations");
-        HtmlUtils.appendHeaderButton(html, title, ev => {
-            game.babele.exportTranslationsFile(app.collection)
-        });
-    }
-
-    if (game.settings.get('babele', 'showOriginalName')) {
-        html.querySelectorAll('.directory-list .entry-name, .directory-list .document-name').forEach((item) => {
-            const entry = item.textContent?.length ? data.collection.index.find(i => i.name === item.textContent) : null;
-
-            if (entry && entry.translated && entry.hasTranslation) {
-                item.setAttribute('style', 'line-height: normal; padding-top: 10px;');
-                item.innerHTML += `<div style="line-height: normal; font-size: 12px; color: gray;">${entry.originalName}</div>`;
-            }
-        });
-    }
 });
 
 Hooks.on('importAdventure', () => {

@@ -1,16 +1,39 @@
 /**
- * Simple utility class to inject a custom button to the window header.
+ * Small DOM helpers used by Babele UI integrations.
  */
 export class HtmlUtils {
 
-    static appendHeaderButton(html, title, fn) {
-        const openBtn = document.createElement('a');
-        openBtn.className = 'translate';
-        openBtn.title = title;
-        openBtn.innerHTML = `<i class="fas fa-globe"></i> ${title}`;
-        openBtn.addEventListener('click', fn);
-        html.querySelector('.translate')?.remove();
-        const titleElement = html.querySelector('.window-title');
-        titleElement?.parentNode.insertBefore(openBtn, titleElement.nextSibling);
+    /**
+     * Normalize jQuery-wrapped and plain HTMLElement inputs.
+     *
+     * @param {HTMLElement|jQuery} html
+     * @returns {HTMLElement|null}
+     */
+    static element(html) {
+        return html?.[0] ?? html ?? null;
+    }
+
+    /**
+     * Append or replace the original-name secondary label on a compendium entry.
+     *
+     * @param {HTMLElement} target
+     * @param {string} text
+     */
+    static appendOriginalName(target, text) {
+        if (!target || !text) {
+            return;
+        }
+
+        target.querySelector(".babele-original-name")?.remove();
+        target.style.lineHeight = "normal";
+        target.style.paddingTop = "10px";
+
+        const label = document.createElement("div");
+        label.className = "babele-original-name";
+        label.style.lineHeight = "normal";
+        label.style.fontSize = "12px";
+        label.style.color = "gray";
+        label.textContent = text;
+        target.appendChild(label);
     }
 }

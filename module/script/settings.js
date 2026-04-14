@@ -9,8 +9,12 @@ export function registerModuleSettings() {
         config: true,
         filePicker: "folder",
         default: '',
-        onChange: directory => {
-            window.location.reload();
+        onChange: () => {
+            if (!game.user.isGM) {
+                return;
+            }
+
+            void game.babele?.refreshTranslationSources?.();
         }
     });
 
@@ -53,5 +57,22 @@ export function registerModuleSettings() {
         default: [],
         scope: 'world',
         config: false
+    });
+
+    game.settings.register('babele', 'sourcesRevision', {
+        type: Number,
+        default: 0,
+        scope: 'world',
+        config: false,
+        onChange: () => {
+            if (game.user.isGM) {
+                return;
+            }
+
+            void game.babele?.reinitialize?.({
+                shareSources: false,
+                notify: true,
+            });
+        },
     });
 }

@@ -2,11 +2,14 @@ import {registerModuleSettings} from "./settings.js";
 import {initWrapper} from "./wrapper.js";
 import {HtmlUtils} from "./html-utils.js";
 import {Converters} from "./converters.js";
-import {createMappedCompendium} from "./mapped-compendium-decorator.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
 import {defaultMappings} from "./default-mappings.js"
 import {TranslationRegistry} from "./translation-registry.js";
+import {BabeleMappings} from "./babele-mappings.js";
+import {BabeleBootstrap} from "./babele-bootstrap.js";
+import {BabeleRuntimeApplier} from "./babele-runtime-applier.js";
+import {BabeleState} from "./babele-state.js";
 
 /****************
  * HOOKS
@@ -29,17 +32,7 @@ Hooks.once('ready', async () => {
         return;
     }
 
-    await game.babele.shareTranslationFiles();
-    await game.babele.shareGlobalMappingFiles();
-
-    game.packs.forEach(pack => {
-        game.babele.translateIndex(pack.index, pack.collection);
-        game.babele.translatePackFolders(pack);
-        pack.initializeTree();
-    });
-
-    game.babele.translateSystemPackFolders();
-
+    await game.babele.applyRuntimeTranslations({shareSources: true, renderCompendium: false});
     Hooks.callAll('babele.ready');
     await ui.compendium.render();
 });
@@ -136,11 +129,16 @@ class Babel {
     constructor() {
         this.modules = [];
         this.converters = {};
-        this.translations = null;
+        this.state = BabeleState.empty();
+        this.translations = this.state.translations;
+        this.packs = this.state.packs;
+        this.folders = this.state.folders;
         this.systemTranslationsDir = null;
         this.#initialized = null;
         this.#dataLoaded = false;
         this.#translationRegistry = null;
+        this.mappings = new BabeleMappings(defaultMappings);
+        Babel.DEFAULT_MAPPINGS = this.mappings.current();
         this.registerDefaultConverters();
     }
 
@@ -199,13 +197,7 @@ class Babel {
      * @param converters
      */
     registerMapping(mapping) {
-        for (const [key, value] of Object.entries(mapping)) {
-            if (Babel.DEFAULT_MAPPINGS[key]) {
-                Babel.DEFAULT_MAPPINGS[key] = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[key], value);
-            } else {
-                Babel.DEFAULT_MAPPINGS[key] = value;
-            }
-        }
+        this.#applyEffectiveMappings(this.mappings.register(mapping));
     }
 
     /**
@@ -235,7 +227,7 @@ class Babel {
         if(this.#initialized !== null)
             return await this.#initialized;
 
-        this.#initialized = this.#initialize().catch((error) => {
+        this.#initialized = this.#rebuildState({applyRuntime: false}).catch((error) => {
             this.#initialized = null;
             return false;
         });
@@ -248,49 +240,61 @@ class Babel {
         return result;
     }
 
-    async #initialize() {
+    async reinitialize({shareSources = false, notify = false} = {}) {
+        const previousInitialization = this.#initialized;
+
+        try {
+            const pending = this.#rebuildState({applyRuntime: true, shareSources, notify});
+            this.#initialized = pending;
+            const result = await pending;
+            this.#initialized = Promise.resolve(result);
+            Hooks.callAll("babele.reinitialized", this);
+            return result;
+        } catch (error) {
+            this.#initialized = previousInitialization;
+            console.error("Babele | reinitialization failed", error);
+            return false;
+        }
+    }
+
+    async refreshTranslationSources() {
+        const refreshed = await this.reinitialize({
+            shareSources: true,
+            notify: false,
+        });
+
+        if (!refreshed) {
+            return false;
+        }
+
+        if (game.user.isGM) {
+            await game.settings.set("babele", "sourcesRevision", Date.now());
+        }
+
+        ui.notifications?.info?.(
+            "Babele refreshed translation sources. Closed compendium documents are updated; already open documents may need to be reopened.",
+        );
+        return true;
+    }
+
+    async applyRuntimeTranslations(options = {}) {
+        await this.#runtimeApplier().apply(options);
+    }
+
+    async #rebuildState({applyRuntime = false, shareSources = false, notify = false} = {}) {
         let step = "load translations";
 
         try {
-            if (!this.translations) {
-                this.translations = await this.loadTranslations();
-            }
-
+            const prepared = await this.#bootstrap().prepare();
+            step = "apply mappings";
+            this.#applyEffectiveMappings(this.mappings.replaceLoaded(prepared.loadedGlobalMappings));
             step = "build mapped compendium registry";
-            this.packs = new foundry.utils.Collection();
+            const state = await this.#bootstrap().buildState(prepared);
+            this.#applyState(state);
 
-            const registerMappedCompendium = (metadata, translation = null) => {
-                const collection = this.getCollection(metadata);
-
-                if (this.supported(metadata)) {
-                    this.packs.set(collection, createMappedCompendium(metadata, translation));
-                }
-            };
-
-            for (const metadata of game.data.packs) {
-                const collection = this.getCollection(metadata);
-                const translation = this.translations.find(t => t.collection === collection) ?? null;
-                registerMappedCompendium(metadata, translation);
-            }
-
-            // Handle specific files for pack folders
-            step = "load pack folder translations";
-            this.folders = game.data.folders;
-
-            if (this.folders) {
-                const files = (await this.#registry().translationSources())
-                    .filter((source) => source.baseName.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`));
-
-                // Handle specific files for pack folders
-                for (const file of files) {
-                    const metadata = this.#getSpecialPacksFoldersMetadata(file.baseName);
-                    const collection = this.getCollection(metadata);
-                    const translation = this.translations.find(t => t.collection === collection) ?? null;
-
-                    if (translation) {
-                        registerMappedCompendium(metadata, translation);
-                    }
-                }
+            if (applyRuntime) {
+                step = "apply runtime translations";
+                await this.applyRuntimeTranslations({shareSources, notify});
             }
         } catch (error) {
             console.error(`Babele | initialization failed during step: ${step}`, error);
@@ -317,102 +321,10 @@ class Babel {
      * @returns {Promise<[]>}
      */
     async loadTranslations() {
-        const registry = this.#registry();
-        const diagnostics = await registry.diagnostics();
-        this.#logRegistryDiscovery(diagnostics.translation);
-        this.#logRegistryDiscovery(diagnostics.mapping);
-
-        const translationSources = await registry.translationSources();
-        const files = translationSources.map((source) => source.file);
-
-        if (files.length === 0) {
-            console.log(`Babele | no compendium translation files found for ${game.settings.get('core', 'language')} language.`);
-
-            return [];
-        }
-
-        const allTranslations = [];
-        const loadTranslations = async (collection, urls) => {
-            if (urls.length === 0) {
-                console.log(`Babele | no translation file found for ${collection} pack`);
-            } else {
-                const translations = await Promise.all(
-                    urls.map((url) => this.#loadJsonFile(url, {
-                        kind: "translation",
-                        collection,
-                    })),
-                );
-
-                let translation;
-                translations.forEach(t => {
-                    if (t) {
-                        if (translation) {
-                            translation.label = t.label ?? translation.label;
-                            if (t.entries) {
-                                translation.entries = {...translation.entries, ...t.entries};
-                            }
-                            if (t.mapping) {
-                                translation.mapping = {...translation.mapping, ...t.mapping};
-                            }
-                        } else {
-                            translation = t;
-                        }
-                    }
-                });
-
-                if (translation) {
-                    if (urls.length > 1) {
-                        console.log(`Babele | translation for ${collection} pack successfully loaded from ${urls.length} source file(s)`, urls);
-                    } else {
-                        console.log(`Babele | translation for ${collection} pack successfully loaded from ${urls[0]}`);
-                    }
-                    allTranslations.push(foundry.utils.mergeObject(translation, {collection: collection}));
-                }
-            }
-        };
-
-        const packPromises = game.data.packs
-            .filter(metadata => this.supported(metadata))
-            .map(async (metadata) => {
-                const collection = this.getCollection(metadata);
-                const urls = (await registry.sourcesFor(collection)).map((source) => source.file);
-                return loadTranslations(collection, urls);
-            });
-
-        // Handle specific files for pack folders
-        const folderPromises = translationSources
-            .filter((source) => source.baseName.endsWith(`${Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX}.json`))
-            .map((source) => {
-                const fileName = source.baseName;
-                const file = source.file;
-                return loadTranslations(fileName.replace('.json', ''), [file]);
-            });
-
-        await Promise.all([...packPromises, ...folderPromises]);
-
-        // Handle global mappings
-        const mappingFiles = (await registry.mappingSources()).map((source) => source.file);
-
-        if (mappingFiles.length > 0) {
-            console.log(`Babele | global mapping files found, defaults will be enriched/overwritten...`, mappingFiles);
-
-            const loadMappings = async () => {
-                const mappings = await Promise.all(
-                    mappingFiles.map((file) => this.#loadJsonFile(file, {
-                        kind: "mapping",
-                        phase: "global defaults enrichment",
-                    })),
-                );
-                mappings.forEach(mapping => {
-                    if (mapping) {
-                        this.registerMapping(mapping);
-                    }
-                })
-            }
-            await loadMappings();
-        }
-
-        return allTranslations;
+        const prepared = await this.#bootstrap().prepare();
+        this.#translationRegistry = prepared.registry;
+        this.#applyEffectiveMappings(this.mappings.replaceLoaded(prepared.loadedGlobalMappings));
+        return prepared.translations;
     }
 
     #translationEntries(entries) {
@@ -638,7 +550,14 @@ class Babel {
             .filter((pack) => pack.metadata.name === Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX)
             .forEach((pack) => Object.assign(translations, pack.translations ?? {}, pack.folders ?? {}));
 
-        game.collections.get('Folder').forEach((folder) => folder.name = translations[folder.name] ?? folder.name);
+        game.collections.get('Folder').forEach((folder) => {
+            const originalName = folder.originalName ?? folder.name;
+            const translatedName = translations[originalName];
+            if (translatedName) {
+                folder.originalName = originalName;
+                folder.name = translatedName;
+            }
+        });
     }
 
     async shareTranslationFiles() {
@@ -655,7 +574,7 @@ class Babel {
         }
     }
 
-    #getSpecialPacksFoldersMetadata(file) {
+    specialPackFoldersMetadataFor(file) {
         const [packageName, name] = file.split('.');
 
         return {
@@ -667,7 +586,7 @@ class Babel {
     }
 
 
-    async #loadJsonFile(file, context = {}) {
+    async loadJsonFile(file, context = {}) {
         try {
             const response = await fetch(file);
 
@@ -705,16 +624,6 @@ class Babel {
         console.error(`Babele | failed to load ${context.kind ?? "JSON"} file '${file}'`, details);
     }
 
-    #logRegistryDiscovery(diagnostics) {
-        console.log(
-            `Babele | discovered ${diagnostics.uniqueFiles.length} unique ${diagnostics.kind} file(s) across ${diagnostics.directories.length} directorie(s)`,
-            {
-                directories: diagnostics.browseResults ?? [],
-                duplicatesDiscarded: diagnostics.duplicateFilesDiscarded,
-            },
-        );
-    }
-
     #registry() {
         if (!this.#translationRegistry) {
             this.#translationRegistry = new TranslationRegistry(this.modules);
@@ -723,15 +632,26 @@ class Babel {
         return this.#translationRegistry;
     }
 
-    /**
-     * @type {boolean}
-     */
-    static get #canIndexFiles(){
-        // Needs to check both the permissions and the GM status 
-        // as the file discovery will fail if a folder is hidden
-        // This is checked by the server itself and can't be changed
-        return game.user.hasPermission('FILES_BROWSE') && game.user.isGM;
+    #bootstrap() {
+        return new BabeleBootstrap(this);
     }
+
+    #runtimeApplier() {
+        return new BabeleRuntimeApplier(this);
+    }
+
+    #applyState(state) {
+        this.state = state;
+        this.translations = state.translations;
+        this.packs = state.packs;
+        this.folders = state.folders;
+        this.#translationRegistry = state.translationRegistry;
+    }
+
+    #applyEffectiveMappings(mappings) {
+        Babel.DEFAULT_MAPPINGS = mappings;
+    }
+
 }
 
 export default Babel

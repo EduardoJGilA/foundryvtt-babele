@@ -30,13 +30,16 @@ test("Babel.init fails open and can retry after a bootstrap failure", async () =
   const babele = new Babel();
   let attempts = 0;
 
-  babele.loadTranslations = async () => {
-    attempts += 1;
-    if (attempts === 1) {
-      throw new Error("boom");
-    }
-    return [];
-  };
+  Object.defineProperty(game.data, "packs", {
+    configurable: true,
+    get() {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("boom");
+      }
+      return [];
+    },
+  });
 
   const first = await babele.init();
   const second = await babele.init();
@@ -46,6 +49,12 @@ test("Babel.init fails open and can retry after a bootstrap failure", async () =
   assert.equal(attempts, 2);
   assert.equal(errorCalls.length >= 1, true);
   assert.match(String(errorCalls[0][0]), /initialization failed during step/);
+
+  Object.defineProperty(game.data, "packs", {
+    configurable: true,
+    writable: true,
+    value: [],
+  });
 });
 
 test("Babel prefers mappings.json over deprecated mapping.json in the same directory", async () => {
@@ -247,6 +256,60 @@ test("Babel.loadTranslations logs and skips invalid mapping JSON files", async (
   Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
 });
 
+test("Babel.reinitialize replaces loaded global mappings instead of accumulating them", async () => {
+  const babele = new Babel();
+  const originalItemMapping = structuredClone(Babel.DEFAULT_MAPPINGS.Item);
+  let phase = 1;
+
+  babele.modules.push({module: "module-one", dir: "translations", lang: "en"});
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  game.data.packs = [];
+
+  foundry.applications.apps.FilePicker.browse = async (_source, dir) => {
+    if (dir === "modules/module-one/translations") {
+      return {
+        files: ["modules/module-one/translations/mappings.json"],
+      };
+    }
+
+    return {files: []};
+  };
+
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("mappings.json")) {
+      return {
+        async json() {
+          return phase === 1
+            ? {Item: {phaseOne: "system.phaseOne"}}
+            : {Item: {phaseTwo: "system.phaseTwo"}};
+        },
+      };
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  await babele.init();
+  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseOne, "system.phaseOne");
+  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseTwo, undefined);
+
+  phase = 2;
+  await babele.reinitialize();
+
+  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseOne, undefined);
+  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseTwo, "system.phaseTwo");
+
+  Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
+});
+
 test("Babel.translate fails open for translated packs when a converter throws", () => {
   const babele = new Babel();
   const originalConverter = game.babele.converters.explode;
@@ -439,6 +502,89 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
     globalThis.JSZip = originalZip;
     globalThis.saveAs = originalSaveAs;
   }
+});
+
+test("Babel.reinitialize restores translated indexes and clears cached closed compendium documents", async () => {
+  const babele = new Babel();
+  let phase = 1;
+  let clearCalls = 0;
+  let initializeTreeCalls = 0;
+
+  babele.modules.push({module: "module-one", dir: "translations", lang: "en"});
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  foundry.applications.apps.FilePicker.browse = async (_source, dir) => {
+    if (dir === "modules/module-one/translations") {
+      return {
+        files: ["modules/module-one/translations/module-one.items.json"],
+      };
+    }
+
+    return {files: []};
+  };
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("module-one.items.json")) {
+      return {
+        async json() {
+          return {
+            entries: {
+              "item-1": {
+                name: phase === 1 ? "Spada" : "Lama",
+              },
+            },
+          };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  game.data.packs = [{
+    type: "Item",
+    packageName: "module-one",
+    packageType: "module",
+    name: "items",
+  }];
+  game.packs = new foundry.utils.Collection([[
+    "module-one.items",
+    {
+      collection: "module-one.items",
+      metadata: {id: "module-one.items"},
+      index: [{_id: "item-1", name: "Sword"}],
+      folders: new foundry.utils.Collection(),
+      initializeTree() {
+        initializeTreeCalls += 1;
+      },
+      clear() {
+        clearCalls += 1;
+      },
+    },
+  ]]);
+  game.data.folders = [];
+  game.collections.set("Folder", []);
+
+  await babele.init();
+  await babele.applyRuntimeTranslations();
+
+  const entry = game.packs.get("module-one.items").index[0];
+  assert.equal(entry.name, "Spada");
+  assert.equal(entry.originalName, "Sword");
+
+  phase = 2;
+  await babele.reinitialize();
+
+  assert.equal(entry.name, "Lama");
+  assert.equal(entry.originalName, "Sword");
+  assert.equal(clearCalls >= 1, true);
+  assert.equal(initializeTreeCalls >= 2, true);
 });
 
 test.after(() => {

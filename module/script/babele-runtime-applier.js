@@ -37,6 +37,7 @@ export class BabeleRuntimeApplier {
 
         this.#restoreWorldFolders();
         this.babele.translateSystemPackFolders();
+        this.babele.translateImportedCompendiumFolders();
 
         if (renderCompendium) {
             await ui.compendium?.render?.();

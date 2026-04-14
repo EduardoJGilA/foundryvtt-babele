@@ -419,6 +419,97 @@ test("Babel.translatePackFolders uses the compendium translation folders payload
   assert.equal(pack.folders.get("folder-b").name, "Treasure");
 });
 
+test("Babel.translateImportedCompendiumFolder uses the source pack folder translations", () => {
+  const babele = new Babel();
+  const folder = {
+    id: "folder-a",
+    name: "Equipment",
+    _stats: {
+      compendiumSource: "Compendium.test.items.Folder.folder-a",
+    },
+  };
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      folders: {
+        Equipment: "Equipaggiamento",
+      },
+    },
+  ]]);
+
+  babele.translateImportedCompendiumFolder(folder);
+
+  assert.equal(folder.originalName, "Equipment");
+  assert.equal(folder.name, "Equipaggiamento");
+});
+
+test("Babel.translateImportedCompendiumFolder falls back to matching the imported folder id against source pack folders", () => {
+  const babele = new Babel();
+  const folder = {
+    id: "folder-a",
+    name: "Equipment",
+    type: "Item",
+  };
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      folders: {
+        Equipment: "Equipaggiamento",
+      },
+    },
+  ]]);
+
+  game.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      collection: "test.items",
+      metadata: {
+        type: "Item",
+      },
+      folders: new foundry.utils.Collection([
+        ["folder-a", {_id: "folder-a", name: "Equipment"}],
+      ]),
+    },
+  ]]);
+
+  babele.translateImportedCompendiumFolder(folder);
+
+  assert.equal(folder.originalName, "Equipment");
+  assert.equal(folder.name, "Equipaggiamento");
+});
+
+test("Babel.translateImportedCompendiumFolders reapplies translations to imported world folders", () => {
+  const babele = new Babel();
+  const worldFolders = new foundry.utils.Collection([
+    ["folder-a", {
+      name: "Equipment",
+      _stats: {
+        compendiumSource: "Compendium.test.items.Folder.folder-a",
+      },
+    }],
+    ["folder-b", {
+      name: "Rules",
+    }],
+  ]);
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      folders: {
+        Equipment: "Equipaggiamento",
+      },
+    },
+  ]]);
+
+  babele.translateImportedCompendiumFolders(worldFolders);
+
+  assert.equal(worldFolders.get("folder-a").name, "Equipaggiamento");
+  assert.equal(worldFolders.get("folder-a").originalName, "Equipment");
+  assert.equal(worldFolders.get("folder-b").name, "Rules");
+});
+
 test("Babel.exportTranslationsFile includes compendium folders using original names", async () => {
   const babele = new Babel();
   const originalDialogCreate = ExportTranslationsDialog.create;

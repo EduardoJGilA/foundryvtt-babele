@@ -52,6 +52,10 @@ Hooks.on('importAdventure', () => {
     });
 });
 
+Hooks.on("createFolder", (folder) => {
+    game.babele?.translateImportedCompendiumFolder?.(folder);
+});
+
 /**
  * Main facade class with init logic and on API for on demand translations based on loaded mapping files.
  */
@@ -531,6 +535,70 @@ class Babel {
                 folder.name = translatedName;
             }
         });
+    }
+
+    translateImportedCompendiumFolder(folder) {
+        if (!folder) {
+            return;
+        }
+
+        const sourceCollection = this.sourcePackCollectionFor(folder);
+        if (!sourceCollection) {
+            return;
+        }
+
+        const tcFolders = this.packs.get(sourceCollection)?.folders ?? [];
+        const originalName = folder.originalName ?? folder.name;
+        const translatedName = tcFolders[originalName];
+
+        if (translatedName) {
+            folder.originalName = originalName;
+            folder.name = translatedName;
+        }
+    }
+
+    translateImportedCompendiumFolders(folders = game.collections.get("Folder")) {
+        folders?.forEach?.((folder) => this.translateImportedCompendiumFolder(folder));
+    }
+
+    sourcePackCollectionFor(document) {
+        const directSourceId = document?._stats?.compendiumSource ?? document?.flags?.core?.sourceId;
+        const directCollection = this.#collectionFromSourceId(directSourceId);
+        if (directCollection) {
+            return directCollection;
+        }
+
+        for (const entry of document?.contents ?? []) {
+            const entrySourceId = entry?._stats?.compendiumSource ?? entry?.flags?.core?.sourceId;
+            const entryCollection = this.#collectionFromSourceId(entrySourceId);
+            if (entryCollection) {
+                return entryCollection;
+            }
+        }
+
+        const folderId = document?.id ?? document?._id;
+        const documentType = document?.type ?? null;
+
+        if (!folderId) {
+            return null;
+        }
+
+        return game.packs?.find?.((pack) => {
+            const packType = pack?.metadata?.type ?? pack?.documentName ?? null;
+            if (documentType && packType && documentType !== packType) {
+                return false;
+            }
+
+            return !!pack?.folders?.get?.(folderId);
+        })?.collection ?? null;
+    }
+
+    #collectionFromSourceId(sourceId) {
+        if (!sourceId) {
+            return null;
+        }
+
+        return String(sourceId).match(/^Compendium\.([^.]+\.[^.]+)\./)?.[1] ?? null;
     }
 
     translateSystemPackFolders() {

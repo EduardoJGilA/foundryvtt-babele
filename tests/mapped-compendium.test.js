@@ -5,6 +5,8 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 installFoundryStubs();
 
 const {MappedCompendium} = await import("../module/script/mapped-compendium.js");
+const {AdventureMappedCompendium, createMappedCompendium} = await import("../module/script/mapped-compendium-decorator.js");
+const {CompendiumRuntime} = await import("../module/script/compendium-runtime.js");
 const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
 const {default: Babel} = await import("../module/script/babele.js");
 
@@ -92,6 +94,118 @@ test("MappedCompendium extracts document payloads without requiring translations
     name: "Sword",
     description: "Original description",
   });
+});
+
+test("createMappedCompendium decorates Adventure compendiums", () => {
+  const compendium = createMappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+  }, {
+    entries: {},
+  });
+
+  assert.equal(compendium instanceof AdventureMappedCompendium, true);
+});
+
+test("createMappedCompendium keeps Adventure entry virtual packs undecorated", () => {
+  const compendium = createMappedCompendium({
+    id: "test.adventure::adventureA::items",
+    name: "test.adventure::adventureA::items",
+    type: "Item",
+    virtual: true,
+    adventureCollection: "test.adventure",
+    adventureEntryKey: "adventureA",
+  }, {
+    entries: {},
+  });
+
+  assert.equal(compendium instanceof AdventureMappedCompendium, false);
+  assert.equal(compendium instanceof MappedCompendium, true);
+});
+
+test("AdventureMappedCompendium fails fast when decorating a non-adventure compendium", () => {
+  const compendium = new MappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {},
+  });
+
+  assert.throws(() => new AdventureMappedCompendium(compendium), /Adventure compendiums/);
+});
+
+test("createMappedCompendium preserves Adventure translation access", () => {
+  const parent = createMappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      items: {
+        description: "system.description.value",
+      },
+    },
+    entries: {
+      adventureA: {
+        items: {
+          "item-a": {
+            name: "Translated A",
+            description: "Description A",
+          },
+        },
+      },
+    },
+  });
+  const translations = parent.translationsFor({
+    _id: "adventureA",
+    name: "Adventure A",
+  });
+
+  assert.deepEqual(translations.items?.["item-a"], {
+    name: "Translated A",
+    description: "Description A",
+  });
+});
+
+test("AdventureMappedCompendium reuses the scoped runtime for the same entry", () => {
+  const parent = createMappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    entries: {
+      adventureA: {
+        actors: {
+          "actor-a": {
+            name: "Translated Actor",
+          },
+        },
+      },
+    },
+  });
+  const runtime = new CompendiumRuntime();
+  const entry = {
+    _id: "adventureA",
+    name: "Adventure A",
+  };
+
+  let childCalls = 0;
+  const originalChild = runtime.child.bind(runtime);
+  runtime.child = (localPacks) => {
+    childCalls += 1;
+    return originalChild(localPacks);
+  };
+
+  parent.translate(entry, true, runtime);
+  parent.translate(entry, true, runtime);
+
+  assert.equal(childCalls, 1);
 });
 
 test("Babel delegates translation and extraction operations to MappedCompendium", () => {

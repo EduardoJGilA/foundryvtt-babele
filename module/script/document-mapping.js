@@ -10,9 +10,8 @@ import Babel from "./babele.js";
  */
 export class DocumentMapping {
 
-    constructor(documentType, mapping, tc) {
+    constructor(documentType, mapping) {
         this.documentType = documentType;
-        this.tc = tc;
 
         // Separate subtype-specific entries (e.g. "Actor.hero") from base field mappings.
         this._subtypeCustomMappings = {};
@@ -30,7 +29,7 @@ export class DocumentMapping {
         }
 
         this.mapping = foundry.utils.mergeObject(Babel.DEFAULT_MAPPINGS[documentType] || {}, baseCustomMapping, { inplace: false });
-        this.fields = Object.keys(this.mapping).map(key => new FieldMapping(key, this.mapping[key], tc));
+        this.fields = Object.keys(this.mapping).map(key => new FieldMapping(key, this.mapping[key]));
         this._subtypeFieldsCache = {};
     }
 
@@ -66,7 +65,7 @@ export class DocumentMapping {
             { inplace: false },
         );
         const merged = foundry.utils.mergeObject(this.mapping, subtypeOverride, { inplace: false });
-        const fields = Object.keys(merged).map(key => new FieldMapping(key, merged[key], this.tc));
+        const fields = Object.keys(merged).map(key => new FieldMapping(key, merged[key]));
         this._subtypeFieldsCache[subtype] = fields;
 
         return fields;
@@ -74,28 +73,47 @@ export class DocumentMapping {
 
     /**
      * @param data original data to translate
+     * @param {object} translations
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
      * @returns {*} an object with expanded mapped fields path and a translated value.
      */
-    map(data, translations) {
-        return this._getFieldsForType(data.type).reduce((m, f) => foundry.utils.mergeObject(m, f.map(data, translations)), {});
+    map(data, translations, runtime = {}) {
+        return this._getFieldsForType(data.type).reduce((m, f) => foundry.utils.mergeObject(m, f.map(data, translations, runtime)), {});
     }
 
-    translateField(field, data, translations) {
-        return this._getFieldsForType(data.type).find(f => f.field === field)?.translate(data, translations);
+    /**
+     * Translate one mapped field using the provided runtime visibility context.
+     *
+     * @param {string} field
+     * @param data
+     * @param {object} translations
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {*}
+     */
+    translateField(field, data, translations, runtime = {}) {
+        return this._getFieldsForType(data.type).find(f => f.field === field)?.translate(data, translations, runtime);
     }
 
-    extractField(field, data) {
-        return this._getFieldsForType(data.type).find(f => f.field === field)?.extractValue(field, data);
+    /**
+     * Extract one mapped field using the provided runtime visibility context.
+     *
+     * @param {string} field
+     * @param data
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {*}
+     */
+    extractField(field, data, runtime = {}) {
+        return this._getFieldsForType(data.type).find(f => f.field === field)?.extract(data, runtime)?.[field];
     }
 
     /**
      * @param data
-     * @param options
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    extract(data, options = {}) {
+    extract(data, runtime = {}) {
         return this._getFieldsForType(data.type).reduce((m, f) => {
-            const extracted = f.extract(data, options);
+            const extracted = f.extract(data, runtime);
 
             if (typeof extracted === "undefined") {
                 return m;

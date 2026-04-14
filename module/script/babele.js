@@ -2,7 +2,7 @@ import {registerModuleSettings} from "./settings.js";
 import {initWrapper} from "./wrapper.js";
 import {HtmlUtils} from "./html-utils.js";
 import {Converters} from "./converters.js";
-import {MappedCompendium} from "./mapped-compendium.js";
+import {createMappedCompendium} from "./mapped-compendium-decorator.js";
 import {ExportTranslationsDialog} from "./export-translations-dialog.js";
 import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
 import {defaultMappings} from "./default-mappings.js"
@@ -108,16 +108,6 @@ class Babel {
     #initialized
     #dataLoaded
     #translationRegistry
-    static ADVENTURE_EMBEDDED_PACKS = {
-        Actor: "actors",
-        Cards: "cards",
-        Item: "items",
-        JournalEntry: "journals",
-        Macro: "macros",
-        Playlist: "playlists",
-        RollTable: "tables",
-        Scene: "scenes",
-    };
 
     static get PACK_FOLDER_TRANSLATION_NAME_SUFFIX() {
         return '_packs-folders';
@@ -128,10 +118,6 @@ class Babel {
     }
 
     static DEFAULT_MAPPINGS = defaultMappings;
-
-    static getAdventureVirtualCollection(parentCollection, entryKey, mappingKey) {
-        return `${parentCollection}::${entryKey}::${mappingKey}`;
-    }
 
     /**
      * Singleton implementation.
@@ -175,7 +161,7 @@ class Babel {
             "sceneRegions": Converters.sceneRegions(),
             "adventureItems": Converters.fromDefaultMapping("Item", "items"),
             "adventureActors": Converters.fromDefaultMapping("Actor", "actors"),
-            "adventureCards": Converters.fromDefaultMapping("Cards", "card"),
+            "adventureCards": Converters.fromDefaultMapping("Cards", "cards"),
             "adventureJournals": Converters.fromDefaultMapping("JournalEntry", "journals"),
             "adventurePlaylists": Converters.fromDefaultMapping("Playlist", "playlists"),
             "adventureMacros": Converters.fromDefaultMapping("Macro", "macros"),
@@ -277,11 +263,7 @@ class Babel {
                 const collection = this.getCollection(metadata);
 
                 if (this.supported(metadata)) {
-                    this.packs.set(collection, new MappedCompendium(metadata, translation));
-
-                    if (translation && metadata.type === 'Adventure') {
-                        this.#registerAdventureVirtualPacks(collection, metadata, translation);
-                    }
+                    this.packs.set(collection, createMappedCompendium(metadata, translation));
                 }
             };
 
@@ -323,40 +305,9 @@ class Babel {
         return `${collectionPrefix}.${metadata.name}`;
     }
 
-    getAdventureEntryTranslatedCompendium(parent, adventureData, mappingKey) {
-        const parentCollection = typeof parent === "string" ? parent : this.getCollection(parent);
-        const parentTc = this.packs.get(parentCollection);
-        const entryKey = parentTc?.translationKeyFor(adventureData);
-
-        if (!entryKey) {
-            return null;
-        }
-
-        return this.packs.get(Babel.getAdventureVirtualCollection(parentCollection, entryKey, mappingKey)) ?? null;
-    }
-
-    getRelatedAdventureTranslatedCompendium(tc, mappingKey) {
-        const parentCollection = tc?.metadata?.adventureCollection;
-        const entryKey = tc?.metadata?.adventureEntryKey;
-
-        if (!parentCollection || !entryKey) {
-            return null;
-        }
-
-        return this.packs.get(Babel.getAdventureVirtualCollection(parentCollection, entryKey, mappingKey)) ?? null;
-    }
-
     translatedPackFor(documentType, data, options = {}) {
-        const {
-            includeVirtual = false,
-            registry = this.packs,
-        } = options;
-
-        const matches = (pack) =>
-            (!!includeVirtual || !pack.metadata?.virtual)
-            && pack.hasTranslation(data, documentType);
-
-        return registry?.find(matches) ?? null;
+        const registry = options.registry ?? this.packs;
+        return registry?.find?.((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
     }
 
     /**
@@ -462,28 +413,6 @@ class Babel {
         }
 
         return allTranslations;
-    }
-
-    #registerAdventureVirtualPacks(collection, metadata, translation) {
-        for (const [entryKey, adventure] of this.#translationEntries(translation.entries)) {
-            for (const [type, mappingKey] of Object.entries(Babel.ADVENTURE_EMBEDDED_PACKS)) {
-                const virtualCollection = Babel.getAdventureVirtualCollection(collection, entryKey, mappingKey);
-
-                this.packs.set(virtualCollection, new MappedCompendium({
-                    id: virtualCollection,
-                    type,
-                    virtual: true,
-                    packageName: metadata.packageName,
-                    packageType: metadata.packageType,
-                    name: virtualCollection,
-                    adventureCollection: collection,
-                    adventureEntryKey: entryKey,
-                }, {
-                    mapping: translation.mapping?.[mappingKey] ?? {},
-                    entries: adventure?.[mappingKey] ?? {},
-                }));
-            }
-        }
     }
 
     #translationEntries(entries) {

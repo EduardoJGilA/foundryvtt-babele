@@ -106,26 +106,12 @@ export function installFoundryStubs() {
       packs: new TestCollection(),
       translations: [],
       translatedPackFor(documentType, data, options = {}) {
-        const {
-          includeVirtual = false,
-          registry = this.packs,
-        } = options;
-
-        const matches = (pack) =>
-          (!!includeVirtual || !pack.metadata?.virtual)
-          && pack.hasTranslation(data, documentType);
-
-        return registry?.find(matches) ?? null;
+        const registry = options.registry ?? this.packs;
+        return registry?.find?.((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
       },
       getCollection(metadata) {
         const prefix = metadata.packageType === "world" ? "world" : metadata.packageName;
         return `${prefix}.${metadata.name}`;
-      },
-      getRelatedAdventureTranslatedCompendium() {
-        return null;
-      },
-      getAdventureEntryTranslatedCompendium() {
-        return null;
       },
       translateField() {
         return null;

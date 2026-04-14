@@ -1,23 +1,19 @@
-import {DocumentMapping} from "./document-mapping.js";
-import {MappedCompendium} from "./mapped-compendium.js";
+import {createMappedCompendium} from "./mapped-compendium-decorator.js";
+import {CompendiumRuntime} from "./compendium-runtime.js";
 import {TranslationResolver} from "./translation-resolver.js";
-
-const embeddedMappingKeys = {
-    Actor: "actors",
-    Cards: "cards",
-    Item: "items",
-    JournalEntry: "journals",
-    Macro: "macros",
-    Playlist: "playlists",
-    RollTable: "tables",
-    Scene: "scenes",
-};
 
 /**
  * Utility class with all predefined converters
  */
 export class Converters {
 
+    /**
+     * Normalize Foundry collections, arrays, and collection-like objects to a
+     * plain array so converters can iterate uniformly.
+     *
+     * @param {*} collection
+     * @returns {Array<*>}
+     */
     static _asArray(collection) {
         if (!collection) {
             return [];
@@ -30,6 +26,15 @@ export class Converters {
         return collection.contents ?? Array.from(collection);
     }
 
+    /**
+     * Choose a stable export key for an embedded document, preferring human
+     * readable names and falling back to ids when duplicates occur.
+     *
+     * @param {object} data
+     * @param {Set<string>} usedKeys
+     * @param {string} [fallbackPrefix]
+     * @returns {string}
+     */
     static _exportKeyFor(data, usedKeys, fallbackPrefix = "entry") {
         const candidates = [data?.name, data?._id, data?.id].filter(Boolean);
 
@@ -50,16 +55,36 @@ export class Converters {
         return fallback;
     }
 
-    static _extractEmbeddedCollection(entities, dynamicMapping, options = {}) {
+    /**
+     * Extract a translation JSON fragment for an embedded document collection
+     * by delegating each document extraction to the effective embedded
+     * compendium context.
+     *
+     * @param {Array<object>|*} entities
+     * @param {*} contextPack
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {object}
+     */
+    static _extractEmbeddedCollection(entities, contextPack, runtime = {}) {
+        const activeRuntime = Converters._runtimeWithContextCompendium(contextPack, runtime);
         const usedKeys = new Set();
 
         return Converters._asArray(entities).reduce((out, entity) => {
             const key = Converters._exportKeyFor(entity, usedKeys, "embedded");
-            out[key] = dynamicMapping.extract(entity, options);
+            out[key] = contextPack.extract(entity, activeRuntime);
             return out;
         }, {});
     }
 
+    /**
+     * Normalize translation entries to an object keyed by translation id.
+     *
+     * Accepts both legacy array-shaped payloads and the object form used by
+     * Transifex-compatible files.
+     *
+     * @param {object|Array<object>|null} translations
+     * @returns {object}
+     */
     static _translationMap(translations) {
         if (!translations) {
             return {};
@@ -77,6 +102,13 @@ export class Converters {
         }, {});
     }
 
+    /**
+     * Resolve the inline translation entry matched for an embedded document.
+     *
+     * @param {object} data
+     * @param {object|Array<object>|null} translations
+     * @returns {object|null}
+     */
     static _resolvedTranslation(data, translations) {
         if (!translations) {
             return null;
@@ -86,112 +118,207 @@ export class Converters {
     }
 
     /**
+     * Build the effective compendium context used to translate or extract an
+     * embedded document collection.
      *
-     * @param mapping
-     * @param documentType
+     * The effective context merges:
+     * - the runtime-local compendium for the document type, if present
+     * - inline translations declared on the parent document
+     * - the mapping chosen by the converter
+     *
+     * Inline translations intentionally override scoped pack translations for
+     * the same embedded document, mirroring the historical `fromPack`
+     * semantics where parent-provided overrides win.
+     *
+     * @param {string} documentType
+     * @param {object} [options]
+     * @param {object|null} [options.mapping]
+     * @param {object|Array<object>|null} [options.translations]
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [options.runtime]
+     * @returns {*}
+     */
+    static _embeddedContextPack(documentType, {mapping = null, translations = null, runtime = {}} = {}) {
+        const activeRuntime = CompendiumRuntime.from(runtime);
+        const scopedPack = activeRuntime.localMappedCompendiumFor(documentType);
+        const payload = {};
+        const baseEntries = scopedPack ? Converters._translationMap(scopedPack.translations) : {};
+        const inlineEntries = Converters._translationMap(translations);
+        const entries = {
+            ...baseEntries,
+            ...inlineEntries,
+        };
+        const effectiveMapping = mapping ?? scopedPack?.customMapping ?? null;
+
+        if (effectiveMapping !== null) {
+            payload.mapping = effectiveMapping;
+        }
+
+        if (Object.keys(entries).length > 0) {
+            payload.entries = entries;
+        }
+
+        if (scopedPack?.reference?.length) {
+            payload.reference = [...scopedPack.reference];
+        }
+
+        if (scopedPack?.types?.length) {
+            payload.types = [...scopedPack.types];
+        }
+
+        return createMappedCompendium(
+            scopedPack?.metadata ? {...scopedPack.metadata} : {type: documentType},
+            Object.keys(payload).length > 0 ? payload : null,
+        );
+    }
+
+    static _runtimeWithContextCompendium(contextPack, runtime = {}) {
+        const activeRuntime = CompendiumRuntime.from(runtime);
+        return activeRuntime.currentCompendium() === contextPack
+            ? activeRuntime
+            : activeRuntime.child({currentCompendium: contextPack});
+    }
+
+    /**
+     * Build a converter for embedded document collections whose effective
+     * mapping is provided directly by the converter declaration.
+     *
+     * Typical use case: fields like `Actor.items`, where Babele knows that the
+     * field contains embedded documents and should translate each document
+     * recursively, first using any inline overrides and then falling back to
+     * visible translated packs in runtime.
+     *
+     * Converter callback contract:
+     * `(value, translation, data, tc, allTranslations, runtime) => translatedValue`
+     *
+     * `tc` is kept for backward compatibility with existing third-party
+     * converters, but internal Babele converters should treat
+     * `runtime.currentCompendium()` as the authoritative active context.
+     *
+     * @param {object|null} mapping
+     * @param {string} documentType
      * @returns {function(*, *=): *}
      */
     static fromPack(mapping, documentType = 'Item') {
-        const fn = function (items, translations, data, tc) {
-            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[documentType]);
-            if (!contextPack) {
-                const dynamicMapping = new DocumentMapping(documentType, mapping);
-                return Converters._fromPack(items, translations, dynamicMapping);
-            }
+        const fn = function (items, translations, data, tc, _allTranslations, runtime = {}) {
+            const contextPack = Converters._embeddedContextPack(documentType, {
+                mapping,
+                translations,
+                runtime,
+            });
 
-            const dynamicMapping = new DocumentMapping(documentType, mapping, contextPack);
-            return Converters._fromPack(items, translations, dynamicMapping, contextPack);
+            return Converters._fromPack(items, contextPack, runtime);
         };
 
         fn.extract = function (items, data, tc, context) {
-            const contextPack = game.babele.getRelatedAdventureTranslatedCompendium(tc, embeddedMappingKeys[documentType]);
-            const dynamicMapping = new DocumentMapping(documentType, mapping, contextPack ?? tc);
+            const runtime = context.runtime;
+            const contextPack = Converters._embeddedContextPack(documentType, {
+                mapping,
+                runtime,
+            });
 
-            return Converters._extractEmbeddedCollection(items, dynamicMapping, context.options);
+            return Converters._extractEmbeddedCollection(items, contextPack, runtime);
         };
 
         return fn;
     }
 
+    /**
+     * Build a converter for Adventure embedded document collections whose
+     * mapping is resolved from the parent Adventure mapping block.
+     *
+     * This reuses the same embedded translation flow as `fromPack`, but the
+     * mapping comes from `tc.customMapping[mappingKey]` so each Adventure can
+     * define additional translated fields for its embedded document type.
+     *
+     * As with `fromPack`, the runtime carries the active embedded compendium
+     * context. The `tc` callback parameter remains available only for
+     * compatibility with existing custom converters.
+     *
+     * @param {string} documentType
+     * @param {string} mappingKey
+     * @returns {function(*, *=): *}
+     */
     static fromDefaultMapping(documentType, mappingKey) {
-        const fn = function (entities, translations, data, tc) {
-            const collection = game.babele.getCollection(tc.metadata);
-            const babeleTranslations = game.babele.translations.find((item) => item.collection === collection);
-            const customMapping = babeleTranslations && babeleTranslations.mapping
-                ? babeleTranslations?.mapping[mappingKey] ?? {}
-                : {};
-            const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
-                ?? new MappedCompendium({
-                    type: documentType,
-                    adventureCollection: collection,
-                    adventureEntryKey: tc.translationKeyFor(data),
-                }, {
-                    mapping: customMapping,
-                    entries: translations ?? {},
-                });
-            const dynamicMapping = new DocumentMapping(
-                documentType,
-                customMapping,
-                contextPack
-            );
+        const fn = function (entities, translations, data, tc, _allTranslations, runtime = {}) {
+            const contextPack = Converters._embeddedContextPack(documentType, {
+                mapping: tc.customMapping?.[mappingKey] ?? {},
+                translations,
+                runtime,
+            });
 
-            return Converters._fromPack(entities, translations, dynamicMapping, contextPack);
+            return Converters._fromPack(entities, contextPack, runtime);
         };
 
         fn.extract = function (entities, data, tc, context) {
-            const collection = game.babele.getCollection(tc.metadata);
-            const customMapping = tc.customMapping?.[mappingKey] ?? {};
-            const contextPack = game.babele.getAdventureEntryTranslatedCompendium(tc.metadata, data, mappingKey)
-                ?? new MappedCompendium({
-                    type: documentType,
-                    packageName: tc.metadata.packageName,
-                    packageType: tc.metadata.packageType,
-                    adventureCollection: collection,
-                    adventureEntryKey: tc.translationKeyFor?.(data) ?? null,
-                }, {
-                    mapping: customMapping,
-                    entries: {},
-                });
-            const dynamicMapping = new DocumentMapping(documentType, customMapping, contextPack);
+            const runtime = context.runtime;
+            const contextPack = Converters._embeddedContextPack(documentType, {
+                mapping: tc.customMapping?.[mappingKey] ?? {},
+                runtime,
+            });
 
-            return Converters._extractEmbeddedCollection(entities, dynamicMapping, context.options);
+            return Converters._extractEmbeddedCollection(entities, contextPack, runtime);
         };
 
         return fn;
     }
 
-    static _fromPack(entities, translations, dynamicMapping, priorityPack = null) {
+    /**
+     * Translate embedded document collections using the effective embedded
+     * compendium first, then falling back to the translated packs visible in
+     * the current runtime.
+     *
+     * This is the shared execution path behind `fromPack` and
+     * `fromDefaultMapping`: both resolve an effective embedded compendium
+     * context, then delegate the per-document translation logic here.
+     *
+     * The active embedded compendium is pushed into `runtime.currentCompendium`
+     * before any nested translation occurs, so recursive converters resolve
+     * their context from runtime instead of relying on captured `tc` state.
+     *
+     * @param {Array<object>} entities
+     * @param {*} contextPack
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {Array<object>}
+     */
+    static _fromPack(entities, contextPack, runtime = {}) {
+        const activeRuntime = Converters._runtimeWithContextCompendium(contextPack, runtime);
+        const currentCompendium = activeRuntime.currentCompendium();
+
         return entities.map((data) => {
-            if (translations) {
-                const translation = Converters._resolvedTranslation(data, translations);
-
-                if (translation) {
-                    const translatedData = dynamicMapping.map(data, translation);
-
-                    return foundry.utils.mergeObject(data, foundry.utils.mergeObject(translatedData, {translated: true}));
-                }
+            if (currentCompendium?.hasTranslation(data, currentCompendium.metadata?.type ?? null)) {
+                return currentCompendium.translate(data, false, activeRuntime);
             }
 
-            const documentType = dynamicMapping?.documentType ?? null;
-            const pack = priorityPack?.hasTranslation(data, documentType)
-                ? priorityPack
-                : game.babele.translatedPackFor(documentType, data);
+            const documentType = currentCompendium?.metadata?.type ?? null;
+            const pack = activeRuntime.translatedPackFor(documentType, data);
 
-            return pack ? pack.translate(data) : data;
+            return pack ? pack.translate(data, false, activeRuntime) : data;
         });
     }
 
     /**
+     * Build a simple dynamic converter that maps a field to another translated
+     * field of the same document through the current compendium context.
      *
-     * @param field
+     * The active compendium should be read from `runtime.currentCompendium()`;
+     * the `tc` callback parameter is retained only for backward compatibility.
+     *
+     * @param {string} field
      * @returns {function(*, *, *=, *): *|{translated}}
      */
     static mappedField(field) {
-        return function (value, translation, data, tc) {
-            return tc.translateField(field, data);
+        return function (value, translation, data, tc, _allTranslations, runtime = {}) {
+            return tc.translateField(field, data, runtime);
         }
     }
 
+    /**
+     * Build a converter for collections of plain objects keyed by one of their
+     * fields rather than by document identity.
+     *
+     * @param {string} field
+     * @returns {function(*, *=): *}
+     */
     static fieldCollection(field) {
         const fn = function (collection, translations) {
             if (!translations) {

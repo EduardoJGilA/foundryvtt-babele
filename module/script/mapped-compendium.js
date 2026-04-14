@@ -1,5 +1,6 @@
 import {DocumentMapping} from "./document-mapping.js";
 import {TranslationResolver} from "./translation-resolver.js";
+import {CompendiumRuntime} from "./compendium-runtime.js";
 
 /**
  * Babele-managed view of a Foundry compendium.
@@ -23,7 +24,7 @@ export class MappedCompendium {
         this.translations = [];
         this.translated = false;
         this.customMapping = translations?.mapping ?? null;
-        this.mapping = new DocumentMapping(metadata.type, translations ? translations.mapping : null, this);
+        this.mapping = new DocumentMapping(metadata.type, translations ? translations.mapping : null);
 
         if (translations) {
             if (translations.label) {
@@ -136,11 +137,12 @@ export class MappedCompendium {
      * Extract the translatable payload for a document.
      *
      * @param data
-     * @param {object} [options]
+     * @param {CompendiumRuntime|object} [runtime] Runtime context controlling
+     * visible compendiums during extraction.
      * @returns {*}
      */
-    extract(data, options = {}) {
-        return this.mapping.extract(data, options);
+    extract(data, runtime = {}) {
+        return this.mapping.extract(data, this.#activeRuntime(runtime));
     }
 
     /**
@@ -148,10 +150,11 @@ export class MappedCompendium {
      *
      * @param {string} field
      * @param data
+     * @param {CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    extractField(field, data) {
-        return this.mapping.extractField(field, data);
+    extractField(field, data, runtime = {}) {
+        return this.mapping.extractField(field, data, this.#activeRuntime(runtime));
     }
 
     /**
@@ -161,27 +164,30 @@ export class MappedCompendium {
      *
      * @param {string} field
      * @param data
+     * @param {CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    translateField(field, data) {
+    translateField(field, data, runtime = {}) {
         if (data == null) {
             return data;
         }
 
+        const activeRuntime = this.#activeRuntime(runtime);
+
         if (!(this.hasTranslation(data) || this.mapping.isDynamic())) {
-            return this.extractField(field, data);
+            return this.extractField(field, data, activeRuntime);
         }
 
         if (data.translated) {
-            return this.extractField(field, data);
+            return this.extractField(field, data, activeRuntime);
         }
 
         try {
-            const translated = this.mapping.translateField(field, data, this.translationsFor(data));
-            return typeof translated === "undefined" ? this.extractField(field, data) : translated;
+            const translated = this.mapping.translateField(field, data, this.translationsFor(data), activeRuntime);
+            return typeof translated === "undefined" ? this.extractField(field, data, activeRuntime) : translated;
         } catch (error) {
             this.#logTranslationFailure(data, error, {field, phase: "translateField"});
-            return this.extractField(field, data);
+            return this.extractField(field, data, activeRuntime);
         }
     }
 
@@ -194,9 +200,12 @@ export class MappedCompendium {
      *
      * @param data
      * @param {boolean} [translationsOnly]
+     * @param {CompendiumRuntime|object} [runtime] Runtime context used for
+     * pack visibility. Decorated compendiums may enrich it with additional
+     * scoped entries before delegating here.
      * @returns {*}
      */
-    translate(data, translationsOnly = false) {
+    translate(data, translationsOnly = false, runtime = {}) {
         if (data == null) {
             return data;
         }
@@ -210,10 +219,11 @@ export class MappedCompendium {
         }
 
         let translatedData = {};
+        const activeRuntime = this.#activeRuntime(runtime);
 
         try {
-            translatedData = this.mapping.map(data, this.translationsFor(data));
-            translatedData = this.#mergeReferenceTranslations(data, translatedData);
+            translatedData = this.mapping.map(data, this.translationsFor(data), activeRuntime);
+            translatedData = this.#mergeReferenceTranslations(data, translatedData, activeRuntime);
         } catch (error) {
             this.#logTranslationFailure(data, error, {phase: "translate"});
             return translationsOnly ? {} : data;
@@ -249,7 +259,7 @@ export class MappedCompendium {
         );
     }
 
-    #mergeReferenceTranslations(data, translatedData) {
+    #mergeReferenceTranslations(data, translatedData, runtime = {}) {
         if (!this.reference) {
             return translatedData;
         }
@@ -259,7 +269,7 @@ export class MappedCompendium {
         for (const ref of this.reference) {
             const referencePack = this.#resolveReferencePack(ref);
             if (referencePack?.hasTranslation(data)) {
-                const fromReference = referencePack.translate(data, true);
+                const fromReference = referencePack.translate(data, true, runtime);
                 mergedTranslations = foundry.utils.mergeObject(fromReference, mergedTranslations);
             }
         }
@@ -299,6 +309,17 @@ export class MappedCompendium {
 
     #hasTranslatedData(translatedData) {
         return !!translatedData && Object.keys(translatedData).length > 0;
+    }
+
+    #normalizeRuntime(runtime = {}) {
+        return CompendiumRuntime.from(runtime);
+    }
+
+    #activeRuntime(runtime = {}) {
+        const activeRuntime = this.#normalizeRuntime(runtime);
+        return activeRuntime.currentCompendium() === this
+            ? activeRuntime
+            : activeRuntime.child({currentCompendium: this});
     }
 
     #logTranslationFailure(data, error, context = {}) {

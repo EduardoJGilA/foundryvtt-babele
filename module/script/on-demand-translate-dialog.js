@@ -5,7 +5,6 @@ export class OnDemandTranslateDialog extends Dialog {
 
     static translatedPackFor(documentType, data, translatedPacks) {
         return game.babele.translatedPackFor(documentType, data, {
-            includeVirtual: true,
             registry: translatedPacks,
         });
     }

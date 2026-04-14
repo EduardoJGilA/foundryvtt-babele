@@ -5,7 +5,8 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 const {TestCollection} = installFoundryStubs();
 
 const {Converters} = await import("../module/script/converters.js");
-const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
+const {CompendiumRuntime} = await import("../module/script/compendium-runtime.js");
+const {createMappedCompendium} = await import("../module/script/mapped-compendium-decorator.js");
 
 test("fromPack.extract exports embedded documents keyed by name with id fallback", () => {
   const converter = Converters.fromPack(null, "Item");
@@ -51,9 +52,8 @@ test("fromPack.extract exports embedded documents keyed by name with id fallback
 
 test("adventure embedded extraction uses entry-specific translated compendium context", () => {
   const converter = Converters.fromDefaultMapping("Item", "items");
-  const packs = new TestCollection();
 
-  const parentTc = new TranslatedCompendium({
+  const parentTc = createMappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -84,8 +84,9 @@ test("adventure embedded extraction uses entry-specific translated compendium co
       },
     },
   });
+  game.babele.packs = new TestCollection([["test.adventure", parentTc]]);
 
-  const contextA = new TranslatedCompendium({
+  const contextA = createMappedCompendium({
     id: "test.adventure::adventureA::items",
     name: "test.adventure::adventureA::items",
     type: "Item",
@@ -104,7 +105,7 @@ test("adventure embedded extraction uses entry-specific translated compendium co
     },
   });
 
-  const contextB = new TranslatedCompendium({
+  const contextB = createMappedCompendium({
     id: "test.adventure::adventureB::items",
     name: "test.adventure::adventureB::items",
     type: "Item",
@@ -122,15 +123,6 @@ test("adventure embedded extraction uses entry-specific translated compendium co
       },
     },
   });
-
-  packs.set("test.adventure", parentTc);
-  packs.set("test.adventure::adventureA::items", contextA);
-  packs.set("test.adventure::adventureB::items", contextB);
-  game.babele.packs = packs;
-  game.babele.getAdventureEntryTranslatedCompendium = (_metadata, data, mappingKey) => {
-    assert.equal(mappingKey, "items");
-    return packs.get(`test.adventure::${data._id}::items`) ?? null;
-  };
 
   const adventureA = {
     _id: "adventureA",
@@ -164,8 +156,18 @@ test("adventure embedded extraction uses entry-specific translated compendium co
     ],
   };
 
-  const extractedA = converter.extract(adventureA.items, adventureA, parentTc, {options: {}});
-  const extractedB = converter.extract(adventureB.items, adventureB, parentTc, {options: {}});
+  const extractedA = converter.extract(adventureA.items, adventureA, parentTc, {
+    runtime: new CompendiumRuntime({
+      globalPacks: game.babele.packs,
+      localPacks: new TestCollection([["test.adventure::adventureA::items", contextA]]),
+    }),
+  });
+  const extractedB = converter.extract(adventureB.items, adventureB, parentTc, {
+    runtime: new CompendiumRuntime({
+      globalPacks: game.babele.packs,
+      localPacks: new TestCollection([["test.adventure::adventureB::items", contextB]]),
+    }),
+  });
 
   assert.deepEqual(extractedA, {
     "Original A": {
@@ -199,28 +201,21 @@ test("fromPack uses TranslationResolver fallback order for sourceId-based matche
     },
   ];
 
-  const translations = {
-    "shared-source": {
-      name: "Translated Sword",
-      description: "Translated description",
-    },
-  };
-
   const translated = Converters._fromPack(
     items,
-    translations,
-    {
-      map(data, translation) {
-        return {
-          name: translation.name,
-          system: {
-            description: {
-              value: translation.description,
-            },
-          },
-        };
+    createMappedCompendium({
+      type: "Item",
+    }, {
+      mapping: {
+        description: "system.description.value",
       },
-    },
+      entries: {
+        "shared-source": {
+          name: "Translated Sword",
+          description: "Translated description",
+        },
+      },
+    }),
   );
 
   assert.equal(translated[0].name, "Translated Sword");
@@ -319,11 +314,124 @@ test("fromPack fallback only uses translated packs with the same document type",
 
   const translated = Converters._fromPack(
     [item],
-    null,
-    {
-      documentType: "Item",
-    },
+    createMappedCompendium({type: "Item"}, null),
   );
 
   assert.equal(translated[0].name, "Correct Item Translation");
+});
+
+test("adventure actors translate tokenName through the embedded actor context", () => {
+  game.babele.converters = {
+    ...game.babele.converters,
+    name: Converters.mappedField("name"),
+    fromPack: Converters.fromPack(),
+  };
+  const converter = Converters.fromDefaultMapping("Actor", "actors");
+  const adventure = createMappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    entries: {
+      adventureA: {
+        actors: {
+          "actor-a": {
+            name: "Goblin IT",
+          },
+        },
+      },
+    },
+  });
+  const adventureData = {
+    _id: "adventureA",
+    name: "Adventure A",
+  };
+  const translated = converter(
+    [
+      {
+        _id: "actor-a",
+        name: "Goblin",
+        prototypeToken: {
+          name: "Goblin",
+        },
+        system: {
+          details: {
+            biography: {
+              value: "Original biography",
+            },
+          },
+        },
+        items: [],
+      },
+    ],
+    adventure.translationsFor(adventureData).actors,
+    adventureData,
+    adventure,
+    null,
+    new CompendiumRuntime({
+      globalPacks: new TestCollection([["test.adventure", adventure]]),
+    }),
+  );
+
+  assert.equal(translated[0].name, "Goblin IT");
+  assert.equal(translated[0].prototypeToken.name, "Goblin IT");
+});
+
+test("fromPack fallback re-branches runtime to the translated root compendium", () => {
+  game.babele.converters = {
+    ...game.babele.converters,
+    name: Converters.mappedField("name"),
+    fromPack: Converters.fromPack(),
+  };
+
+  const contextPack = createMappedCompendium({
+    type: "Actor",
+  }, {
+    entries: {},
+  });
+  const externalPack = createMappedCompendium({
+    id: "ext.actors",
+    name: "actors",
+    type: "Actor",
+    packageName: "ext",
+    packageType: "module",
+  }, {
+    entries: {
+      "actor-a": {
+        name: "Goblin IT",
+      },
+    },
+  });
+
+  game.babele.packs = new TestCollection([["ext.actors", externalPack]]);
+
+  const translated = Converters._fromPack(
+    [
+      {
+        _id: "actor-a",
+        name: "Goblin",
+        prototypeToken: {
+          name: "Goblin",
+        },
+        items: [],
+        system: {
+          details: {
+            biography: {
+              value: "Original biography",
+            },
+          },
+        },
+      },
+    ],
+    contextPack,
+    new CompendiumRuntime({
+      globalPacks: game.babele.packs,
+      currentCompendium: contextPack,
+    }),
+  );
+
+  assert.equal(translated[0].name, "Goblin IT");
+  assert.equal(translated[0].prototypeToken.name, "Goblin IT");
 });

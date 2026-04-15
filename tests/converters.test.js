@@ -264,6 +264,173 @@ test("pages converter uses TranslationResolver fallback order", () => {
   assert.equal(translated[0].video.height, 600);
 });
 
+test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {
+  const extracted = Converters.tableResults().extract([
+    {
+      _id: "result-1",
+      type: "text",
+      range: [1, 1],
+      description: "<p>Keep out</p>",
+      img: "icons/svg/d20.svg",
+      weight: 1,
+    },
+    {
+      _id: "result-2",
+      type: "document",
+      range: [2, 3],
+      name: "Goblin",
+      description: "<p>Small green menace</p>",
+      img: "icons/svg/mystery-man.svg",
+      weight: 2,
+    },
+  ]);
+
+  assert.deepEqual(extracted, {
+    "1-1": {
+      description: "<p>Keep out</p>",
+    },
+    "2-3": {
+      name: "Goblin",
+      description: "<p>Small green menace</p>",
+    },
+  });
+});
+
+test("tableResults.extract falls back to result id when no range key is available", () => {
+  const extracted = Converters.tableResults().extract([
+    {
+      _id: "result-3",
+      type: "document",
+      name: "Fallback Result",
+      description: "<p>No range present</p>",
+    },
+  ]);
+
+  assert.deepEqual(extracted, {
+    "result-3": {
+      name: "Fallback Result",
+      description: "<p>No range present</p>",
+    },
+  });
+});
+
+test("tableResultsCollection uses TranslationResolver fallback order and exports only present fields", () => {
+  const tables = [
+    {
+      _id: "table-1",
+      name: "Encounter Table",
+      description: "",
+      results: [
+        {
+          _id: "result-1",
+          range: [1, 1],
+          description: "<p>Wolf</p>",
+        },
+      ],
+    },
+  ];
+
+  const translated = Converters.tableResultsCollection()(tables, {
+    "table-1": {
+      name: "Tabella Incontri",
+      results: {
+        "1-1": {
+          description: "<p>Lupo</p>",
+        },
+      },
+    },
+  });
+
+  const extracted = Converters.tableResultsCollection().extract(tables);
+
+  assert.equal(translated[0].name, "Tabella Incontri");
+  assert.equal(translated[0].results[0].description, "<p>Lupo</p>");
+  assert.deepEqual(extracted, {
+    "Encounter Table": {
+      name: "Encounter Table",
+      results: {
+        "1-1": {
+          description: "<p>Wolf</p>",
+        },
+      },
+    },
+  });
+});
+
+test("deckCards uses TranslationResolver fallback order and export keeps only present translatable fields", () => {
+  const cards = [
+    {
+      _id: "card-1",
+      name: "Ace of Stars",
+      description: "",
+      faces: [
+        {
+          name: "Front",
+          text: "Shines bright",
+        },
+      ],
+      back: {
+        name: "Back",
+      },
+    },
+  ];
+
+  const translated = Converters.deckCards()(cards, {
+    "card-1": {
+      name: "Asso delle Stelle",
+      faces: [
+        {
+          text: "Brilla intensa",
+        },
+      ],
+    },
+  });
+
+  const extracted = Converters.deckCards().extract(cards);
+
+  assert.equal(translated[0].name, "Asso delle Stelle");
+  assert.equal(translated[0].faces[0].text, "Brilla intensa");
+  assert.deepEqual(extracted, {
+    "Ace of Stars": {
+      name: "Ace of Stars",
+      faces: [
+        {
+          name: "Front",
+          text: "Shines bright",
+        },
+      ],
+      back: {
+        name: "Back",
+      },
+    },
+  });
+});
+
+test("playlistSounds uses TranslationResolver fallback order and export omits missing fields", () => {
+  const sounds = [
+    {
+      _id: "sound-1",
+      name: "Wind",
+      description: "",
+    },
+  ];
+
+  const translated = Converters.playlistSounds()(sounds, {
+    "sound-1": {
+      name: "Vento",
+    },
+  });
+
+  const extracted = Converters.playlistSounds().extract(sounds);
+
+  assert.equal(translated[0].name, "Vento");
+  assert.deepEqual(extracted, {
+    Wind: {
+      name: "Wind",
+    },
+  });
+});
+
 test("fromPack fallback only uses translated packs with the same document type", () => {
   const item = {
     _id: "shared-id",

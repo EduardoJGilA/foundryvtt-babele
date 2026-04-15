@@ -485,18 +485,26 @@ export class Converters {
             const out = {};
 
             for (const data of Converters._asArray(results)) {
-                const key = data?._id || `${data.range?.[0]}-${data.range?.[1]}`;
+                const rangeKey = Number.isInteger(data?.range?.[0]) && Number.isInteger(data?.range?.[1])
+                    ? `${data.range[0]}-${data.range[1]}`
+                    : null;
+                const key = rangeKey ?? data?._id;
                 if (!key) {
                     continue;
                 }
 
-                out[key] = {
-                    name: data.name,
-                    img: data.img,
-                    range: data.range,
-                    weight: data.weight,
-                    description: data.description,
-                };
+                const description = data.description ?? data.text;
+                const extracted = {};
+                if (data.name) {
+                    extracted.name = data.name;
+                }
+                if (description) {
+                    extracted.description = description;
+                }
+
+                if (Object.keys(extracted).length > 0) {
+                    out[key] = extracted;
+                }
             }
 
             return out;
@@ -512,17 +520,26 @@ export class Converters {
             }
 
             return collection.map(data => {
-                const translation = translations[data.name];
+                const translation = Converters._resolvedTranslation(data, translations, {documentType: "RollTable"});
                 if (!translation) {
                     return data;
                 }
 
-                return foundry.utils.mergeObject(data, {
-                    name: translation.name ?? data.name,
-                    description: translation.description ?? data.description,
-                    results: Converters._tableResults(data.results, translation.results),
+                const translated = {
                     translated: true,
-                });
+                };
+
+                if (typeof translation.name !== "undefined") {
+                    translated.name = translation.name;
+                }
+                if (typeof translation.description !== "undefined") {
+                    translated.description = translation.description;
+                }
+                if (typeof translation.results !== "undefined") {
+                    translated.results = Converters._tableResults(data.results, translation.results);
+                }
+
+                return foundry.utils.mergeObject(data, translated);
             });
         };
 
@@ -532,11 +549,20 @@ export class Converters {
 
             for (const data of Converters._asArray(collection)) {
                 const key = Converters._exportKeyFor(data, usedKeys, "table");
-                out[key] = {
-                    name: data.name,
-                    description: data.description,
-                    results: Converters.tableResults().extract(data.results),
-                };
+                const extracted = {};
+                if (data.name) {
+                    extracted.name = data.name;
+                }
+                if (typeof data.description !== "undefined" && data.description !== null && data.description !== "") {
+                    extracted.description = data.description;
+                }
+                const results = Converters.tableResults().extract(data.results);
+                if (Object.keys(results).length > 0) {
+                    extracted.results = results;
+                }
+                if (Object.keys(extracted).length > 0) {
+                    out[key] = extracted;
+                }
             }
 
             return out;
@@ -581,14 +607,28 @@ export class Converters {
 
             for (const data of Converters._asArray(pages)) {
                 const key = Converters._exportKeyFor(data, usedKeys, "page");
-                out[key] = {
-                    name: data.name,
-                    caption: data.image?.caption,
-                    src: data.src,
-                    text: data.text?.content,
-                    width: data.video?.width,
-                    height: data.video?.height,
-                };
+                const extracted = {};
+                if (data.name) {
+                    extracted.name = data.name;
+                }
+                if (typeof data.image?.caption !== "undefined" && data.image.caption !== null && data.image.caption !== "") {
+                    extracted.caption = data.image.caption;
+                }
+                if (typeof data.src !== "undefined" && data.src !== null && data.src !== "") {
+                    extracted.src = data.src;
+                }
+                if (typeof data.text?.content !== "undefined" && data.text.content !== null && data.text.content !== "") {
+                    extracted.text = data.text.content;
+                }
+                if (typeof data.video?.width !== "undefined") {
+                    extracted.width = data.video.width;
+                }
+                if (typeof data.video?.height !== "undefined") {
+                    extracted.height = data.video.height;
+                }
+                if (Object.keys(extracted).length > 0) {
+                    out[key] = extracted;
+                }
             }
 
             return out;
@@ -608,21 +648,51 @@ export class Converters {
 
             for (const data of Converters._asArray(cards)) {
                 const key = Converters._exportKeyFor(data, usedKeys, "card");
-                out[key] = {
-                    name: data.name,
-                    description: data.description,
-                    suit: data.suit,
-                    faces: (data.faces ?? []).map(face => ({
-                        img: face.img,
-                        name: face.name,
-                        text: face.text,
-                    })),
-                    back: {
-                        img: data.back?.img,
-                        name: data.back?.name,
-                        text: data.back?.text,
-                    },
-                };
+                const extracted = {};
+                if (data.name) {
+                    extracted.name = data.name;
+                }
+                if (typeof data.description !== "undefined" && data.description !== null && data.description !== "") {
+                    extracted.description = data.description;
+                }
+                if (typeof data.suit !== "undefined" && data.suit !== null && data.suit !== "") {
+                    extracted.suit = data.suit;
+                }
+
+                const faces = (data.faces ?? []).map((face) => {
+                    const extractedFace = {};
+                    if (typeof face?.img !== "undefined" && face.img !== null && face.img !== "") {
+                        extractedFace.img = face.img;
+                    }
+                    if (face?.name) {
+                        extractedFace.name = face.name;
+                    }
+                    if (typeof face?.text !== "undefined" && face.text !== null && face.text !== "") {
+                        extractedFace.text = face.text;
+                    }
+                    return extractedFace;
+                }).filter((face) => Object.keys(face).length > 0);
+                if (faces.length > 0) {
+                    extracted.faces = faces;
+                }
+
+                const back = {};
+                if (typeof data.back?.img !== "undefined" && data.back.img !== null && data.back.img !== "") {
+                    back.img = data.back.img;
+                }
+                if (data.back?.name) {
+                    back.name = data.back.name;
+                }
+                if (typeof data.back?.text !== "undefined" && data.back.text !== null && data.back.text !== "") {
+                    back.text = data.back.text;
+                }
+                if (Object.keys(back).length > 0) {
+                    extracted.back = back;
+                }
+
+                if (Object.keys(extracted).length > 0) {
+                    out[key] = extracted;
+                }
             }
 
             return out;
@@ -634,7 +704,7 @@ export class Converters {
     static _deckCards(cards, translations) {
         return cards.map(data => {
             if (translations) {
-                const translation = translations[data.name];
+                const translation = Converters._resolvedTranslation(data, translations, {documentType: "Card"});
                 if (translation) {
                     return foundry.utils.mergeObject(data, {
                         name: translation.name ?? data.name,
@@ -673,10 +743,16 @@ export class Converters {
 
             for (const data of Converters._asArray(sounds)) {
                 const key = Converters._exportKeyFor(data, usedKeys, "sound");
-                out[key] = {
-                    name: data.name,
-                    description: data.description,
-                };
+                const extracted = {};
+                if (data.name) {
+                    extracted.name = data.name;
+                }
+                if (typeof data.description !== "undefined" && data.description !== null && data.description !== "") {
+                    extracted.description = data.description;
+                }
+                if (Object.keys(extracted).length > 0) {
+                    out[key] = extracted;
+                }
             }
 
             return out;
@@ -688,7 +764,7 @@ export class Converters {
     static _playlistSounds(sounds, translations) {
         return sounds.map(data => {
             if (translations) {
-                const translation = translations[data.name];
+                const translation = Converters._resolvedTranslation(data, translations, {documentType: "PlaylistSound"});
                 if (translation) {
                     return foundry.utils.mergeObject(data, {
                         name: translation.name ?? data.name,

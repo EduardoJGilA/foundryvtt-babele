@@ -14,6 +14,7 @@ export class MappedCompendium {
 
     static #warnedMissingReferences = new Set();
     static #warnedTranslationFailures = new Set();
+    #indexTranslationCache = new Map();
 
     /**
      * @param {object} metadata Foundry pack metadata or equivalent virtual-pack metadata.
@@ -70,6 +71,7 @@ export class MappedCompendium {
      */
     useTranslationMatchStrategies(strategies = TranslationResolver.defaultStrategies()) {
         this.resolver = new TranslationResolver(this.translations, strategies);
+        this.#indexTranslationCache.clear();
     }
 
     /**
@@ -105,7 +107,8 @@ export class MappedCompendium {
             return false;
         }
 
-        return this.resolver.hasTranslationFor(data, this.#resolverContext(documentType)) || this.hasReferenceTranslations(data);
+        const resolution = this.#resolutionFor(data, documentType);
+        return resolution.matched || this.hasReferenceTranslations(data);
     }
 
     /**
@@ -116,8 +119,7 @@ export class MappedCompendium {
      */
     translateIndex(index) {
         for (const entry of index) {
-            const translationsOnly = !!entry?.translated;
-            foundry.utils.mergeObject(entry, this.translate(entry, translationsOnly), {inplace: true});
+            foundry.utils.mergeObject(entry, this.#translatedIndexEntry(entry), {inplace: true});
         }
 
         return index;
@@ -131,7 +133,7 @@ export class MappedCompendium {
      * @returns {object}
      */
     translationsFor(data, documentType = this.metadata?.type ?? null) {
-        return this.resolver.translationFor(data, this.#resolverContext(documentType)) ?? {};
+        return this.#resolutionFor(data, documentType).translation ?? {};
     }
 
     /**
@@ -141,7 +143,7 @@ export class MappedCompendium {
      * @returns {string|null}
      */
     translationKeyFor(data, documentType = this.metadata?.type ?? null) {
-        return this.resolver.resolutionFor(data, this.#resolverContext(documentType)).key;
+        return this.#resolutionFor(data, documentType).key;
     }
 
     /**
@@ -195,8 +197,10 @@ export class MappedCompendium {
         }
 
         const activeRuntime = this.#activeRuntime(runtime);
+        const resolution = this.#resolutionFor(data);
+        const hasTranslation = resolution.matched;
 
-        if (!(this.hasTranslation(data) || this.mapping.isDynamic())) {
+        if (!(hasTranslation || this.mapping.isDynamic())) {
             return this.extractField(field, data, activeRuntime);
         }
 
@@ -205,7 +209,7 @@ export class MappedCompendium {
         }
 
         try {
-            const translated = this.mapping.translateField(field, data, this.translationsFor(data), activeRuntime);
+            const translated = this.mapping.translateField(field, data, resolution.translation ?? {}, activeRuntime);
             return typeof translated === "undefined" ? this.extractField(field, data, activeRuntime) : translated;
         } catch (error) {
             this.#logTranslationFailure(data, error, {field, phase: "translateField"});
@@ -232,7 +236,8 @@ export class MappedCompendium {
             return data;
         }
 
-        const hasTranslation = this.hasTranslation(data);
+        const resolution = this.#resolutionFor(data);
+        const hasTranslation = resolution.matched;
 
         if (!(hasTranslation || this.mapping.isDynamic())) {
             return data;
@@ -246,7 +251,7 @@ export class MappedCompendium {
         const activeRuntime = this.#activeRuntime(runtime);
 
         try {
-            translatedData = this.mapping.map(data, this.translationsFor(data), activeRuntime);
+            translatedData = this.mapping.map(data, resolution.translation ?? {}, activeRuntime);
             translatedData = this.#mergeReferenceTranslations(data, translatedData, activeRuntime);
         } catch (error) {
             this.#logTranslationFailure(data, error, {phase: "translate"});
@@ -377,12 +382,54 @@ export class MappedCompendium {
         return CompendiumRuntime.from(runtime);
     }
 
+    #resolutionFor(data, documentType = this.metadata?.type ?? null) {
+        return this.resolver.resolutionFor(data, this.#resolverContext(documentType));
+    }
+
     #resolverContext(documentType = this.metadata?.type ?? null) {
         return {
             documentType,
             pack: this,
             metadata: this.metadata,
         };
+    }
+
+    #translatedIndexEntry(entry) {
+        const translationsOnly = !!entry?.translated;
+        if (translationsOnly) {
+            return this.translate(entry, true);
+        }
+
+        const cacheKey = this.#indexCacheKey(entry);
+        if (cacheKey && this.#indexTranslationCache.has(cacheKey)) {
+            const cached = this.#indexTranslationCache.get(cacheKey);
+            return cached ? foundry.utils.mergeObject({}, cached, {inplace: false}) : entry;
+        }
+
+        const translated = this.translate(entry, false);
+
+        if (cacheKey) {
+            this.#indexTranslationCache.set(
+                cacheKey,
+                translated === entry ? null : foundry.utils.mergeObject({}, translated, {inplace: false}),
+            );
+        }
+
+        return translated;
+    }
+
+    #indexCacheKey(entry) {
+        const candidates = this.resolver.keysFor(entry, this.#resolverContext());
+        const sourceId = foundry.utils.parseUuid(entry?.flags?.core?.sourceId || entry?._stats?.compendiumSource)?.id ?? null;
+
+        return JSON.stringify([
+            this.metadata?.id ?? this.metadata?.name ?? null,
+            entry?._id ?? entry?.id ?? null,
+            entry?.name ?? null,
+            entry?.type ?? null,
+            sourceId,
+            candidates,
+        ]);
     }
 
     #activeRuntime(runtime = {}) {

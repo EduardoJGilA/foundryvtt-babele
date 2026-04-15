@@ -49,6 +49,73 @@ test("MappedCompendium translates index rows in place", () => {
   assert.equal(index[0].translated, true);
 });
 
+test("MappedCompendium caches translated index rows across equivalent index payloads", () => {
+  const compendium = new MappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "item-1": {
+        name: "Spada",
+      },
+    },
+  });
+
+  let resolutionCalls = 0;
+  const originalResolutionFor = compendium.resolver.resolutionFor.bind(compendium.resolver);
+  compendium.resolver.resolutionFor = (...args) => {
+    resolutionCalls += 1;
+    return originalResolutionFor(...args);
+  };
+
+  const firstIndex = [{_id: "item-1", name: "Sword"}];
+  const secondIndex = [{_id: "item-1", name: "Sword"}];
+
+  compendium.translateIndex(firstIndex);
+  compendium.translateIndex(secondIndex);
+
+  assert.equal(firstIndex[0].name, "Spada");
+  assert.equal(secondIndex[0].name, "Spada");
+  assert.equal(resolutionCalls, 1);
+});
+
+test("MappedCompendium clears cached index translations when strategies change", () => {
+  const compendium = new MappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      alt: {
+        name: "Ascia",
+      },
+    },
+  });
+
+  compendium.useTranslationMatchStrategies([
+    {
+      name: "alt-key",
+      keyFor: () => "alt",
+    },
+  ]);
+
+  const firstIndex = [{_id: "item-1", name: "Sword"}];
+  compendium.translateIndex(firstIndex);
+  assert.equal(firstIndex[0].name, "Ascia");
+
+  compendium.useTranslationMatchStrategies([
+    {
+      name: "missing-key",
+      keyFor: () => "missing",
+    },
+  ]);
+
+  const secondIndex = [{_id: "item-1", name: "Sword"}];
+  compendium.translateIndex(secondIndex);
+  assert.equal(secondIndex[0].name, "Sword");
+});
+
 test("MappedCompendium leaves documents unchanged when no translation entry matches", () => {
   const compendium = new MappedCompendium({
     id: "test.items",

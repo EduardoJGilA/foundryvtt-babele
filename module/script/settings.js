@@ -45,6 +45,15 @@ export function registerModuleSettings() {
         default: true
     });
 
+    game.settings.register('babele', 'warnMissingPaths', {
+        name: game.i18n.localize("BABELE.WarnMissingPaths"),
+        hint: game.i18n.localize("BABELE.WarnMissingPathsHint"),
+        scope: 'client',
+        type: Boolean,
+        config: true,
+        default: false
+    });
+
     game.settings.register('babele', 'translationFiles', {
         type: Array,
         default: [],

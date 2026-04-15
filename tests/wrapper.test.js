@@ -104,6 +104,77 @@ test("wrapper reconstructs translated loaded documents", async () => {
   assert.deepEqual(result[0].context, {pack: "test.items"});
 });
 
+test("wrapper prefers documentClass.fromSource to preserve trusted-source reconstruction semantics", async () => {
+  class FakeDocument {
+    constructor(data, context = {}) {
+      this.data = {
+        ...data,
+        advancements: [],
+        effects: [],
+        reconstructedWith: "constructor",
+      };
+      this.context = context;
+    }
+
+    static fromSource(data, context = {}) {
+      return {
+        data: {
+          ...data,
+          reconstructedWith: "fromSource",
+        },
+        context,
+      };
+    }
+
+    toObject() {
+      return this.data;
+    }
+  }
+
+  const original = {
+    toObject() {
+      return {
+        _id: "class-1",
+        name: "Barbarian",
+        advancements: [{_id: "adv-1"}],
+        effects: [{_id: "effect-1"}],
+      };
+    },
+  };
+
+  const babele = {
+    async init() {
+      return true;
+    },
+    translatedCompendiumFor() {
+      return {
+        translate(data) {
+          return {
+            ...data,
+            name: "Barbaro",
+          };
+        },
+      };
+    },
+  };
+
+  const result = await translateResult(
+    [original],
+    {
+      pack: "test.classes",
+      documentClass: FakeDocument,
+      index: false,
+    },
+    babele,
+  );
+
+  assert.equal(result[0].data.name, "Barbaro");
+  assert.equal(result[0].data.reconstructedWith, "fromSource");
+  assert.deepEqual(result[0].data.advancements, [{_id: "adv-1"}]);
+  assert.deepEqual(result[0].data.effects, [{_id: "effect-1"}]);
+  assert.deepEqual(result[0].context, {pack: "test.classes"});
+});
+
 test("wrapper fails open when loaded document translation throws", async () => {
   class FakeDocument {
     constructor(data) {

@@ -1,40 +1,62 @@
-import Babel from "./babele.js";
+const warnedConverterFailures = new Set();
+const warnedMissingConverters = new Set();
+const warnedMissingPaths = new Set();
+const warnedInvalidStaticTranslations = new Set();
+
+function missingPathWarningsEnabled() {
+    try {
+        return game.settings.get("babele", "warnMissingPaths") === true;
+    } catch {
+        return false;
+    }
+}
 
 /**
- * Class to map, translate or extract value for a single field defined by a mapping.
+ * Maps, translates and extracts a single field declared by a document mapping.
  *
- * ex: new FieldMapping("desc", "data.description.value")
+ * FieldMapping acts as the stable context for one mapped field while delegating
+ * the variable behavior to an internal field converter:
+ * - static mappings use a default converter that reads and writes a value at the configured path
+ * - converter mappings use an adapter around a named registered converter
+ *
+ * The constructor selects the appropriate field converter from the mapping shape:
+ * a string path creates the default field converter, while an object mapping
+ * creates an adapter around the named registered converter.
+ *
+ * Example:
+ * new FieldMapping("desc", "data.description.value")
  */
 export class FieldMapping {
-    static #warnedConverterFailures = new Set();
 
+    #converter;
+
+    /**
+     * @param {string} field Translation field key.
+     * @param {string|object} mapping Field mapping definition.
+     */
     constructor(field, mapping) {
         this.field = field;
         this.mapping = mapping;
         if (typeof mapping === "object") {
             this.path = mapping["path"];
-            this.converterName = mapping["converter"];
-            this.converter = game.babele.converters[this.converterName];
-            this.dynamic = true;
+            this.#converter = new RegisteredFieldConverter(mapping["converter"]);
         } else {
             this.path = mapping;
-            this.converterName = null;
-            this.converter = null;
-            this.dynamic = false;
+            this.#converter = new DefaultFieldConverter();
         }
     }
 
-    #contextCompendium(runtime = {}) {
-        return runtime?.currentCompendium?.() ?? null;
-    }
-
     /**
-     * Extract the
+     * Translates this field and expands the translated value back to its full path.
      *
-     * @param data the original entity data to translate
-     * @param translations the static available translations for the entity
+     * Returns an empty object when no translation should be applied. This includes
+     * missing translations, missing source paths for static fields, invalid static
+     * payloads and converter failures, all of which fail open.
+     *
+     * @param {object} data Original document source data.
+     * @param {object} translations Static translations available for the current document.
      * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
-     * @returns {{}} an object with expanded field path and a translated value.
+     * @returns {object} An object with the expanded field path and translated value, or an empty object.
      */
     map(data, translations, runtime = {}) {
         const map = {};
@@ -49,27 +71,20 @@ export class FieldMapping {
     }
 
     /**
+     * Resolves the translated value for this field.
      *
-     * @param data
-     * @param translations
+     * Static fields validate that the source path exists when a translation is
+     * provided and reject structural or primitive type mismatches. Dynamic
+     * fields delegate to their converter and fail open on missing converters or
+     * converter errors.
+     *
+     * @param {object} data Original document source data.
+     * @param {object} translations Static translations available for the current document.
      * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
-     * @returns {*}
+     * @returns {*} The translated field value, or `undefined` when no value should be merged.
      */
     translate(data, translations, runtime = {}) {
-        const originalValue = this.extractValue(data);
-        if (typeof originalValue === "undefined" || originalValue === null)
-            return originalValue;
-        const contextCompendium = this.#contextCompendium(runtime);
-        if (this.converter) {
-            try {
-                return this.converter(originalValue, translations[this.field], data, contextCompendium, translations, runtime)
-            } catch (error) {
-                this.#logConverterFailure("translate", data, error, runtime);
-                return undefined;
-            }
-        } else {
-            return translations[this.field];
-        }
+        return this.#converter.translate(this, data, translations, runtime);
     }
 
     /**
@@ -80,84 +95,351 @@ export class FieldMapping {
      * const value = new FieldMapping("desc", "data.description.value").extractValue(data);
      * console.log(value) // -> "bla bla"
      *
-     * @param data
-     * @returns {*}
+     * Returns `undefined` both when the path is missing and when the path exists
+     * but currently stores `undefined`.
+     *
+     * @param {object} data Original document source data.
+     * @returns {*} The value currently stored at the configured path.
      */
     extractValue(data) {
-        return this.path.split('.').reduce((o, k) => {
-            return o && o[k];
-        }, data);
+        return this._resolvedPathValue(data).value;
     }
 
 
     /**
-     * Extract the value corresponding to the field path in object format.
+     * Extracts the current field value in translation-file shape.
      *
      * ex:
      * const data = { "data": { "description": { "value": "bla bla" } } };
-     * const value = new FieldMapping("desc", "data.description.value").extractValue(data);
+     * const value = new FieldMapping("desc", "data.description.value").extract(data);
      * console.log(value) // -> { "desc": "bla bla" }
      *
-     * @param data
+     * Static fields always return `{[field]: value}` even when the path is
+     * currently missing. Dynamic fields may return `undefined` when extraction
+     * is unsupported, the converter is missing or the converter fails.
+     *
+     * @param {object} data Original document source data.
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {object|undefined} The extracted translation fragment, or `undefined` when skipped.
+     */
+    extract(data, runtime = {}) {
+        return this.#converter.extract(this, data, runtime);
+    }
+
+    /**
+     * Resolves the configured path against the provided document source data.
+     *
+     * Unlike `extractValue`, this preserves whether the path exists at all so
+     * static translation can distinguish a missing branch from an explicit
+     * `undefined` value.
+     *
+     * @param {object} data
+     * @returns {{exists: boolean, value: *}}
+     * @private
+     */
+    _resolvedPathValue(data) {
+        let current = data;
+
+        for (const key of this.path.split('.')) {
+            if (!this._hasOwn(current, key)) {
+                return {exists: false, value: undefined};
+            }
+
+            current = current[key];
+        }
+
+        return {exists: true, value: current};
+    }
+
+    /**
+     * Safe `hasOwnProperty` check for traversed source values.
+     *
+     * @param {*} target
+     * @param {string} key
+     * @returns {boolean}
+     * @private
+     */
+    _hasOwn(target, key) {
+        if (target === null || typeof target === "undefined") {
+            return false;
+        }
+
+        const targetType = typeof target;
+        if (targetType !== "object" && targetType !== "function") {
+            return false;
+        }
+
+        return Object.prototype.hasOwnProperty.call(target, key);
+    }
+
+
+    /**
+     * If this field mapping is based on a converter.
+     *
+     * @returns {boolean} true if is based on a converter.
+     */
+    isDynamic() {
+        return this.#converter.isDynamic();
+    }
+}
+
+/**
+ * Default converter for plain path-based field mappings.
+ *
+ * Static mappings validate the source path and translated payload before
+ * returning the translated value to merge.
+ */
+class DefaultFieldConverter {
+
+    /**
+     * @param {object} data
+     * @param {object} translations
      * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    extract(data, runtime = {}) {
-        const value = this.extractValue(data);
-
-        if (!this.converter) {
-            return {[this.field]: value};
-        }
-
-        if (typeof this.converter.extract !== "function") {
-            runtime.onSkippedDynamicField?.({
-                field: this.field,
-                path: this.path,
-                mapping: this.mapping,
-                reason: "missing_converter_extract",
-            });
+    translate(fieldMapping, data, translations, runtime = {}) {
+        const translatedValue = translations[fieldMapping.field];
+        const original = fieldMapping._resolvedPathValue(data);
+        if (!original.exists) {
+            if (fieldMapping._hasOwn(translations, fieldMapping.field)) {
+                this._logMissingPath(fieldMapping, "translate", data, runtime);
+            }
             return undefined;
         }
 
-        let extracted;
-        const contextCompendium = this.#contextCompendium(runtime);
-        try {
-            // Dynamic converter extraction receives field metadata plus the
-            // current runtime so embedded lookups can stay within scope.
-            extracted = this.converter.extract(value, data, contextCompendium, {
-                field: this.field,
-                path: this.path,
-                mapping: this.mapping,
-                runtime,
-            });
-        } catch (error) {
-            this.#logConverterFailure("extract", data, error, runtime);
+        const originalValue = original.value;
+        if (typeof originalValue === "undefined" || originalValue === null) {
+            return originalValue;
+        }
+
+        const invalidReason = this._invalidStaticTranslation(originalValue, translatedValue);
+        if (invalidReason) {
+            this._logInvalidStaticTranslation(fieldMapping, data, originalValue, translatedValue, invalidReason, runtime);
             return undefined;
         }
 
-        if (typeof extracted === "undefined") {
-            return undefined;
-        }
-
-        return {[this.field]: extracted};
+        return translatedValue;
     }
 
-    #logConverterFailure(phase, data, error, runtime = {}) {
-        const contextCompendium = this.#contextCompendium(runtime);
-        const pack = contextCompendium?.metadata?.id ?? contextCompendium?.metadata?.name ?? "unknown";
-        const converter = this.converterName ?? "anonymous";
-        const errorMessage = error?.message ?? String(error);
-        const warningKey = `${phase}::${pack}::${this.field}::${converter}::${errorMessage}`;
+    /**
+     * @param {object} data
+     * @returns {object}
+     */
+    extract(fieldMapping, data) {
+        return {[fieldMapping.field]: fieldMapping.extractValue(data)};
+    }
 
-        if (FieldMapping.#warnedConverterFailures.has(warningKey)) {
+    /**
+     * @returns {false}
+     */
+    isDynamic() {
+        return false;
+    }
+
+    _logMissingPath(fieldMapping, phase, data, runtime = {}) {
+        if (!missingPathWarningsEnabled()) {
             return;
         }
 
-        FieldMapping.#warnedConverterFailures.add(warningKey);
+        const pack = this._pack(runtime);
+        const warningKey = `${phase}::${pack}::${fieldMapping.field}::${fieldMapping.path}`;
+
+        if (warnedMissingPaths.has(warningKey)) {
+            return;
+        }
+
+        warnedMissingPaths.add(warningKey);
+        console.warn(`Babele | missing source path for field '${fieldMapping.field}', field skipped during ${phase}`, {
+            pack,
+            field: fieldMapping.field,
+            path: fieldMapping.path,
+            phase,
+            documentId: data?._id ?? null,
+            documentName: data?.name ?? null,
+        });
+    }
+
+    _invalidStaticTranslation(originalValue, translatedValue) {
+        if (Array.isArray(translatedValue) || this._isPlainObject(translatedValue)) {
+            return "structural";
+        }
+
+        if (!this._isPrimitiveTypeGuarded(originalValue)) {
+            return null;
+        }
+
+        if (typeof translatedValue === "undefined" || translatedValue === null) {
+            return null;
+        }
+
+        return typeof originalValue === typeof translatedValue ? null : "type_mismatch";
+    }
+
+    _isPlainObject(value) {
+        return !!value && typeof value === "object" && !Array.isArray(value);
+    }
+
+    _isPrimitiveTypeGuarded(value) {
+        const type = typeof value;
+        return type === "string" || type === "number" || type === "boolean";
+    }
+
+    _valueType(value) {
+        if (Array.isArray(value)) {
+            return "array";
+        }
+
+        if (value === null) {
+            return "null";
+        }
+
+        return typeof value;
+    }
+
+    _logInvalidStaticTranslation(fieldMapping, data, originalValue, translatedValue, reason, runtime = {}) {
+        const pack = this._pack(runtime);
+        const originalType = this._valueType(originalValue);
+        const translatedType = this._valueType(translatedValue);
+        const warningKey = `${pack}::${fieldMapping.field}::${fieldMapping.path}::${reason}::${originalType}::${translatedType}`;
+
+        if (warnedInvalidStaticTranslations.has(warningKey)) {
+            return;
+        }
+
+        warnedInvalidStaticTranslations.add(warningKey);
+        console.warn(`Babele | invalid translation payload for static field '${fieldMapping.field}', field skipped`, {
+            pack,
+            field: fieldMapping.field,
+            path: fieldMapping.path,
+            documentId: data?._id ?? null,
+            documentName: data?.name ?? null,
+            reason,
+            originalType,
+            translatedType,
+        });
+    }
+
+    _pack(runtime = {}) {
+        const compendium = runtime?.currentCompendium?.() ?? null;
+        return compendium?.metadata?.id ?? compendium?.metadata?.name ?? "unknown";
+    }
+}
+
+/**
+ * Adapter around a registered converter-backed field mapping.
+ *
+ * Registered converters keep the public Babele converter contract unchanged,
+ * while this adapter exposes the uniform internal field-converter API used by
+ * FieldMapping.
+ */
+class RegisteredFieldConverter {
+
+    constructor(converterName) {
+        this.converterName = converterName ?? null;
+        this.converter = game.babele.converters[this.converterName];
+    }
+
+    /**
+     * @param {object} data
+     * @param {object} translations
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {*}
+     */
+    translate(fieldMapping, data, translations, runtime = {}) {
+        if (!this.converter) {
+            this._logMissingConverter(fieldMapping, "translate", data, runtime);
+            return undefined;
+        }
+
+        const originalValue = fieldMapping.extractValue(data);
+        if (typeof originalValue === "undefined" || originalValue === null) {
+            return originalValue;
+        }
+
+        try {
+            return this.converter(
+                originalValue,
+                translations[fieldMapping.field],
+                data,
+                this._contextCompendium(runtime),
+                translations,
+                runtime,
+            );
+        } catch (error) {
+            this._logConverterFailure(fieldMapping, "translate", data, error, runtime);
+            return undefined;
+        }
+    }
+
+    /**
+     * @param {object} data
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {object|undefined}
+     */
+    extract(fieldMapping, data, runtime = {}) {
+        if (!this.converter) {
+            this._skipDynamicField(fieldMapping, runtime, "missing_converter");
+            this._logMissingConverter(fieldMapping, "extract", data, runtime);
+            return undefined;
+        }
+
+        if (typeof this.converter.extract !== "function") {
+            this._skipDynamicField(fieldMapping, runtime, "missing_converter_extract");
+            return undefined;
+        }
+
+        try {
+            // Dynamic converter extraction receives field metadata plus the
+            // current runtime so embedded lookups can stay within scope.
+            const extracted = this.converter.extract(
+                fieldMapping.extractValue(data),
+                data,
+                this._contextCompendium(runtime),
+                {
+                    field: fieldMapping.field,
+                    path: fieldMapping.path,
+                    mapping: fieldMapping.mapping,
+                    runtime,
+                },
+            );
+
+            if (typeof extracted === "undefined") {
+                return undefined;
+            }
+
+            return {[fieldMapping.field]: extracted};
+        } catch (error) {
+            this._logConverterFailure(fieldMapping, "extract", data, error, runtime);
+            return undefined;
+        }
+    }
+
+    /**
+     * @returns {true}
+     */
+    isDynamic() {
+        return true;
+    }
+
+    _contextCompendium(runtime = {}) {
+        return runtime?.currentCompendium?.() ?? null;
+    }
+
+    _logConverterFailure(fieldMapping, phase, data, error, runtime = {}) {
+        const pack = this._pack(runtime);
+        const converter = this.converterName ?? "anonymous";
+        const errorMessage = error?.message ?? String(error);
+        const warningKey = `${phase}::${pack}::${fieldMapping.field}::${converter}::${errorMessage}`;
+
+        if (warnedConverterFailures.has(warningKey)) {
+            return;
+        }
+
+        warnedConverterFailures.add(warningKey);
         console.error(`Babele | converter '${converter}' failed during ${phase}`, {
             pack,
-            field: this.field,
-            path: this.path,
+            field: fieldMapping.field,
+            path: fieldMapping.path,
             converter,
             phase,
             documentId: data?._id ?? null,
@@ -166,12 +448,38 @@ export class FieldMapping {
         });
     }
 
-    /**
-     * If this field mapping is based on a converter.
-     *
-     * @returns {boolean} true if is based on a converter.
-     */
-    isDynamic() {
-        return this.dynamic;
+    _logMissingConverter(fieldMapping, phase, data, runtime = {}) {
+        const pack = this._pack(runtime);
+        const converter = this.converterName ?? "anonymous";
+        const warningKey = `${phase}::${pack}::${fieldMapping.field}::${converter}`;
+
+        if (warnedMissingConverters.has(warningKey)) {
+            return;
+        }
+
+        warnedMissingConverters.add(warningKey);
+        console.warn(`Babele | missing converter '${converter}' for dynamic field '${fieldMapping.field}', field skipped during ${phase}`, {
+            pack,
+            field: fieldMapping.field,
+            path: fieldMapping.path,
+            converter,
+            phase,
+            documentId: data?._id ?? null,
+            documentName: data?.name ?? null,
+        });
+    }
+
+    _skipDynamicField(fieldMapping, runtime = {}, reason) {
+        runtime.onSkippedDynamicField?.({
+            field: fieldMapping.field,
+            path: fieldMapping.path,
+            mapping: fieldMapping.mapping,
+            reason,
+        });
+    }
+
+    _pack(runtime = {}) {
+        const compendium = this._contextCompendium(runtime);
+        return compendium?.metadata?.id ?? compendium?.metadata?.name ?? "unknown";
     }
 }

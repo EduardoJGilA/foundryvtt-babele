@@ -96,7 +96,7 @@ function translateDocument(document, documentClass, pack, compendium) {
             return translated;
         }
 
-        return new documentClass(translated, {pack});
+        return reconstructDocument(documentClass, translated, {pack});
     } catch (error) {
         console.error(`Babele | failed to translate loaded compendium document from '${pack}'`, {
             pack,
@@ -106,6 +106,14 @@ function translateDocument(document, documentClass, pack, compendium) {
         });
         return document;
     }
+}
+
+function reconstructDocument(documentClass, source, context) {
+    if (typeof documentClass?.fromSource === "function") {
+        return documentClass.fromSource(source, context);
+    }
+
+    return new documentClass(source, context);
 }
 
 function documentSource(document) {

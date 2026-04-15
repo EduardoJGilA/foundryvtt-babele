@@ -18,5 +18,7 @@
   "BABELE.ShowOriginalNameHint": "Mostra il nome non tradotto dell'elemento del compendio oltre a quello tradotto. Ciò ti consentirà anche di filtrare in base al nome originale unitamente a quello tradotto nel widget di ricerca.",
   "BABELE.ShowTranslateOption": "Mostra Pulsante Traduzione",
   "BABELE.ShowTranslateOptionHint": "Abilita/disabilita il pulsante di traduzione sulle schede PG",
+  "BABELE.WarnMissingPaths": "Segnala Path Sorgente Mancanti",
+  "BABELE.WarnMissingPathsHint": "Abilita warning diagnostici quando una traduzione statica punta a un path sorgente non presente nei dati originali del documento.",
   "BABELE.requireLibWrapperMessage": "Babele richiede il modulo 'libWrapper'. Si prega di installarlo e attivarlo."
 }

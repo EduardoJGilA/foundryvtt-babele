@@ -27,6 +27,7 @@ test("registerModuleSettings refreshes sources without forcing a page reload", a
 
   assert.equal(registrations.has("directory"), true);
   assert.equal(registrations.has("sourcesRevision"), true);
+  assert.equal(registrations.has("warnMissingPaths"), true);
 
   registrations.get("directory").onChange("worlds/test/translations");
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -53,4 +54,18 @@ test("sourcesRevision change triggers non-GM reinitialization", async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.equal(reinitializeCalls, 1);
+});
+
+test("warnMissingPaths defaults to disabled client diagnostics", () => {
+  const registrations = new Map();
+
+  game.settings.register = (_namespace, key, config) => {
+    registrations.set(key, config);
+  };
+
+  registerModuleSettings();
+
+  assert.equal(registrations.get("warnMissingPaths").scope, "client");
+  assert.equal(registrations.get("warnMissingPaths").default, false);
+  assert.equal(registrations.get("warnMissingPaths").config, true);
 });

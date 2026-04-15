@@ -487,6 +487,53 @@ test("fromPack fallback only uses translated packs with the same document type",
   assert.equal(translated[0].name, "Correct Item Translation");
 });
 
+test("fromPack translates embedded spell names through deterministic resolver lookup", () => {
+  const spell = {
+    _id: "spell-1",
+    name: "Magic Missile",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.spells.magic-missile",
+      },
+    },
+    system: {
+      description: {
+        value: "Original spell description",
+      },
+    },
+  };
+
+  const spellsPack = createMappedCompendium({
+    id: "test.spells",
+    name: "spells",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "magic-missile": {
+        name: "Dardo Incantato",
+        description: "Descrizione tradotta",
+      },
+    },
+  });
+
+  const translated = Converters._fromPack(
+    [spell],
+    createMappedCompendium({type: "Item"}, {entries: {}}),
+    new CompendiumRuntime({
+      globalPacks: new TestCollection([["test.spells", spellsPack]]),
+    }),
+  );
+
+  assert.equal(translated[0].name, "Dardo Incantato");
+  assert.equal(translated[0].system.description.value, "Descrizione tradotta");
+  assert.equal(translated[0].translated, true);
+});
+
 test("adventure actors translate tokenName through the embedded actor context", () => {
   game.babele.converters = {
     ...game.babele.converters,
@@ -544,6 +591,83 @@ test("adventure actors translate tokenName through the embedded actor context", 
 
   assert.equal(translated[0].name, "Goblin IT");
   assert.equal(translated[0].prototypeToken.name, "Goblin IT");
+});
+
+test("adventure deep translation keeps nested actor items inside the adventure-local scope", () => {
+  game.babele.converters = {
+    ...game.babele.converters,
+    name: Converters.mappedField("name"),
+    fromPack: Converters.fromPack(),
+  };
+
+  const converter = Converters.fromDefaultMapping("Actor", "actors");
+  const adventure = createMappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    entries: {
+      adventureA: {
+        actors: {
+          "actor-a": {
+            name: "Goblin IT",
+            items: {
+              "item-a": {
+                name: "Spada IT",
+              },
+            },
+          },
+        },
+        items: {
+          "item-a": {
+            name: "Spada IT",
+          },
+        },
+      },
+    },
+  });
+
+  const adventureData = {
+    _id: "adventureA",
+    name: "Adventure A",
+  };
+
+  const translated = converter(
+    [
+      {
+        _id: "actor-a",
+        name: "Goblin",
+        prototypeToken: {
+          name: "Goblin",
+        },
+        items: [
+          {
+            _id: "item-a",
+            name: "Sword",
+          },
+        ],
+        system: {
+          details: {
+            biography: {
+              value: "Original biography",
+            },
+          },
+        },
+      },
+    ],
+    adventure.translationsFor(adventureData).actors,
+    adventureData,
+    adventure,
+    null,
+    new CompendiumRuntime({
+      globalPacks: new TestCollection([["test.adventure", adventure]]),
+    }),
+  );
+
+  assert.equal(translated[0].name, "Goblin IT");
+  assert.equal(translated[0].items[0].name, "Spada IT");
 });
 
 test("fromPack fallback re-branches runtime to the translated root compendium", () => {

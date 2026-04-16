@@ -16,11 +16,11 @@ function missingPathWarningsEnabled() {
  *
  * FieldMapping acts as the stable context for one mapped field while delegating
  * the variable behavior to an internal field converter:
- * - static mappings use a default converter that reads and writes a value at the configured path
+ * - static mappings use a primitive converter that reads and writes a value at the configured path
  * - converter mappings use an adapter around a named registered converter
  *
  * The constructor selects the appropriate field converter from the mapping shape:
- * a string path creates the default field converter, while an object mapping
+ * a string path creates the primitive field converter, while an object mapping
  * creates an adapter around the named registered converter.
  *
  * Example:
@@ -42,7 +42,7 @@ export class FieldMapping {
             this.#converter = new RegisteredFieldConverter(mapping["converter"]);
         } else {
             this.path = mapping;
-            this.#converter = new DefaultFieldConverter();
+            this.#converter = new PrimitiveConverter();
         }
     }
 
@@ -189,7 +189,7 @@ export class FieldMapping {
  * Static mappings validate the source path and translated payload before
  * returning the translated value to merge.
  */
-class DefaultFieldConverter {
+class PrimitiveConverter {
 
     /**
      * @param {object} data
@@ -337,6 +337,7 @@ class RegisteredFieldConverter {
     constructor(converterName) {
         this.converterName = converterName ?? null;
         this.converter = game.babele.converters[this.converterName];
+        this.defaultConverter = game.babele.defaultConverters?.[this.converterName] ?? null;
     }
 
     /**
@@ -357,13 +358,15 @@ class RegisteredFieldConverter {
         }
 
         try {
-            return this.converter(
-                originalValue,
-                translations[fieldMapping.field],
-                data,
-                this._contextCompendium(runtime),
-                translations,
-                runtime,
+            return this._translator()(
+                this._context(
+                    fieldMapping,
+                    originalValue,
+                    translations[fieldMapping.field],
+                    data,
+                    runtime,
+                    translations,
+                ),
             );
         } catch (error) {
             this._logConverterFailure(fieldMapping, "translate", data, error, runtime);
@@ -377,30 +380,30 @@ class RegisteredFieldConverter {
      * @returns {object|undefined}
      */
     extract(fieldMapping, data, runtime = {}) {
-        if (!this.converter) {
+        const extractor = this._extractor();
+        const originalValue = fieldMapping.extractValue(data);
+
+        if (!this.converter && !extractor) {
             this._skipDynamicField(fieldMapping, runtime, "missing_converter");
             this._logMissingConverter(fieldMapping, "extract", data, runtime);
             return undefined;
         }
 
-        if (typeof this.converter.extract !== "function") {
+        if (!extractor) {
             this._skipDynamicField(fieldMapping, runtime, "missing_converter_extract");
             return undefined;
         }
 
         try {
-            // Dynamic converter extraction receives field metadata plus the
-            // current runtime so embedded lookups can stay within scope.
-            const extracted = this.converter.extract(
-                fieldMapping.extractValue(data),
-                data,
-                this._contextCompendium(runtime),
-                {
-                    field: fieldMapping.field,
-                    path: fieldMapping.path,
-                    mapping: fieldMapping.mapping,
+            const extracted = extractor(
+                this._context(
+                    fieldMapping,
+                    originalValue,
+                    undefined,
+                    data,
                     runtime,
-                },
+                    {},
+                ),
             );
 
             if (typeof extracted === "undefined") {
@@ -421,8 +424,69 @@ class RegisteredFieldConverter {
         return true;
     }
 
+    _extractor() {
+        if (typeof this.converter?.extract === "function") {
+            return this.converter.extract.bind(this.converter);
+        }
+
+        if (typeof this.converter === "function" && typeof this.converter.extract === "function") {
+            return (context) => this.converter.extract(
+                context.value,
+                context.source,
+                context.contextCompendium,
+                {
+                    field: context.field,
+                    path: context.path,
+                    params: context.params,
+                    mapping: context.params,
+                    runtime: context.runtime,
+                },
+            );
+        }
+
+        if (typeof this.defaultConverter?.extract === "function") {
+            return this.defaultConverter.extract.bind(this.defaultConverter);
+        }
+
+        return null;
+    }
+
+    _translator() {
+        if (typeof this.converter?.translate === "function") {
+            return this.converter.translate.bind(this.converter);
+        }
+
+        if (typeof this.converter === "function") {
+            return (context) => this.converter(
+                context.value,
+                context.translation,
+                context.source,
+                context.contextCompendium,
+                context.allTranslations,
+                context.runtime,
+                context.params,
+            );
+        }
+
+        return () => undefined;
+    }
+
     _contextCompendium(runtime = {}) {
         return runtime?.currentCompendium?.() ?? null;
+    }
+
+    _context(fieldMapping, value, translation, source, runtime = {}, allTranslations = {}) {
+        return {
+            value,
+            translation,
+            source,
+            field: fieldMapping.field,
+            path: fieldMapping.path,
+            params: fieldMapping.mapping,
+            allTranslations,
+            contextCompendium: this._contextCompendium(runtime),
+            runtime,
+        };
     }
 
     _logConverterFailure(fieldMapping, phase, data, error, runtime = {}) {

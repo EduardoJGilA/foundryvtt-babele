@@ -75,8 +75,19 @@ export const defaultMappings = {
         },
         "pages": {
             "path": "pages",
-            "converter": "pages"
+            "converter": "document",
+            "documentType": "JournalEntryPage",
+            "cardinality": "many",
+            "lookupExternalPacks": false
         }
+    },
+    "JournalEntryPage": {
+        "name": "name",
+        "caption": "image.caption",
+        "src": "src",
+        "text": "text.content",
+        "width": "video.width",
+        "height": "video.height"
     },
     "Macro": {
         "name": "name",

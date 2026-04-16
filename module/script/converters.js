@@ -45,6 +45,33 @@ export class Converters {
     }
 
     /**
+     * Normalize a document-valued field according to the configured
+     * cardinality so conversion logic can operate on arrays uniformly.
+     *
+     * @param {*} value
+     * @param {string} [cardinality]
+     * @returns {Array<*>}
+     */
+    static _documentValues(value, cardinality = "many") {
+        if (cardinality === "one") {
+            return (typeof value === "undefined" || value === null) ? [] : [value];
+        }
+
+        return Converters._asArray(value);
+    }
+
+    /**
+     * Restore translated document values to the declared field cardinality.
+     *
+     * @param {Array<*>} values
+     * @param {string} [cardinality]
+     * @returns {*}
+     */
+    static _documentOutput(values, cardinality = "many") {
+        return cardinality === "one" ? (values[0] ?? null) : values;
+    }
+
+    /**
      * Choose a stable export key for an embedded document, preferring human
      * readable names and falling back to ids when duplicates occur.
      *
@@ -272,6 +299,89 @@ export class Converters {
         return activeRuntime.currentCompendium() === contextPack
             ? activeRuntime
             : activeRuntime.child({currentCompendium: contextPack});
+    }
+
+    /**
+     * Translate document-valued fields using the scoped embedded context only,
+     * without falling back to external translated packs.
+     *
+     * @param {Array<object>} entities
+     * @param {*} contextPack
+     * @param {import("./compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @returns {Array<object>}
+     */
+    static _translateEmbeddedOnly(entities, contextPack, runtime = {}) {
+        const activeRuntime = Converters._runtimeWithContextCompendium(contextPack, runtime);
+        const currentCompendium = activeRuntime.currentCompendium();
+
+        return entities.map((data) => {
+            if (currentCompendium?.hasTranslation(data, currentCompendium.metadata?.type ?? null)) {
+                return currentCompendium.translate(data, false, activeRuntime);
+            }
+
+            return data;
+        });
+    }
+
+    /**
+     * Built-in OO converter for document-valued fields.
+     *
+     * It resolves the effective `DocumentMapping` for the configured
+     * `documentType`, merges any local mapping override, applies inline
+     * translations, and optionally falls back to external translated packs.
+     *
+     * Supported params:
+     * - `documentType`
+     * - `cardinality`
+     * - `mapping`
+     * - `lookupExternalPacks`
+     *
+     * @returns {{translate(Function), extract(Function), isDynamic(Function)}}
+     */
+    static document() {
+        return {
+            translate(context) {
+                const documentType = context.params?.documentType;
+                const cardinality = context.params?.cardinality ?? "many";
+                const lookupExternalPacks = context.params?.lookupExternalPacks !== false;
+                const mapping = context.params?.mapping ?? null;
+                const values = Converters._documentValues(context.value, cardinality);
+                const contextPack = Converters._embeddedContextPack(documentType, {
+                    mapping,
+                    translations: context.translation,
+                    runtime: context.runtime,
+                });
+
+                const translated = lookupExternalPacks
+                    ? Converters._fromPack(values, contextPack, context.runtime)
+                    : Converters._translateEmbeddedOnly(values, contextPack, context.runtime);
+
+                return Converters._documentOutput(translated, cardinality);
+            },
+
+            extract(context) {
+                const documentType = context.params?.documentType;
+                const cardinality = context.params?.cardinality ?? "many";
+                const mapping = context.params?.mapping ?? null;
+                const values = Converters._documentValues(context.value, cardinality);
+                const contextPack = Converters._embeddedContextPack(documentType, {
+                    mapping,
+                    runtime: context.runtime,
+                });
+
+                const extracted = Converters._extractEmbeddedCollection(values, contextPack, context.runtime);
+
+                if (cardinality === "one") {
+                    return Object.values(extracted)[0];
+                }
+
+                return extracted;
+            },
+
+            isDynamic() {
+                return true;
+            },
+        };
     }
 
     /**
@@ -571,67 +681,41 @@ export class Converters {
         return fn;
     }
 
-    static _pages(pages, translations) {
-        return pages.map(data => {
-            if (!translations) {
-                return data;
-            }
-
-            const translation = Converters._resolvedTranslation(data, translations, {documentType: "JournalEntryPage"});
-            if (!translation) {
-                return data;
-            }
-
-            return foundry.utils.mergeObject(data, {
-                name: translation.name,
-                image: {caption: translation.caption ?? data.image.caption},
-                src: translation.src ?? data.src,
-                text: {content: translation.text ?? data.text.content},
-                video: {
-                    width: translation.width ?? data.video.width,
-                    height: translation.height ?? data.video.height,
-                },
-                translated: true,
-            });
-        });
-    }
-
     static pages() {
-        const fn = function (pages, translations) {
-            return Converters._pages(pages, translations);
+        const converter = Converters.document();
+        const params = {
+            path: "pages",
+            converter: "document",
+            documentType: "JournalEntryPage",
+            cardinality: "many",
+            lookupExternalPacks: false,
+        };
+        const fn = function (pages, translations, data, tc, allTranslations, runtime = {}) {
+            return converter.translate({
+                value: pages,
+                translation: translations,
+                source: data,
+                field: "pages",
+                path: "pages",
+                params,
+                allTranslations,
+                contextCompendium: tc,
+                runtime,
+            });
         };
 
-        fn.extract = function (pages) {
-            const out = {};
-            const usedKeys = new Set();
-
-            for (const data of Converters._asArray(pages)) {
-                const key = Converters._exportKeyFor(data, usedKeys, "page");
-                const extracted = {};
-                if (data.name) {
-                    extracted.name = data.name;
-                }
-                if (typeof data.image?.caption !== "undefined" && data.image.caption !== null && data.image.caption !== "") {
-                    extracted.caption = data.image.caption;
-                }
-                if (typeof data.src !== "undefined" && data.src !== null && data.src !== "") {
-                    extracted.src = data.src;
-                }
-                if (typeof data.text?.content !== "undefined" && data.text.content !== null && data.text.content !== "") {
-                    extracted.text = data.text.content;
-                }
-                if (typeof data.video?.width !== "undefined") {
-                    extracted.width = data.video.width;
-                }
-                if (typeof data.video?.height !== "undefined") {
-                    extracted.height = data.video.height;
-                }
-                if (Object.keys(extracted).length > 0) {
-                    out[key] = extracted;
-                }
-            }
-
-            return out;
+        fn.extract = function (pages, data, tc, context = {}) {
+            return converter.extract({
+                value: pages,
+                translation: undefined,
+                source: data,
+                field: "pages",
+                path: "pages",
+                params,
+                allTranslations: {},
+                contextCompendium: tc,
+                runtime: context.runtime,
+            });
         };
 
         return fn;

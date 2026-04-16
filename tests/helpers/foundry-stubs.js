@@ -53,10 +53,13 @@ export function installFoundryStubs() {
   globalThis.Dialog = class {};
   globalThis.renderTemplate = async () => "";
   globalThis.FormDataExtended = class {
-    constructor() {}
+    constructor() {
+      this.object = {};
+    }
   };
   globalThis.ui = {
     notifications: {
+      notify() {},
       error() {},
     },
     compendium: {
@@ -69,6 +72,9 @@ export function installFoundryStubs() {
   globalThis.window = {};
   globalThis.saveAs = () => {};
   globalThis.JSZip = class {};
+  globalThis.SceneNavigation = {
+    displayProgressBar() {},
+  };
 
   globalThis.foundry = {
     utils: {
@@ -85,6 +91,21 @@ export function installFoundryStubs() {
       Collection: TestCollection,
     },
     applications: {
+      handlebars: {
+        async renderTemplate() {
+          return "";
+        },
+      },
+      api: {
+        DialogV2: {
+          async input() {
+            return null;
+          },
+        },
+      },
+      ux: {
+        FormDataExtended: globalThis.FormDataExtended,
+      },
       apps: {
         FilePicker: {
           async browse() {

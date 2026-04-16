@@ -515,12 +515,18 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
   const originalDialogCreate = ExportTranslationsDialog.create;
   const originalZip = globalThis.JSZip;
   const originalSaveAs = globalThis.saveAs;
+  const originalInfo = globalThis.ui.notifications.info;
+  let dialogOptions = null;
   let savedContent = null;
   let savedName = null;
   let zipInstance = null;
+  const progressCalls = [];
 
   try {
-    ExportTranslationsDialog.create = async () => ({format: "weblate"});
+    ExportTranslationsDialog.create = async (_pack, options) => {
+      dialogOptions = options;
+      return {format: "compatible", selection: "all"};
+    };
     globalThis.JSZip = class {
       constructor() {
         this.files = {};
@@ -531,13 +537,22 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
         this.files[name] = data;
       }
 
-      async generateAsync() {
+      async generateAsync(_options, onUpdate) {
+        onUpdate?.({percent: 42});
         return this.files;
       }
     };
     globalThis.saveAs = (content, name) => {
       savedContent = content;
       savedName = name;
+    };
+    globalThis.ui.notifications.info = (message, options) => {
+      progressCalls.push({message, options});
+      return {
+        update(update) {
+          progressCalls.push({update});
+        },
+      };
     };
 
     const pack = {
@@ -575,14 +590,17 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
     ]]);
     babele.translatePackFolders(pack);
 
-    babele.exportTranslationsFile(pack);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await babele.exportTranslationsFile(pack);
 
     const exported = JSON.parse(zipInstance.files["test.items.json"]);
 
     assert.equal(pack.folders.get("folder-a").name, "Equipaggiamento");
     assert.equal(pack.folders.get("folder-a").originalName, "Equipment");
+    assert.deepEqual(dialogOptions.counts, {
+      all: 1,
+      present: 0,
+      missing: 1,
+    });
     assert.deepEqual(exported.folders, {
       Equipment: "Equipment",
     });
@@ -591,13 +609,417 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
         name: "Sword",
       },
     });
+    assert.deepEqual(progressCalls, [
+      {message: "Babele | Exporting Items zip", options: {progress: true, console: false}},
+      {update: {message: "Babele | Exporting Items zip", pct: 0.01}},
+      {update: {message: "Babele | Exporting Items zip", pct: 0.42}},
+      {update: {message: "Babele | Exporting Items zip", pct: 1}},
+    ]);
     assert.equal(savedName, "test.items.zip");
     assert.equal(savedContent, zipInstance.files);
   } finally {
     ExportTranslationsDialog.create = originalDialogCreate;
     globalThis.JSZip = originalZip;
     globalThis.saveAs = originalSaveAs;
+    globalThis.ui.notifications.info = originalInfo;
   }
+});
+
+test("Babel.exportTranslationsFile computes dialog counts from the index without loading documents before confirmation", async () => {
+  const babele = new Babel();
+  const originalDialogCreate = ExportTranslationsDialog.create;
+  let getDocumentCalls = 0;
+  let dialogOptions = null;
+
+  try {
+    ExportTranslationsDialog.create = async (_pack, options) => {
+      dialogOptions = options;
+      return null;
+    };
+
+    const pack = {
+      collection: "test.items",
+      metadata: {
+        id: "test.items",
+        label: "Items",
+      },
+      async getIndex() {
+        return [
+          {_id: "item-1", name: "Sword", flags: {babele: {hasTranslation: true}}},
+          {_id: "item-2", name: "Shield"},
+        ];
+      },
+      async getDocument() {
+        getDocumentCalls += 1;
+        return null;
+      },
+    };
+
+    babele.packs = new foundry.utils.Collection([[
+      "test.items",
+      {
+        translated: true,
+      },
+    ]]);
+
+    await babele.exportTranslationsFile(pack);
+
+    assert.deepEqual(dialogOptions.counts, {
+      all: 2,
+      present: 1,
+      missing: 1,
+    });
+    assert.equal(getDocumentCalls, 0);
+  } finally {
+    ExportTranslationsDialog.create = originalDialogCreate;
+  }
+});
+
+test("Babel.exportTranslationsFile computes dialog counts correctly from Collection-backed indexes", async () => {
+  const babele = new Babel();
+  const originalDialogCreate = ExportTranslationsDialog.create;
+  let dialogOptions = null;
+
+  try {
+    ExportTranslationsDialog.create = async (_pack, options) => {
+      dialogOptions = options;
+      return null;
+    };
+
+    const pack = {
+      collection: "test.items",
+      metadata: {
+        id: "test.items",
+        label: "Items",
+      },
+      async getIndex() {
+        return new foundry.utils.Collection([
+          ["item-1", {_id: "item-1", name: "Sword", flags: {babele: {hasTranslation: true}}}],
+          ["item-2", {_id: "item-2", name: "Shield"}],
+        ]);
+      },
+      async getDocument() {
+        throw new Error("getDocument should not be called before confirmation");
+      },
+    };
+
+    babele.packs = new foundry.utils.Collection([[
+      "test.items",
+      {
+        translated: true,
+      },
+    ]]);
+
+    await babele.exportTranslationsFile(pack);
+
+    assert.deepEqual(dialogOptions.counts, {
+      all: 2,
+      present: 1,
+      missing: 1,
+    });
+  } finally {
+    ExportTranslationsDialog.create = originalDialogCreate;
+  }
+});
+
+test("Babel.exportDataFor exports present and missing entries according to selection mode", async () => {
+  const babele = new Babel();
+  const pack = {
+    collection: "test.items",
+    metadata: {
+      id: "test.items",
+      label: "Items",
+    },
+    folders: new foundry.utils.Collection(),
+    async getIndex() {
+      return [{_id: "item-1"}, {_id: "item-2"}];
+    },
+    async getDocument(id) {
+      if (id === "item-1") {
+        return {
+          _id: "item-1",
+          name: "Sword",
+          description: "Original sword",
+        };
+      }
+
+      return {
+        _id: "item-2",
+        name: "Shield",
+        description: "Original shield",
+      };
+    },
+  };
+
+  babele.extract = (_pack, data) => ({
+    name: data.name,
+    description: data.description,
+  });
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      translated: true,
+      hasTranslation(data) {
+        return data._id === "item-1";
+      },
+      translate(data) {
+        if (data._id !== "item-1") {
+          return data;
+        }
+
+        return {
+          ...data,
+          name: "Spada",
+          description: "Descrizione tradotta",
+          originalName: "Sword",
+          hasTranslation: true,
+          translated: true,
+          flags: {
+            babele: {
+              originalName: "Sword",
+              hasTranslation: true,
+              translated: true,
+            },
+          },
+        };
+      },
+    },
+  ]]);
+
+  const allEntries = await babele.exportDataFor(pack, {format: "compatible", selection: "all"});
+  const presentOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "present"});
+  const missingOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "missing"});
+
+  assert.deepEqual(allEntries.entries, {
+    Sword: {
+      name: "Spada",
+      description: "Descrizione tradotta",
+    },
+    Shield: {
+      name: "Shield",
+      description: "Original shield",
+    },
+  });
+  assert.deepEqual(presentOnly.entries, {
+    Sword: {
+      name: "Spada",
+      description: "Descrizione tradotta",
+    },
+  });
+  assert.deepEqual(missingOnly.entries, {
+    Shield: {
+      name: "Shield",
+      description: "Original shield",
+    },
+  });
+});
+
+test("Babel.exportDataFor falls back to built-in extractor when a custom converter overrides translate only", async () => {
+  const babele = new Babel();
+  const pack = {
+    collection: "test.journals",
+    metadata: {
+      id: "test.journals",
+      label: "Journals",
+    },
+    folders: new foundry.utils.Collection(),
+    async getIndex() {
+      return [{_id: "journal-1"}];
+    },
+    async getDocument() {
+      return {
+        _id: "journal-1",
+        name: "Rules",
+        pages: [
+          {
+            _id: "page-1",
+            name: "Introduction",
+            text: {content: "<p>Hello</p>"},
+            image: {caption: ""},
+            video: {},
+          },
+        ],
+      };
+    },
+  };
+
+  const originalPagesConverter = babele.converters.pages;
+
+  babele.registerConverter("pages", (pages, translations, data, tc, allTranslations, runtime, params) =>
+    originalPagesConverter.translate({
+      value: pages,
+      translation: translations,
+      source: data,
+      field: "pages",
+      path: "pages",
+      params,
+      allTranslations,
+      contextCompendium: tc,
+      runtime,
+    }),
+  );
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.journals",
+    {
+      translated: false,
+      extract(data) {
+        return {
+          name: data.name,
+          pages: {
+            Introduction: {
+              name: "Introduction",
+              text: "<p>Hello</p>",
+            },
+          },
+        };
+      },
+    },
+  ]]);
+
+  const exported = await babele.exportDataFor(pack, {format: "compatible", selection: "all"});
+
+  assert.deepEqual(exported.entries, {
+    Rules: {
+      name: "Rules",
+      pages: {
+        Introduction: {
+          name: "Introduction",
+          text: "<p>Hello</p>",
+        },
+      },
+    },
+  });
+});
+
+test("Babel.registerConverter normalizes legacy functions and OO converters to the internal OO contract", () => {
+  const babele = new Babel();
+
+  const legacy = (value) => `${value} legacy`;
+  legacy.extract = (value) => ({value});
+
+  const ooConverter = {
+    translate(context) {
+      return `${context.value} oo`;
+    },
+    extract(context) {
+      return {value: context.value};
+    },
+    isDynamic() {
+      return true;
+    },
+  };
+
+  babele.registerConverter("legacyExample", legacy);
+  babele.registerConverter("ooExample", ooConverter);
+
+  assert.equal(typeof babele.converters.legacyExample.translate, "function");
+  assert.equal(typeof babele.converters.legacyExample.extract, "function");
+  assert.equal(babele.converters.legacyExample.isDynamic(), true);
+  assert.equal(babele.converters.legacyExample.translate({
+    value: "test",
+    translation: null,
+    source: {},
+    field: "field",
+    path: "field",
+    params: {converter: "legacyExample"},
+    allTranslations: {},
+    contextCompendium: null,
+    runtime: {},
+  }), "test legacy");
+
+  assert.equal(typeof babele.converters.ooExample.translate, "function");
+  assert.equal(typeof babele.converters.ooExample.extract, "function");
+  assert.equal(babele.converters.ooExample.isDynamic(), true);
+  assert.equal(babele.converters.ooExample.translate({
+    value: "test",
+    translation: null,
+    source: {},
+    field: "field",
+    path: "field",
+    params: {converter: "ooExample"},
+    allTranslations: {},
+    contextCompendium: null,
+    runtime: {},
+  }), "test oo");
+});
+
+test("Babel.exportDataFor hydrates journal pages from embedded documents when toObject omits them", async () => {
+  const babele = new Babel();
+  const pack = {
+    collection: "test.journals",
+    metadata: {
+      id: "test.journals",
+      label: "Journals",
+    },
+    folders: new foundry.utils.Collection(),
+    async getIndex() {
+      return [{_id: "journal-1"}];
+    },
+    async getDocument() {
+      return {
+        documentName: "JournalEntry",
+        name: "Rules",
+        toObject() {
+          return {
+            _id: "journal-1",
+            name: "Rules",
+          };
+        },
+        pages: {
+          contents: [
+            {
+              toObject() {
+                return {
+                  _id: "page-1",
+                  name: "Introduction",
+                  text: {content: "<p>Hello</p>"},
+                  image: {caption: ""},
+                  video: {},
+                };
+              },
+            },
+          ],
+        },
+        categories: {
+          contents: [],
+        },
+      };
+    },
+  };
+
+  babele.packs = new foundry.utils.Collection([[
+    "test.journals",
+    {
+      translated: false,
+      extract(data) {
+        return {
+          name: data.name,
+          pages: {
+            Introduction: {
+              name: data.pages?.[0]?.name ?? null,
+              text: data.pages?.[0]?.text?.content ?? null,
+            },
+          },
+        };
+      },
+    },
+  ]]);
+
+  const exported = await babele.exportDataFor(pack, {format: "compatible", selection: "all"});
+
+  assert.deepEqual(exported.entries, {
+    Rules: {
+      name: "Rules",
+      pages: {
+        Introduction: {
+          name: "Introduction",
+          text: "<p>Hello</p>",
+        },
+      },
+    },
+  });
 });
 
 test("Babel.reinitialize restores translated indexes and clears cached closed compendium documents", async () => {

@@ -26,6 +26,7 @@
 		"lib/FileSaver.js"
 	],
 	"styles": [
+		"styles/babele.css"
 	],
 	"languages": [{
 		"lang": "ar",

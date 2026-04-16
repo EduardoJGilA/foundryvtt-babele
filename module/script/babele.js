@@ -93,6 +93,7 @@ class Babel {
     constructor() {
         this.modules = [];
         this.converters = {};
+        this.defaultConverters = {};
         this.state = BabeleState.empty();
         this.translations = this.state.translations;
         this.packs = this.state.packs;
@@ -111,11 +112,12 @@ class Babel {
      * Register the default provided converters.
      */
     registerDefaultConverters() {
-        this.registerConverters({
+        const converters = {
             "fromPack": Converters.fromPack(),
             "name": Converters.mappedField("name"),
             "nameCollection": Converters.fieldCollection("name"),
             "textCollection": Converters.fieldCollection("text"),
+            "document": Converters.document(),
             "tableResults": Converters.tableResults(),
             "tableResultsCollection": Converters.tableResultsCollection(),
             "pages": Converters.pages(),
@@ -129,7 +131,10 @@ class Babel {
             "adventurePlaylists": Converters.fromDefaultMapping("Playlist", "playlists"),
             "adventureMacros": Converters.fromDefaultMapping("Macro", "macros"),
             "adventureScenes": Converters.fromDefaultMapping("Scene", "scenes")
-        })
+        };
+
+        this.defaultConverters = this.#normalizeConverters(converters);
+        this.registerConverters(converters);
     }
 
     /**
@@ -154,7 +159,64 @@ class Babel {
      * @param converters
      */
     registerConverters(converters) {
-        this.converters = foundry.utils.mergeObject(this.converters, converters);
+        this.converters = foundry.utils.mergeObject(this.converters, this.#normalizeConverters(converters));
+    }
+
+    #normalizeConverters(converters = {}) {
+        return Object.fromEntries(
+            Object.entries(converters).map(([name, converter]) => [name, this.#normalizeConverter(name, converter)]),
+        );
+    }
+
+    #normalizeConverter(name, converter) {
+        if (typeof converter === "function") {
+            return this.#legacyConverter(converter);
+        }
+
+        if (converter && typeof converter.translate === "function") {
+            return converter;
+        }
+
+        throw new Error(`Invalid converter registration for '${name}'. Expected a legacy function or an OO converter.`);
+    }
+
+    #legacyConverter(fn) {
+        return {
+            translate(context) {
+                return fn(
+                    context.value,
+                    context.translation,
+                    context.source,
+                    context.contextCompendium,
+                    context.allTranslations,
+                    context.runtime,
+                    context.params,
+                );
+            },
+
+            extract(context) {
+                if (typeof fn.extract !== "function") {
+                    return undefined;
+                }
+
+                return fn.extract(
+                    context.value,
+                    context.source,
+                    context.contextCompendium,
+                    {
+                        field: context.field,
+                        path: context.path,
+                        params: context.params,
+                        mapping: context.params,
+                        runtime: context.runtime,
+                    },
+                );
+            },
+
+            isDynamic() {
+                return true;
+            },
+        };
     }
 
     /**
@@ -457,57 +519,85 @@ class Babel {
      *
      * @param pack
      */
-    exportTranslationsFile(pack) {
-
-        ExportTranslationsDialog.create(pack).then(async conf => {
-
-            if (conf) {
-                const folders = this.folderTranslationsForExport(pack);
-                let file = {
-                    label: pack.metadata.label,
-                    ...(folders ? {folders} : {}),
-                    entries: conf.format === 'legacy' ? [] : {}
-                };
-                const skippedDynamicFields = [];
-
-                let index = await pack.getIndex();
-                Promise.all(index.map(entry => pack.getDocument(entry._id))).then(entities => {
-                    entities.forEach((entity, idx) => {
-                        const name = entity.getFlag("babele", "translated") ? entity.getFlag("babele", "originalName") : entity.name;
-                        const extracted = this.pruneExportData(this.extract(pack.collection, entity, {
-                            format: conf.format,
-                            onSkippedDynamicField: info => skippedDynamicFields.push({
-                                entry: name,
-                                ...info,
-                            }),
-                        })) ?? {};
-                        if (conf.format === 'legacy') {
-                            let entry = foundry.utils.mergeObject({id: name}, extracted);
-                            file.entries.push(entry);
-                        } else {
-                            file.entries[`${name}`] = extracted;
-                        }
-                    });
-
-                    if (skippedDynamicFields.length) {
-                        console.warn("Babele | skipped dynamic export fields", {
-                            pack: pack.collection,
-                            fields: skippedDynamicFields,
-                        });
-                    }
-
-                    let dataStr = JSON.stringify(file, null, '\t');
-                    let exportFileDefaultName = pack.collection + '.json';
-
-                    var zip = new JSZip();
-                    zip.file(exportFileDefaultName, dataStr);
-                    zip.generateAsync({type: "blob"})
-                        .then(content => {
-                            saveAs(content, pack.collection + ".zip");
-                        });
-                });
-            }
+    async exportTranslationsFile(pack) {
+        const mappedCompendium = this.mappedCompendiumFor(pack.collection);
+        const exportCounts = await this.#exportSelectionCountsFor(pack, mappedCompendium);
+        const conf = await ExportTranslationsDialog.create(pack, {
+            hasTranslations: !!mappedCompendium?.translated,
+            format: "compatible",
+            selection: "all",
+            counts: exportCounts,
         });
+
+        if (!conf) {
+            return;
+        }
+
+        const exportEntries = await this.#exportEntriesFor(pack, mappedCompendium);
+        const file = await this.exportDataFor(pack, {
+            ...conf,
+            mappedCompendium,
+            entries: exportEntries,
+        });
+        const dataStr = JSON.stringify(file, null, '\t');
+        const exportFileDefaultName = `${pack.collection}.json`;
+
+        const zip = new JSZip();
+        zip.file(exportFileDefaultName, dataStr);
+        const progress = this.#createExportZipProgress(pack);
+        this.#updateExportZipProgress(progress, pack, 0.01);
+        await this.#yieldToUi();
+        const content = await zip.generateAsync({type: "blob"}, (metadata) => {
+            this.#updateExportZipProgress(progress, pack, (metadata?.percent ?? 0) / 100);
+        });
+        this.#updateExportZipProgress(progress, pack, 1);
+        saveAs(content, `${pack.collection}.zip`);
+    }
+
+    async exportDataFor(pack, options = {}) {
+        const format = options.format === "legacy" ? "legacy" : "compatible";
+        const selection = this.#normalizedExportSelection(options.selection);
+        const mappedCompendium = options.mappedCompendium ?? this.mappedCompendiumFor(pack.collection);
+        const exportEntries = options.entries ?? await this.#exportEntriesFor(pack, mappedCompendium);
+        const folders = this.folderTranslationsForExport(pack);
+        const file = {
+            label: pack.metadata.label,
+            ...(folders ? {folders} : {}),
+            entries: format === "legacy" ? [] : {},
+        };
+        const skippedDynamicFields = [];
+
+        for (const {entity, sourceData, hasTranslation} of exportEntries) {
+            const exportedData = this.#exportPayloadData(sourceData, hasTranslation, mappedCompendium);
+            const name = this.#exportEntryName(entity, exportedData, sourceData);
+
+            if (!this.#shouldExportEntity(selection, hasTranslation)) {
+                continue;
+            }
+
+            const extracted = this.pruneExportData(this.extract(pack.collection, exportedData, {
+                format,
+                onSkippedDynamicField: info => skippedDynamicFields.push({
+                    entry: name,
+                    ...info,
+                }),
+            })) ?? {};
+
+            if (format === "legacy") {
+                file.entries.push(foundry.utils.mergeObject({id: name}, extracted));
+            } else {
+                file.entries[name] = extracted;
+            }
+        }
+
+        if (skippedDynamicFields.length) {
+            console.warn("Babele | skipped dynamic export fields", {
+                pack: pack.collection,
+                fields: skippedDynamicFields,
+            });
+        }
+
+        return file;
     }
 
     /**
@@ -517,6 +607,199 @@ class Babel {
     translateActor(actor) {
         let d = new OnDemandTranslateDialog(actor);
         d.render(true);
+    }
+
+    #normalizedExportSelection(selection) {
+        if (selection === "present" || selection === "translated") {
+            return "present";
+        }
+
+        if (selection === "missing" || selection === "untranslated") {
+            return "missing";
+        }
+
+        return "all";
+    }
+
+    #exportSourceData(entity) {
+        if (typeof entity?.toObject === "function") {
+            const sourceData = entity.toObject();
+
+            if (this.#isJournalEntry(entity)) {
+                this.#hydrateJournalEmbeddedExportData(sourceData, entity);
+            }
+
+            return sourceData;
+        }
+
+        return entity;
+    }
+
+    #isJournalEntry(entity) {
+        return entity?.documentName === "JournalEntry"
+            || entity?.constructor?.metadata?.name === "JournalEntry";
+    }
+
+    #hydrateJournalEmbeddedExportData(sourceData, entity) {
+        this.#hydrateEmbeddedCollection(sourceData, entity, "pages");
+        this.#hydrateEmbeddedCollection(sourceData, entity, "categories");
+    }
+
+    #hydrateEmbeddedCollection(sourceData, entity, key) {
+        const current = sourceData?.[key];
+        if (Array.isArray(current) && current.length > 0) {
+            return;
+        }
+
+        const embedded = entity?.[key]?.contents;
+        if (!Array.isArray(embedded) || embedded.length === 0) {
+            return;
+        }
+
+        sourceData[key] = embedded.map((document) => typeof document?.toObject === "function" ? document.toObject() : document);
+    }
+
+    async #exportEntriesFor(pack, mappedCompendium) {
+        const index = this.#normalizedExportIndex(await pack.getIndex());
+        const entities = await Promise.all(index.map(entry => pack.getDocument(entry._id)));
+
+        return entities.map(entity => {
+            const sourceData = this.#exportSourceData(entity);
+            return {
+                entity,
+                sourceData,
+                hasTranslation: this.#exportHasTranslation(entity, sourceData, mappedCompendium),
+            };
+        });
+    }
+
+    async #exportSelectionCountsFor(pack, mappedCompendium) {
+        const index = this.#normalizedExportIndex(await pack.getIndex());
+        const all = index.length;
+        const present = index.filter((entry) => this.#exportHasTranslation(entry, this.#exportLookupData(entry), mappedCompendium)).length;
+
+        return {
+            all,
+            present,
+            missing: all - present,
+        };
+    }
+
+    #normalizedExportIndex(index) {
+        if (Array.isArray(index)) {
+            return index;
+        }
+
+        if (typeof index?.values === "function") {
+            return Array.from(index.values());
+        }
+
+        if (index && typeof index[Symbol.iterator] === "function") {
+            return Array.from(index);
+        }
+
+        return [];
+    }
+
+    #exportLookupData(data) {
+        if (!data) {
+            return data;
+        }
+
+        const originalName = data?.flags?.babele?.originalName ?? data?.originalName ?? null;
+        if (!originalName || data?.name === originalName) {
+            return data;
+        }
+
+        return {
+            ...data,
+            name: originalName,
+        };
+    }
+
+    #exportHasTranslation(entity, data, mappedCompendium) {
+        const explicitFlag = entity?.getFlag?.("babele", "hasTranslation")
+            ?? entity?.flags?.babele?.hasTranslation
+            ?? data?.flags?.babele?.hasTranslation
+            ?? entity?.hasTranslation
+            ?? data?.hasTranslation;
+
+        if (typeof explicitFlag === "boolean") {
+            return explicitFlag;
+        }
+
+        return mappedCompendium?.hasTranslation?.(this.#exportLookupData(data)) ?? false;
+    }
+
+    #shouldExportEntity(selection, hasTranslation) {
+        if (selection === "present") {
+            return hasTranslation;
+        }
+
+        if (selection === "missing") {
+            return !hasTranslation;
+        }
+
+        return true;
+    }
+
+    #exportPayloadData(sourceData, hasTranslation, mappedCompendium) {
+        if (!hasTranslation) {
+            return sourceData;
+        }
+
+        return mappedCompendium?.translate?.(sourceData) ?? sourceData;
+    }
+
+    #createExportZipProgress(pack) {
+        const label = `Babele | Exporting ${pack.metadata.label} zip`;
+
+        if (typeof ui?.notifications?.info === "function") {
+            return ui.notifications.info(label, {
+                progress: true,
+                console: false,
+            });
+        }
+
+        return null;
+    }
+
+    #updateExportZipProgress(progress, pack, percent) {
+        const pct = Math.max(0, Math.min(1, percent));
+        const message = `Babele | Exporting ${pack.metadata.label} zip`;
+
+        if (progress?.update) {
+            progress.update({message, pct});
+            return;
+        }
+
+        if (typeof SceneNavigation?.displayProgressBar === "function") {
+            SceneNavigation.displayProgressBar({label: message, pct: pct * 100});
+        }
+    }
+
+    async #yieldToUi() {
+        if (typeof requestAnimationFrame === "function") {
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            return;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    #exportEntryName(...candidates) {
+        for (const candidate of candidates) {
+            const name = candidate?.getFlag?.("babele", "originalName")
+                ?? candidate?.flags?.babele?.originalName
+                ?? candidate?.originalName
+                ?? candidate?.name;
+
+            if (name) {
+                return name;
+            }
+        }
+
+        return "entry";
     }
 
     translatePackFolders(pack) {

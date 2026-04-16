@@ -264,6 +264,37 @@ test("pages converter uses TranslationResolver fallback order", () => {
   assert.equal(translated[0].video.height, 600);
 });
 
+test("pages.extract exports journal pages through the JournalEntryPage mapping", () => {
+  const extracted = Converters.pages().extract([
+    {
+      _id: "page-1",
+      name: "Introduction",
+      image: {
+        caption: "Cover",
+      },
+      src: "intro.webp",
+      text: {
+        content: "<p>Hello</p>",
+      },
+      video: {
+        width: 640,
+        height: 480,
+      },
+    },
+  ]);
+
+  assert.deepEqual(extracted, {
+    Introduction: {
+      name: "Introduction",
+      caption: "Cover",
+      src: "intro.webp",
+      text: "<p>Hello</p>",
+      width: 640,
+      height: 480,
+    },
+  });
+});
+
 test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {
   const extracted = Converters.tableResults().extract([
     {

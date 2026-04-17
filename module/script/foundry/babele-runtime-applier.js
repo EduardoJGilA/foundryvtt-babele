@@ -49,9 +49,7 @@ export class BabeleRuntimeApplier {
         }
 
         if (notify) {
-            ui.notifications?.info?.(
-                "Babele refreshed translation sources. Closed compendium documents are updated; already open documents may need to be reopened.",
-            );
+            ui.notifications?.info?.(game.i18n.localize("BABELE.TranslationSourcesRefreshed"));
         }
     }
 

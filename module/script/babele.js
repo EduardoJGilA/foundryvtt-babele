@@ -7,6 +7,7 @@ import {BabeleRuntimeApplier} from "./foundry/babele-runtime-applier.js";
 import {BabeleUiBridge} from "./ui/babele-ui-bridge.js";
 import {DocumentConverter} from "./converter/document-converter.js";
 import {StructuredDataConverter} from "./converter/structured-data-converter.js";
+import {LookupConverter} from "./converter/lookup-converter.js";
 import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
 import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
 import {TranslationExport} from "./export/translation-export.js";
@@ -159,6 +160,7 @@ class Babel {
             ...Converters.legacyRegistrations(),
             "document": new DocumentConverter(),
             "structured": new StructuredDataConverter(),
+            "lookup": new LookupConverter(),
         });
     }
 

@@ -6,6 +6,7 @@ installFoundryStubs();
 
 const {FieldMapping} = await import("../module/script/mapping/field-mapping.js");
 const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
+const {default: Babel} = await import("../module/script/babele.js");
 
 test("FieldMapping.map preserves empty string translations", () => {
   const mapping = new FieldMapping("description", "system.description.value", null);
@@ -60,6 +61,79 @@ test("FieldMapping.map still skips undefined and null translations", () => {
 
   assert.deepEqual(mapping.map(data, {description: undefined}), {});
   assert.deepEqual(mapping.map(data, {description: null}), {});
+});
+
+test("FieldMapping.map translates lookup-backed fields through inline values", () => {
+  const registry = new ConverterRegistry({
+    lookup: new Babel().converterRegistry.named("lookup"),
+  });
+  const mapping = new FieldMapping("alignment", {
+    path: "system.details.alignment",
+    converter: "lookup",
+    values: {
+      "chaotic evil": "Caotico Malvagio",
+    },
+    normalize: "trim-lowercase",
+  }, registry);
+  const data = {
+    system: {
+      details: {
+        alignment: "  Chaotic Evil  ",
+      },
+    },
+  };
+
+  assert.deepEqual(mapping.map(data, {}), {
+    system: {
+      details: {
+        alignment: "Caotico Malvagio",
+      },
+    },
+  });
+});
+
+test("FieldMapping.map fails open for lookup-backed fields when the key is missing", () => {
+  const registry = new ConverterRegistry({
+    lookup: new Babel().converterRegistry.named("lookup"),
+  });
+  const mapping = new FieldMapping("rarity", {
+    path: "system.rarity",
+    converter: "lookup",
+    values: {
+      Common: "Comune",
+    },
+  }, registry);
+  const data = {
+    system: {
+      rarity: "Legendary",
+    },
+  };
+
+  assert.deepEqual(mapping.map(data, {}), {
+    system: {
+      rarity: "Legendary",
+    },
+  });
+});
+
+test("FieldMapping.extract skips lookup-backed fields because they are mapping-defined", () => {
+  const registry = new ConverterRegistry({
+    lookup: new Babel().converterRegistry.named("lookup"),
+  });
+  const mapping = new FieldMapping("rarity", {
+    path: "system.rarity",
+    converter: "lookup",
+    values: {
+      Common: "Comune",
+    },
+  }, registry);
+  const data = {
+    system: {
+      rarity: "Common",
+    },
+  };
+
+  assert.equal(mapping.extract(data), undefined);
 });
 
 test("FieldMapping.map warns and fails open when the mapped path does not exist", () => {

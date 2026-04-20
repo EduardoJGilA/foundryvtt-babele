@@ -90,6 +90,34 @@ test("DocumentMapping uses the default TableResult range identity when Babele re
   assert.deepEqual(mapping.matchKeyCandidates(document), ["result-1", "2-3"]);
 });
 
+test("DocumentMapping.extract omits lookup-backed fields because they do not export translation payload", () => {
+  const babele = new Babel();
+  const mapping = new DocumentMapping("Item", {
+    name: "name",
+    rarityLabel: {
+      path: "system.rarity",
+      converter: "lookup",
+      values: {
+        Common: "Comune",
+      },
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: babele.converterRegistry,
+  });
+  const data = {
+    _id: "item-1",
+    name: "Longsword",
+    system: {
+      rarity: "Common",
+    },
+  };
+
+  assert.deepEqual(mapping.extract(data), {
+    name: "Longsword",
+  });
+});
+
 test("DocumentMappingHierarchy resolves subtype mappings as an inheritance-like hierarchy", () => {
   const mappings = new DocumentMappings({
     Item: {

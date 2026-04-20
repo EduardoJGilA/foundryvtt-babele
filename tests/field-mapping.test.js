@@ -4,7 +4,8 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {FieldMapping} = await import("../module/script/field-mapping.js");
+const {FieldMapping} = await import("../module/script/mapping/field-mapping.js");
+const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
 
 test("FieldMapping.map preserves empty string translations", () => {
   const mapping = new FieldMapping("description", "system.description.value", null);
@@ -186,10 +187,11 @@ test("FieldMapping.map skips primitive type mismatches for static fields", () =>
 });
 
 test("FieldMapping.map fails open when a dynamic field references a missing converter", () => {
+  const registry = new ConverterRegistry();
   const mapping = new FieldMapping("advancement", {
     path: "system.advancement",
     converter: "advancement",
-  });
+  }, registry);
   const data = {
     _id: "class-1",
     name: "Barbarian",
@@ -211,6 +213,80 @@ test("FieldMapping.map fails open when a dynamic field references a missing conv
   assert.deepEqual(data.system.advancement, [
     {_id: "adv-1", title: "Rage"},
   ]);
+});
+
+test("FieldMapping.map logs converter failure diagnostics with source value shape", () => {
+  const originalError = console.error;
+  const errorCalls = [];
+  console.error = (...args) => errorCalls.push(args);
+
+  try {
+    const registry = new ConverterRegistry({
+      failingObjectConverter(value) {
+        value.forEach(() => {});
+        return value;
+      },
+    });
+    const mapping = new FieldMapping("advancement", {
+      path: "system.advancement",
+      converter: "failingObjectConverter",
+    }, registry);
+    const data = {
+      _id: "class-1",
+      name: "Barbarian",
+      system: {
+        advancement: {
+          a: {title: "Rage"},
+        },
+      },
+    };
+
+    assert.deepEqual(mapping.map(data, {advancement: {}}), {});
+    assert.equal(errorCalls.length, 1);
+    assert.equal(errorCalls[0][1].valueType, "object");
+    assert.deepEqual(errorCalls[0][1].valuePreview, {
+      keys: ["a"],
+    });
+    assert.equal(errorCalls[0][1].translationType, "object");
+    assert.deepEqual(errorCalls[0][1].translationPreview, {
+      keys: [],
+    });
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("FieldMapping.map throws when a named converter bypasses registration and is not OO", () => {
+  const data = {
+    _id: "class-2",
+    name: "Wizard",
+    system: {
+      advancement: [
+        {_id: "adv-2", title: "Spellcasting"},
+      ],
+    },
+  };
+  const translations = {
+    advancement: {
+      "adv-2": {
+        title: "Incantesimi",
+      },
+    },
+  };
+  const registry = {
+    named(name) {
+      return name === "advancement" ? (() => ({translated: true})) : null;
+    },
+  };
+  const mapping = new FieldMapping("advancement", {
+    path: "system.advancement",
+    converter: "advancement",
+  }, registry);
+
+  assert.throws(
+    () => mapping.map(data, translations),
+    /not a supported OO converter/,
+  );
 });
 
 test("FieldMapping.extract preserves legacy behavior for fields whose source path does not exist", () => {

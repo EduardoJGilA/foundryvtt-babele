@@ -4,7 +4,7 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {ExportTranslationsDialog} = await import("../module/script/export-translations-dialog.js");
+const {ExportTranslationsDialog} = await import("../module/script/ui/export-translations-dialog.js");
 
 test("ExportTranslationsDialog uses DialogV2 with compatible format as default", async () => {
   let templateContext = null;
@@ -20,7 +20,7 @@ test("ExportTranslationsDialog uses DialogV2 with compatible format as default",
     return {format: "compatible", selection: "all"};
   };
 
-  const result = await ExportTranslationsDialog.create({
+  const result = await new ExportTranslationsDialog({
     metadata: {
       label: "Items",
     },
@@ -31,7 +31,7 @@ test("ExportTranslationsDialog uses DialogV2 with compatible format as default",
       present: 7,
       missing: 5,
     },
-  });
+  }).prompt();
 
   assert.deepEqual(result, {format: "compatible", selection: "all"});
   assert.equal(templateContext.hasTranslations, true);

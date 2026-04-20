@@ -4,7 +4,7 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 const {TestCollection} = installFoundryStubs();
 
-const {CompendiumRuntime} = await import("../module/script/compendium-runtime.js");
+const {CompendiumRuntime} = await import("../module/script/compendium/compendium-runtime.js");
 
 test("CompendiumRuntime resolves local compendiums before global ones", () => {
   const globalPack = {id: "global"};

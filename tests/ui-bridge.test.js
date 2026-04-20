@@ -9,7 +9,7 @@ installFakeDom();
 const {
   BabeleUiBridge,
   matchOriginalNameEntries,
-} = await import("../module/script/babele-ui-bridge.js");
+} = await import("../module/script/ui/babele-ui-bridge.js");
 
 function createCompendiumRoot() {
   const root = new FakeElement("section");

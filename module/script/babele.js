@@ -1,16 +1,20 @@
-import {registerModuleSettings} from "./settings.js";
-import {initWrapper} from "./wrapper.js";
-import {Converters} from "./converters.js";
-import {ExportTranslationsDialog} from "./export-translations-dialog.js";
-import {OnDemandTranslateDialog} from "./on-demand-translate-dialog.js";
-import {defaultMappings} from "./default-mappings.js"
-import {TranslationRegistry} from "./translation-registry.js";
-import {BabeleMappings} from "./babele-mappings.js";
-import {BabeleBootstrap} from "./babele-bootstrap.js";
-import {BabeleRuntimeApplier} from "./babele-runtime-applier.js";
-import {BabeleState} from "./babele-state.js";
-import {BabeleUiBridge} from "./babele-ui-bridge.js";
-import {TranslationResolver} from "./translation-resolver.js";
+import {registerModuleSettings} from "./foundry/settings.js";
+import {initWrapper} from "./foundry/wrapper.js";
+import {Converters} from "./converter/converters.js";
+import {OnDemandTranslateDialog} from "./ui/on-demand-translate-dialog.js";
+import {DocumentMappings} from "./mapping/document-mappings.js";
+import {BabeleRuntimeApplier} from "./foundry/babele-runtime-applier.js";
+import {BabeleUiBridge} from "./ui/babele-ui-bridge.js";
+import {DocumentConverter} from "./converter/document-converter.js";
+import {StructuredDataConverter} from "./converter/structured-data-converter.js";
+import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
+import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
+import {TranslationExport} from "./export/translation-export.js";
+import {FolderTranslations} from "./compendium/folder-translations.js";
+import {MappedCompendiums} from "./compendium/mapped-compendiums.js";
+import {ConverterRegistry} from "./converter/converter-registry.js";
+import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
+import {TranslationRegistry} from "./translation/translation-registry.js";
 
 /****************
  * HOOKS
@@ -36,6 +40,9 @@ Hooks.once('ready', async () => {
         return;
     }
 
+    // `init()` only loads and installs Babele state. Runtime application is
+    // deferred until Foundry is fully ready so compendium indexes, folders,
+    // and caches can be updated coherently.
     await game.babele.applyRuntimeTranslations({shareSources: true, renderCompendium: false});
     Hooks.callAll('babele.ready');
     await ui.compendium.render();
@@ -63,18 +70,24 @@ class Babel {
     /** @type {Promise<boolean> | null} */
     #initialized
     #dataLoaded
-    #translationRegistry
     #translationMatchStrategies
+    #identityExtractors
+    #folderTranslations
+    #translationRegistry
+    #catalog
 
-    static get PACK_FOLDER_TRANSLATION_NAME_SUFFIX() {
-        return '_packs-folders';
+    /**
+     * Compatibility view of the currently published default mappings.
+     *
+     * The authoritative state lives in `DocumentMappings`; this getter
+     * remains as a stable public entry point for callers that still inspect
+     * default mappings through the facade.
+     *
+     * @returns {object}
+     */
+    static get DEFAULT_MAPPINGS() {
+        return DocumentMappings.DEFAULT_MAPPINGS;
     }
-
-    static get SUPPORTED_PACKS() {
-        return ['Adventure', 'Actor', 'Cards', 'Folder', 'Item', 'JournalEntry', 'Macro', 'Playlist', 'RollTable', 'Scene'];
-    }
-
-    static DEFAULT_MAPPINGS = defaultMappings;
 
     /**
      * Singleton implementation.
@@ -91,139 +104,117 @@ class Babel {
     }
 
     constructor() {
-        this.modules = [];
-        this.converters = {};
-        this.defaultConverters = {};
-        this.state = BabeleState.empty();
-        this.translations = this.state.translations;
-        this.packs = this.state.packs;
-        this.folders = this.state.folders;
-        this.systemTranslationsDir = null;
+        this.translations = null;
+        this.mappedCompendiums = null;
+        this.folders = null;
         this.#initialized = null;
         this.#dataLoaded = false;
-        this.#translationRegistry = null;
         this.#translationMatchStrategies = [];
-        this.mappings = new BabeleMappings(defaultMappings);
-        Babel.DEFAULT_MAPPINGS = this.mappings.current();
+        this.#identityExtractors = new IdentityExtractorRegistry(IdentityExtractorRegistry.defaultExtractors());
+        this.converterRegistry = new ConverterRegistry();
+        this.registerDefaultIdentityExtractors();
+        this.documentMappings = new DocumentMappings(undefined, {
+            identityExtractors: this.#identityExtractors,
+            converterRegistry: this.converterRegistry,
+        });
+        this.documentMappings.publish();
+        this.#catalog = new CompendiumCatalog();
+        this.#folderTranslations = new FolderTranslations({
+            mappedCompendiums: () => this.mappedCompendiums,
+            catalog: this.#catalog,
+        });
+        this.#translationRegistry = new TranslationRegistry();
+        this.#translationRegistry.registerConfiguredDirectory();
         this.registerDefaultConverters();
     }
 
     /**
-     * Register the default provided converters.
+     * Register the built-in identity extractors exposed by Babele.
+     *
+     * This is invoked during facade construction and can also be reused by
+     * custom bootstrap code when replacing registries in tests or advanced
+     * integrations.
+     *
+     * @returns {void}
+     */
+    registerDefaultIdentityExtractors() {
+        this.registerIdentityExtractors({
+            range: (document) => {
+                const [start, end] = document?.range ?? [];
+                return Number.isInteger(start) && Number.isInteger(end) ? `${start}-${end}` : null;
+            },
+        });
+    }
+
+    /**
+     * Register the default converters shipped with Babele.
+     *
+     * This publishes both the OO first-class converters and the legacy named
+     * registrations kept for backward compatibility with existing mappings.
+     *
+     * @returns {void}
      */
     registerDefaultConverters() {
-        const converters = {
-            "fromPack": Converters.fromPack(),
-            "name": Converters.mappedField("name"),
-            "nameCollection": Converters.fieldCollection("name"),
-            "textCollection": Converters.fieldCollection("text"),
-            "document": Converters.document(),
-            "tableResults": Converters.tableResults(),
-            "tableResultsCollection": Converters.tableResultsCollection(),
-            "pages": Converters.pages(),
-            "playlistSounds": Converters.playlistSounds(),
-            "deckCards": Converters.deckCards(),
-            "sceneRegions": Converters.sceneRegions(),
-            "adventureItems": Converters.fromDefaultMapping("Item", "items"),
-            "adventureActors": Converters.fromDefaultMapping("Actor", "actors"),
-            "adventureCards": Converters.fromDefaultMapping("Cards", "cards"),
-            "adventureJournals": Converters.fromDefaultMapping("JournalEntry", "journals"),
-            "adventurePlaylists": Converters.fromDefaultMapping("Playlist", "playlists"),
-            "adventureMacros": Converters.fromDefaultMapping("Macro", "macros"),
-            "adventureScenes": Converters.fromDefaultMapping("Scene", "scenes")
-        };
-
-        this.defaultConverters = this.#normalizeConverters(converters);
-        this.registerConverters(converters);
+        this.registerConverters({
+            ...Converters.legacyRegistrations(),
+            "document": new DocumentConverter(),
+            "structured": new StructuredDataConverter(),
+        });
     }
 
     /**
+     * Register one module translation source.
      *
-     * @param module
+     * The module declaration mirrors the public API historically exposed by
+     * Babele: the directory identifies the root containing language folders
+     * and optional mapping files.
+     *
+     *
+     * @param {{module: string, dir: string, lang?: string}} module
+     * @returns {void}
      */
     register(module) {
-        this.modules.push(module);
+        this.#translationRegistry.registerModule(module);
     }
 
     /**
+     * Register one named converter.
      *
-     * @param name
-     * @param converter
+     * Function-based legacy converters are normalized to the internal OO
+     * converter contract at registration time.
+     *
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {string} name
+     * @param {Function|object} converter
+     * @returns {void}
      */
     registerConverter(name, converter) {
         this.registerConverters({[name]: converter});
     }
 
     /**
+     * Register multiple named converters at once.
      *
-     * @param converters
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {Record<string, Function|object>} converters
+     * @returns {void}
      */
     registerConverters(converters) {
-        this.converters = foundry.utils.mergeObject(this.converters, this.#normalizeConverters(converters));
-    }
-
-    #normalizeConverters(converters = {}) {
-        return Object.fromEntries(
-            Object.entries(converters).map(([name, converter]) => [name, this.#normalizeConverter(name, converter)]),
-        );
-    }
-
-    #normalizeConverter(name, converter) {
-        if (typeof converter === "function") {
-            return this.#legacyConverter(converter);
-        }
-
-        if (converter && typeof converter.translate === "function") {
-            return converter;
-        }
-
-        throw new Error(`Invalid converter registration for '${name}'. Expected a legacy function or an OO converter.`);
-    }
-
-    #legacyConverter(fn) {
-        return {
-            translate(context) {
-                return fn(
-                    context.value,
-                    context.translation,
-                    context.source,
-                    context.contextCompendium,
-                    context.allTranslations,
-                    context.runtime,
-                    context.params,
-                );
-            },
-
-            extract(context) {
-                if (typeof fn.extract !== "function") {
-                    return undefined;
-                }
-
-                return fn.extract(
-                    context.value,
-                    context.source,
-                    context.contextCompendium,
-                    {
-                        field: context.field,
-                        path: context.path,
-                        params: context.params,
-                        mapping: context.params,
-                        runtime: context.runtime,
-                    },
-                );
-            },
-
-            isDynamic() {
-                return true;
-            },
-        };
+        this.converterRegistry.registerAll(converters);
     }
 
     /**
      * Register an additional translation match strategy. Custom strategies are
      * evaluated before Babele built-ins.
      *
-     * @param {import("./translation-resolver.js").TranslationStrategy} strategy
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {import("./translation/translation-entries.js").TranslationStrategy} strategy
      */
     registerTranslationMatchStrategy(strategy) {
         this.registerTranslationMatchStrategies([strategy]);
@@ -233,48 +224,91 @@ class Babel {
      * Register additional translation match strategies. Custom strategies are
      * evaluated before Babele built-ins.
      *
-     * @param {import("./translation-resolver.js").TranslationStrategy[]} strategies
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {import("./translation/translation-entries.js").TranslationStrategy[]} strategies
      */
     registerTranslationMatchStrategies(strategies) {
         this.#translationMatchStrategies.push(...(strategies ?? []).filter(Boolean));
-        this.#applyTranslationMatchStrategies();
+    }
+
+    /**
+     * Register one named identity extractor.
+     *
+     * Identity extractors can be referenced by document mappings when the
+     * default `_id`/`name`/`sourceId` identity candidates are not sufficient.
+     *
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {string} name
+     * @param {Function} extractor
+     * @returns {void}
+     */
+    registerIdentityExtractor(name, extractor) {
+        this.registerIdentityExtractors({[name]: extractor});
+    }
+
+    /**
+     * Register multiple named identity extractors.
+     *
+     * Registrations are intended to happen before `init()`. When performed
+     * later, they only affect the next full state rebuild.
+     *
+     * @param {Record<string, Function>} extractors
+     * @returns {void}
+     */
+    registerIdentityExtractors(extractors = {}) {
+        this.#identityExtractors.registerAll(extractors);
+    }
+
+    /**
+     * Expose the live identity-extractor registry used by document mappings.
+     *
+     * This is an advanced extension point intended for integrations that need
+     * to inspect or reuse the same registry object used by the facade.
+     *
+     * @returns {IdentityExtractorRegistry}
+     */
+    identityExtractorRegistry() {
+        return this.#identityExtractors;
     }
 
     /**
      * Return the effective translation match strategies in precedence order.
      *
-     * @returns {import("./translation-resolver.js").TranslationStrategy[]}
+     * @returns {import("./translation/translation-entries.js").TranslationStrategy[]}
      */
     translationMatchStrategies() {
-        return [
-            ...this.#translationMatchStrategies,
-            ...TranslationResolver.defaultStrategies(),
-        ];
+        return [...this.#translationMatchStrategies];
     }
 
     /**
+     * Register one global document mapping layer.
      *
-     * @param converters
+     * Registered mappings enrich or override the built-in defaults for the
+     * next full Babele state rebuild.
+     *
+     * @param {object} mapping
+     * @returns {void}
      */
     registerMapping(mapping) {
-        this.#applyEffectiveMappings(this.mappings.register(mapping));
+        this.documentMappings = this.documentMappings.withRegistered(mapping);
+        this.documentMappings.publish();
     }
 
     /**
+     * Declare the system-level translations directory.
      *
-     * @param pack
-     * @returns {boolean}
-     */
-    supported(pack) {
-        return Babel.SUPPORTED_PACKS.includes(pack.type);
-    }
-
-    /**
+     * The directory is resolved relative to `systems/<system-id>` and acts as
+     * the lowest-precedence filesystem source in the registry.
      *
-     * @param dir
+     * @param {string|null} dir
+     * @returns {void}
      */
     setSystemTranslationsDir(dir) {
-        this.systemTranslationsDir = dir;
+        this.#translationRegistry.registerSystemTranslations(dir);
     }
 
     /**
@@ -284,39 +318,70 @@ class Babel {
      * @returns {Promise<boolean>}
      */
     async init() {
-        if(this.#initialized !== null)
+        if (this.#initialized !== null) {
             return await this.#initialized;
-
-        this.#initialized = this.#rebuildState({applyRuntime: false}).catch((error) => {
-            this.#initialized = null;
-            return false;
-        });
-
-        const result = await this.#initialized;
-        if (result && !this.#dataLoaded) {
-            this.#dataLoaded = true;
-            Hooks.callAll('babele.dataLoaded');
         }
-        return result;
+
+        const initializing = (async () => {
+            try {
+                const state = await this.#loadState();
+                await this.#installState(state);
+                this.#initialized = Promise.resolve(true);
+
+                if (!this.#dataLoaded) {
+                    this.#dataLoaded = true;
+                    Hooks.callAll("babele.dataLoaded");
+                }
+
+                return true;
+            } catch (error) {
+                this.#initialized = null;
+                return false;
+            }
+        })();
+
+        this.#initialized = initializing;
+        return await initializing;
     }
 
+    /**
+     * Reload the current Babele state from the registered sources and, by
+     * default, re-apply the translated runtime views exposed to Foundry.
+     *
+     * When the reload fails, the previously initialized state remains active.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.shareSources]
+     * @param {boolean} [options.notify]
+     * @returns {Promise<boolean>}
+     */
     async reinitialize({shareSources = false, notify = false} = {}) {
         const previousInitialization = this.#initialized;
 
-        try {
-            const pending = this.#rebuildState({applyRuntime: true, shareSources, notify});
-            this.#initialized = pending;
-            const result = await pending;
-            this.#initialized = Promise.resolve(result);
-            Hooks.callAll("babele.reinitialized", this);
-            return result;
-        } catch (error) {
-            this.#initialized = previousInitialization;
-            console.error("Babele | reinitialization failed", error);
-            return false;
-        }
+        const reinitializing = (async () => {
+            try {
+                const state = await this.#loadState();
+                await this.#installState(state, {applyRuntime: true, shareSources, notify});
+                this.#initialized = Promise.resolve(true);
+                Hooks.callAll("babele.reinitialized", this);
+                return true;
+            } catch (error) {
+                this.#initialized = previousInitialization;
+                console.error("Babele | reinitialization failed", error);
+                return false;
+            }
+        })();
+
+        this.#initialized = reinitializing;
+        return await reinitializing;
     }
 
+    /**
+     * Refresh translation sources after a settings change and publish the new
+     * effective file revision for non-browsing clients.
+     *
+     * @returns {Promise<boolean>}
+     */
     async refreshTranslationSources() {
         const refreshed = await this.reinitialize({
             shareSources: true,
@@ -327,686 +392,331 @@ class Babel {
             return false;
         }
 
-        if (game.user.isGM) {
-            await game.settings.set("babele", "sourcesRevision", Date.now());
-        }
-
+        await this.#publishSourcesRevision();
         ui.notifications?.info?.(
             "Babele refreshed translation sources. Closed compendium documents are updated; already open documents may need to be reopened.",
         );
         return true;
     }
 
+    /**
+     * Re-apply the current loaded Babele state to Foundry runtime collections.
+     *
+     * This updates translated indexes, imported folders, and the published
+     * file lists used as fallback by clients that cannot browse the
+     * filesystem.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.shareSources]
+     * @param {boolean} [options.notify]
+     * @param {boolean} [options.renderCompendium]
+     * @returns {Promise<void>}
+     */
     async applyRuntimeTranslations(options = {}) {
-        await this.#runtimeApplier().apply(options);
+        await new BabeleRuntimeApplier({
+            registry: this.#translationRegistry,
+            folderTranslations: this.#folderTranslations,
+            mappedCompendiums: this.mappedCompendiums,
+        }).apply(options);
     }
 
-    async #rebuildState({applyRuntime = false, shareSources = false, notify = false} = {}) {
+    /**
+     * Build the next coherent Babele state from the currently registered
+     * translation sources.
+     *
+     * This method does not mutate the facade runtime state. It only loads the
+     * data required to do so safely in a later step.
+     *
+     * @returns {Promise<{
+     *   translations: import("./translation/compendium-translations.js").CompendiumTranslations,
+     *   mappedCompendiums: import("./compendium/mapped-compendiums.js").MappedCompendiums,
+     *   documentMappings: import("./mapping/document-mappings.js").DocumentMappings,
+     *   folders: object[]|null
+     * }>}
+     */
+    async #loadState() {
         let step = "load translations";
 
         try {
-            const prepared = await this.#bootstrap().prepare();
-            step = "apply mappings";
-            this.#applyEffectiveMappings(this.mappings.replaceLoaded(prepared.loadedGlobalMappings));
+            const documentMappings = this.documentMappings.withLoaded(await this.#translationRegistry.loadMappings());
+            const translations = await this.#translationRegistry.loadTranslations();
             step = "build mapped compendium registry";
-            const state = await this.#bootstrap().buildState(prepared);
-            this.#applyState(state);
+            const mappedCompendiums = await new MappedCompendiums({
+                catalog: this.#catalog,
+                documentMappings,
+                translations,
+                translationStrategies: this.translationMatchStrategies(),
+            }).load();
+
+            return {
+                translations,
+                mappedCompendiums,
+                documentMappings,
+                folders: game.data.folders,
+            };
+        } catch (error) {
+            console.error(`Babele | initialization failed during step: ${step}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Install one previously loaded Babele state into the live runtime and,
+     * optionally, re-apply translated runtime views to Foundry collections.
+     *
+     * @param {object} state
+     * @param {import("./translation/compendium-translations.js").CompendiumTranslations} state.translations
+     * @param {import("./compendium/mapped-compendiums.js").MappedCompendiums} state.mappedCompendiums
+     * @param {import("./mapping/document-mappings.js").DocumentMappings} state.documentMappings
+     * @param {object[]|null} [state.folders]
+     * @param {object} [options]
+     * @param {boolean} [options.applyRuntime]
+     * @param {boolean} [options.shareSources]
+     * @param {boolean} [options.notify]
+     * @returns {Promise<boolean>}
+     */
+    async #installState(state, {applyRuntime = false, shareSources = false, notify = false} = {}) {
+        let step = "install state";
+
+        try {
+            this.#applyRuntimeState(state);
 
             if (applyRuntime) {
                 step = "apply runtime translations";
                 await this.applyRuntimeTranslations({shareSources, notify});
             }
+
+            return true;
         } catch (error) {
             console.error(`Babele | initialization failed during step: ${step}`, error);
             throw error;
         }
-
-        return true;
-    }
-
-    getCollection(metadata) {
-        const collectionPrefix = metadata.packageType === "world" ? "world" : metadata.packageName;
-        return `${collectionPrefix}.${metadata.name}`;
-    }
-
-    translatedPackFor(documentType, data, options = {}) {
-        const registry = options.registry ?? this.packs;
-        return registry?.find?.((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
     }
 
     /**
-     * Find and download the translation files for each compendium present on the world.
-     * Verify the effective presence of each file using the FilePicker API.
+     * Publish the effective source revision so non-GM clients can trigger a
+     * synchronized refresh when the GM changes translation directories.
      *
-     * @returns {Promise<[]>}
+     * @returns {Promise<void>}
      */
-    async loadTranslations() {
-        const prepared = await this.#bootstrap().prepare();
-        this.#translationRegistry = prepared.registry;
-        this.#applyEffectiveMappings(this.mappings.replaceLoaded(prepared.loadedGlobalMappings));
-        return prepared.translations;
-    }
-
-    #translationEntries(entries) {
-        if (Array.isArray(entries)) {
-            return entries
-                .filter((entry) => entry?.id)
-                .map((entry) => [entry.id, entry]);
+    async #publishSourcesRevision() {
+        if (!game.user.isGM) {
+            return;
         }
 
-        return Object.entries(entries || {});
+        await game.settings.set("babele", "sourcesRevision", Date.now());
+    }
+
+    /**
+     * Return a frozen compatibility snapshot of the registered converters.
+     *
+     * @returns {Record<string, object>}
+     */
+    get converters() {
+        return this.converterRegistry.snapshot();
+    }
+
+    /**
+     * Resolve one named converter from the registry.
+     *
+     * @param {string} name
+     * @returns {object|null}
+     */
+    converterNamed(name) {
+        return this.converterRegistry.named(name);
+    }
+
+    /**
+     * Resolve the translated mapped compendium that should translate a
+     * document of the given type in the current runtime visibility rules.
+     *
+     * Callers may provide an explicit runtime registry through `options` to
+     * constrain lookup to a custom scope, such as on-demand translation or
+     * embedded-document processing.
+     *
+     * @param {string|null} documentType
+     * @param {object} data
+     * @param {object} [options]
+     * @param {Map|object[]|null} [options.registry]
+     * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
+     */
+    translatedPackFor(documentType, data, options = {}) {
+        const registry = options.registry ?? this.mappedCompendiums ?? new foundry.utils.Collection();
+        return CompendiumRuntime.from({globalPacks: registry}).translatedPackFor(documentType, data);
     }
 
     /**
      * Translates inplace and returns the compendium index.
      *
-     * @param index the untranslated index
-     * @param pack the pack name
-     * @returns {*} the translated index
+     * @param {object[]} index the untranslated index
+     * @param {string} pack the pack name
+     * @returns {object[]} the translated index
      */
     translateIndex(index, pack) {
-        return this.translatedCompendiumFor(pack)?.translateIndex(index) ?? index;
+        return this.mappedCompendiums?.translateIndex(index, pack) ?? index;
     }
 
     /**
      * Check if the compendium pack is translated (exists an associated translation file).
      *
-     * @param pack compendium name (ex. dnd5e.classes)
-     * @returns {boolean|*} true if the compendium is translated.
+     * @param {string} pack compendium name (ex. dnd5e.classes)
+     * @returns {boolean} true if the compendium is translated.
      */
     isTranslated(pack) {
-        return !!this.translatedCompendiumFor(pack);
+        return !!this.mappedCompendiums?.translated(pack);
     }
 
     /**
-     * Translate the
+     * Translate one compendium document payload.
      *
-     * @param pack
-     * @param data
-     * @param translationsOnly
+     * When `translationsOnly` is truthy the mapped compendium may return only
+     * the translated delta rather than the full merged document shape.
+     *
+     * @param {string} pack
+     * @param {*} data
+     * @param {boolean} [translationsOnly]
      * @returns {*}
      */
     translate(pack, data, translationsOnly) {
-        return this.translatedCompendiumFor(pack)?.translate(data, translationsOnly) ?? data;
+        return this.mappedCompendiums?.translate(pack, data, translationsOnly) ?? data;
     }
 
     /**
+     * Translate one mapped field from a compendium document.
      *
-     * @param field
-     * @param pack
-     * @param data
+     * @param {string} field
+     * @param {string} pack
+     * @param {*} data
      * @returns {*}
      */
     translateField(field, pack, data) {
-        return this.mappedCompendiumFor(pack)?.translateField(field, data) ?? null;
+        return this.mappedCompendiums?.translateField(pack, field, data) ?? null;
     }
 
     /**
+     * Extract the exportable translation payload for one compendium document.
      *
-     * @param pack
-     * @param data
+     * @param {string} pack
+     * @param {*} data
+     * @param {object} [options]
      * @returns {*}
      */
     extract(pack, data, options = {}) {
-        return this.mappedCompendiumFor(pack)?.extract(data, options);
+        return this.mappedCompendiums?.extract(pack, data, options);
     }
 
     /**
+     * Extract one mapped field from a compendium document.
      *
-     * @param pack
-     * @param field
-     * @param data
+     * @param {string} pack
+     * @param {string} field
+     * @param {*} data
      * @returns {*}
      */
     extractField(pack, field, data) {
-        return this.mappedCompendiumFor(pack)?.extractField(field, data);
-    }
-
-    translatedCompendiumFor(pack) {
-        const compendium = this.mappedCompendiumFor(pack);
-        return compendium?.translated ? compendium : null;
-    }
-
-    mappedCompendiumFor(pack) {
-        return this.packs?.get(pack) ?? null;
-    }
-
-    pruneExportData(value) {
-        if (typeof value === "undefined" || value === null || value === "") {
-            return undefined;
-        }
-
-        if (Array.isArray(value)) {
-            const pruned = value
-                .map(item => this.pruneExportData(item))
-                .filter(item => typeof item !== "undefined");
-
-            return pruned.length ? pruned : undefined;
-        }
-
-        if (typeof value === "object") {
-            const pruned = Object.entries(value).reduce((out, [key, entryValue]) => {
-                const nextValue = this.pruneExportData(entryValue);
-                if (typeof nextValue !== "undefined") {
-                    out[key] = nextValue;
-                }
-                return out;
-            }, {});
-
-            return Object.keys(pruned).length ? pruned : undefined;
-        }
-
-        return value;
-    }
-
-    folderTranslationsForExport(pack) {
-        if (!pack?.folders?.size) {
-            return undefined;
-        }
-
-        const folders = {};
-        pack.folders.forEach((folder) => {
-            const name = folder?.originalName ?? folder?.name;
-            if (name) {
-                folders[name] = name;
-            }
-        });
-
-        return Object.keys(folders).length ? folders : undefined;
+        return this.mappedCompendiums?.extractField(pack, field, data);
     }
 
     /**
+     * Resolve the translated mapped compendium for a collection id.
      *
-     * @param pack
+     * @param {string} pack
+     * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
+     */
+    translatedCompendiumFor(pack) {
+        return this.mappedCompendiums?.translated(pack) ?? null;
+    }
+
+    /**
+     * Resolve the mapped compendium for a collection id, translated or not.
+     *
+     * @param {string} pack
+     * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
+     */
+    mappedCompendiumFor(pack) {
+        return this.mappedCompendiums?.get?.(pack) ?? null;
+    }
+
+    /**
+     * Export one compendium translation ZIP through the interactive export UI.
+     *
+     * @param {object} pack
+     * @returns {Promise<void>}
      */
     async exportTranslationsFile(pack) {
-        const mappedCompendium = this.mappedCompendiumFor(pack.collection);
-        const exportCounts = await this.#exportSelectionCountsFor(pack, mappedCompendium);
-        const conf = await ExportTranslationsDialog.create(pack, {
-            hasTranslations: !!mappedCompendium?.translated,
-            format: "compatible",
-            selection: "all",
-            counts: exportCounts,
-        });
-
-        if (!conf) {
-            return;
-        }
-
-        const exportEntries = await this.#exportEntriesFor(pack, mappedCompendium);
-        const file = await this.exportDataFor(pack, {
-            ...conf,
-            mappedCompendium,
-            entries: exportEntries,
-        });
-        const dataStr = JSON.stringify(file, null, '\t');
-        const exportFileDefaultName = `${pack.collection}.json`;
-
-        const zip = new JSZip();
-        zip.file(exportFileDefaultName, dataStr);
-        const progress = this.#createExportZipProgress(pack);
-        this.#updateExportZipProgress(progress, pack, 0.01);
-        await this.#yieldToUi();
-        const content = await zip.generateAsync({type: "blob"}, (metadata) => {
-            this.#updateExportZipProgress(progress, pack, (metadata?.percent ?? 0) / 100);
-        });
-        this.#updateExportZipProgress(progress, pack, 1);
-        saveAs(content, `${pack.collection}.zip`);
-    }
-
-    async exportDataFor(pack, options = {}) {
-        const format = options.format === "legacy" ? "legacy" : "compatible";
-        const selection = this.#normalizedExportSelection(options.selection);
-        const mappedCompendium = options.mappedCompendium ?? this.mappedCompendiumFor(pack.collection);
-        const exportEntries = options.entries ?? await this.#exportEntriesFor(pack, mappedCompendium);
-        const folders = this.folderTranslationsForExport(pack);
-        const file = {
-            label: pack.metadata.label,
-            ...(folders ? {folders} : {}),
-            entries: format === "legacy" ? [] : {},
-        };
-        const skippedDynamicFields = [];
-
-        for (const {entity, sourceData, hasTranslation} of exportEntries) {
-            const exportedData = this.#exportPayloadData(sourceData, hasTranslation, mappedCompendium);
-            const name = this.#exportEntryName(entity, exportedData, sourceData);
-
-            if (!this.#shouldExportEntity(selection, hasTranslation)) {
-                continue;
-            }
-
-            const extracted = this.pruneExportData(this.extract(pack.collection, exportedData, {
-                format,
-                onSkippedDynamicField: info => skippedDynamicFields.push({
-                    entry: name,
-                    ...info,
-                }),
-            })) ?? {};
-
-            if (format === "legacy") {
-                file.entries.push(foundry.utils.mergeObject({id: name}, extracted));
-            } else {
-                file.entries[name] = extracted;
-            }
-        }
-
-        if (skippedDynamicFields.length) {
-            console.warn("Babele | skipped dynamic export fields", {
-                pack: pack.collection,
-                fields: skippedDynamicFields,
-            });
-        }
-
-        return file;
+        return new TranslationExport(this, pack).download();
     }
 
     /**
+     * Produce the raw export payload for one compendium without downloading it.
      *
-     * @param actor
+     * This is mainly useful for tests and advanced integrations.
+     *
+     * @param {object} pack
+     * @param {object} [options]
+     * @returns {Promise<object>}
+     */
+    async exportDataFor(pack, options = {}) {
+        return new TranslationExport(this, pack).data(options);
+    }
+
+    /**
+     * Open the on-demand actor translation dialog.
+     *
+     * @param {Actor} actor
+     * @returns {void}
      */
     translateActor(actor) {
         let d = new OnDemandTranslateDialog(actor);
         d.render(true);
     }
 
-    #normalizedExportSelection(selection) {
-        if (selection === "present" || selection === "translated") {
-            return "present";
-        }
-
-        if (selection === "missing" || selection === "untranslated") {
-            return "missing";
-        }
-
-        return "all";
-    }
-
-    #exportSourceData(entity) {
-        if (typeof entity?.toObject === "function") {
-            const sourceData = entity.toObject();
-
-            if (this.#isJournalEntry(entity)) {
-                this.#hydrateJournalEmbeddedExportData(sourceData, entity);
-            }
-
-            return sourceData;
-        }
-
-        return entity;
-    }
-
-    #isJournalEntry(entity) {
-        return entity?.documentName === "JournalEntry"
-            || entity?.constructor?.metadata?.name === "JournalEntry";
-    }
-
-    #hydrateJournalEmbeddedExportData(sourceData, entity) {
-        this.#hydrateEmbeddedCollection(sourceData, entity, "pages");
-        this.#hydrateEmbeddedCollection(sourceData, entity, "categories");
-    }
-
-    #hydrateEmbeddedCollection(sourceData, entity, key) {
-        const current = sourceData?.[key];
-        if (Array.isArray(current) && current.length > 0) {
-            return;
-        }
-
-        const embedded = entity?.[key]?.contents;
-        if (!Array.isArray(embedded) || embedded.length === 0) {
-            return;
-        }
-
-        sourceData[key] = embedded.map((document) => typeof document?.toObject === "function" ? document.toObject() : document);
-    }
-
-    async #exportEntriesFor(pack, mappedCompendium) {
-        const index = this.#normalizedExportIndex(await pack.getIndex());
-        const entities = await Promise.all(index.map(entry => pack.getDocument(entry._id)));
-
-        return entities.map(entity => {
-            const sourceData = this.#exportSourceData(entity);
-            return {
-                entity,
-                sourceData,
-                hasTranslation: this.#exportHasTranslation(entity, sourceData, mappedCompendium),
-            };
-        });
-    }
-
-    async #exportSelectionCountsFor(pack, mappedCompendium) {
-        const index = this.#normalizedExportIndex(await pack.getIndex());
-        const all = index.length;
-        const present = index.filter((entry) => this.#exportHasTranslation(entry, this.#exportLookupData(entry), mappedCompendium)).length;
-
-        return {
-            all,
-            present,
-            missing: all - present,
-        };
-    }
-
-    #normalizedExportIndex(index) {
-        if (Array.isArray(index)) {
-            return index;
-        }
-
-        if (typeof index?.values === "function") {
-            return Array.from(index.values());
-        }
-
-        if (index && typeof index[Symbol.iterator] === "function") {
-            return Array.from(index);
-        }
-
-        return [];
-    }
-
-    #exportLookupData(data) {
-        if (!data) {
-            return data;
-        }
-
-        const originalName = data?.flags?.babele?.originalName ?? data?.originalName ?? null;
-        if (!originalName || data?.name === originalName) {
-            return data;
-        }
-
-        return {
-            ...data,
-            name: originalName,
-        };
-    }
-
-    #exportHasTranslation(entity, data, mappedCompendium) {
-        const explicitFlag = entity?.getFlag?.("babele", "hasTranslation")
-            ?? entity?.flags?.babele?.hasTranslation
-            ?? data?.flags?.babele?.hasTranslation
-            ?? entity?.hasTranslation
-            ?? data?.hasTranslation;
-
-        if (typeof explicitFlag === "boolean") {
-            return explicitFlag;
-        }
-
-        return mappedCompendium?.hasTranslation?.(this.#exportLookupData(data)) ?? false;
-    }
-
-    #shouldExportEntity(selection, hasTranslation) {
-        if (selection === "present") {
-            return hasTranslation;
-        }
-
-        if (selection === "missing") {
-            return !hasTranslation;
-        }
-
-        return true;
-    }
-
-    #exportPayloadData(sourceData, hasTranslation, mappedCompendium) {
-        if (!hasTranslation) {
-            return sourceData;
-        }
-
-        return mappedCompendium?.translate?.(sourceData) ?? sourceData;
-    }
-
-    #createExportZipProgress(pack) {
-        const label = `Babele | Exporting ${pack.metadata.label} zip`;
-
-        if (typeof ui?.notifications?.info === "function") {
-            return ui.notifications.info(label, {
-                progress: true,
-                console: false,
-            });
-        }
-
-        return null;
-    }
-
-    #updateExportZipProgress(progress, pack, percent) {
-        const pct = Math.max(0, Math.min(1, percent));
-        const message = `Babele | Exporting ${pack.metadata.label} zip`;
-
-        if (progress?.update) {
-            progress.update({message, pct});
-            return;
-        }
-
-        if (typeof SceneNavigation?.displayProgressBar === "function") {
-            SceneNavigation.displayProgressBar({label: message, pct: pct * 100});
-        }
-    }
-
-    async #yieldToUi() {
-        if (typeof requestAnimationFrame === "function") {
-            await new Promise(resolve => requestAnimationFrame(() => resolve()));
-            return;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
-
-    #exportEntryName(...candidates) {
-        for (const candidate of candidates) {
-            const name = candidate?.getFlag?.("babele", "originalName")
-                ?? candidate?.flags?.babele?.originalName
-                ?? candidate?.originalName
-                ?? candidate?.name;
-
-            if (name) {
-                return name;
-            }
-        }
-
-        return "entry";
-    }
-
+    /**
+     * Apply folder-name translations to one open compendium tree.
+     *
+     * @param {CompendiumCollection|object} pack
+     * @returns {void}
+     */
     translatePackFolders(pack) {
-        if (!pack?.folders?.size) {
-            return;
-        }
-
-        const tcFolders = this.packs.get(pack.metadata.id)?.folders ?? [];
-
-        pack.folders.forEach((folder) => {
-            const originalName = folder.originalName ?? folder.name;
-            const translatedName = tcFolders[originalName];
-
-            if (translatedName) {
-                folder.originalName = originalName;
-                folder.name = translatedName;
-            }
-        });
+        this.#folderTranslations.translatePackFolders(pack);
     }
 
+    /**
+     * Apply folder-name translations to one imported world folder when its
+     * source compendium can be resolved.
+     *
+     * @param {Folder|object} folder
+     * @returns {void}
+     */
     translateImportedCompendiumFolder(folder) {
-        if (!folder) {
-            return;
-        }
-
-        const sourceCollection = this.sourcePackCollectionFor(folder);
-        if (!sourceCollection) {
-            return;
-        }
-
-        const tcFolders = this.packs.get(sourceCollection)?.folders ?? [];
-        const originalName = folder.originalName ?? folder.name;
-        const translatedName = tcFolders[originalName];
-
-        if (translatedName) {
-            folder.originalName = originalName;
-            folder.name = translatedName;
-        }
+        this.#folderTranslations.translateImportedCompendiumFolder(folder);
     }
 
+    /**
+     * Re-apply imported compendium folder translations to a folder collection.
+     *
+     * @param {Iterable<Folder>|object} [folders]
+     * @returns {void}
+     */
     translateImportedCompendiumFolders(folders = game.collections.get("Folder")) {
-        folders?.forEach?.((folder) => this.translateImportedCompendiumFolder(folder));
+        this.#folderTranslations.translateImportedCompendiumFolders(folders);
     }
 
-    sourcePackCollectionFor(document) {
-        const directSourceId = document?._stats?.compendiumSource ?? document?.flags?.core?.sourceId;
-        const directCollection = this.#collectionFromSourceId(directSourceId);
-        if (directCollection) {
-            return directCollection;
-        }
-
-        for (const entry of document?.contents ?? []) {
-            const entrySourceId = entry?._stats?.compendiumSource ?? entry?.flags?.core?.sourceId;
-            const entryCollection = this.#collectionFromSourceId(entrySourceId);
-            if (entryCollection) {
-                return entryCollection;
-            }
-        }
-
-        const folderId = document?.id ?? document?._id;
-        const documentType = document?.type ?? null;
-
-        if (!folderId) {
-            return null;
-        }
-
-        return game.packs?.find?.((pack) => {
-            const packType = pack?.metadata?.type ?? pack?.documentName ?? null;
-            if (documentType && packType && documentType !== packType) {
-                return false;
-            }
-
-            return !!pack?.folders?.get?.(folderId);
-        })?.collection ?? null;
-    }
-
-    #collectionFromSourceId(sourceId) {
-        if (!sourceId) {
-            return null;
-        }
-
-        return String(sourceId).match(/^Compendium\.([^.]+\.[^.]+)\./)?.[1] ?? null;
-    }
-
+    /**
+     * Apply `_packs-folders` translations to top-level system/world folders.
+     *
+     * @returns {void}
+     */
     translateSystemPackFolders() {
-        if (!game.data.folders?.length) {
-            return;
-        }
-
-        const translations = {};
-
-        this.packs
-            .filter((pack) => pack.metadata.name === Babel.PACK_FOLDER_TRANSLATION_NAME_SUFFIX)
-            .forEach((pack) => Object.assign(translations, pack.translations ?? {}, pack.folders ?? {}));
-
-        game.collections.get('Folder').forEach((folder) => {
-            const originalName = folder.originalName ?? folder.name;
-            const translatedName = translations[originalName];
-            if (translatedName) {
-                folder.originalName = originalName;
-                folder.name = translatedName;
-            }
-        });
+        this.#folderTranslations.translateSystemPackFolders();
     }
 
-    async shareTranslationFiles() {
-        if (game.user.isGM) {
-            let files = (await game.babele.#registry().translationSources()).map((source) => source.file);
-            game.settings.set('babele', 'translationFiles', files);
-        }
-    }
-
-    async shareGlobalMappingFiles() {
-        if (game.user.isGM) {
-            let files = (await game.babele.#registry().mappingSources()).map((source) => source.file);
-            game.settings.set('babele', 'mappingFiles', files);
-        }
-    }
-
-    specialPackFoldersMetadataFor(file) {
-        const [packageName, name] = file.split('.');
-
-        return {
-            packageType: 'system',
-            type: 'Folder',
-            packageName,
-            name,
-        };
-    }
-
-
-    async loadJsonFile(file, context = {}) {
-        try {
-            const response = await fetch(file);
-
-            if (response?.ok === false) {
-                const status = response.status ?? "unknown";
-                const statusText = response.statusText ? ` ${response.statusText}` : "";
-                throw new Error(`HTTP ${status}${statusText}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            this.#logJsonLoadFailure(file, context, error);
-            return null;
-        }
-    }
-
-    #logJsonLoadFailure(file, context, error) {
-        const details = {
-            file,
-            error: error?.message ?? String(error),
-        };
-
-        if (context.kind) {
-            details.kind = context.kind;
-        }
-
-        if (context.collection) {
-            details.collection = context.collection;
-        }
-
-        if (context.phase) {
-            details.phase = context.phase;
-        }
-
-        console.error(`Babele | failed to load ${context.kind ?? "JSON"} file '${file}'`, details);
-    }
-
-    #registry() {
-        if (!this.#translationRegistry) {
-            this.#translationRegistry = new TranslationRegistry(this.modules);
-        }
-
-        return this.#translationRegistry;
-    }
-
-    #bootstrap() {
-        return new BabeleBootstrap(this);
-    }
-
-    #runtimeApplier() {
-        return new BabeleRuntimeApplier(this);
-    }
-
-    #applyState(state) {
-        this.state = state;
-        this.translations = state.translations;
-        this.packs = state.packs;
-        this.folders = state.folders;
-        this.#translationRegistry = state.translationRegistry;
-        this.#applyTranslationMatchStrategies();
-    }
-
-    #applyEffectiveMappings(mappings) {
-        Babel.DEFAULT_MAPPINGS = mappings;
-    }
-
-    #applyTranslationMatchStrategies() {
-        if (!this.packs?.values) {
-            return;
-        }
-
-        const strategies = this.translationMatchStrategies();
-        for (const pack of this.packs.values()) {
-            pack.useTranslationMatchStrategies?.(strategies);
-        }
+    #applyRuntimeState({translations, mappedCompendiums, documentMappings, folders = null}) {
+        this.translations = translations;
+        this.mappedCompendiums = mappedCompendiums ?? null;
+        this.folders = folders;
+        this.documentMappings = documentMappings ?? this.documentMappings;
+        this.documentMappings.publish();
     }
 
 }

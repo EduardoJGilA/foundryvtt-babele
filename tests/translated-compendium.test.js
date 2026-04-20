@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
-const {TestCollection} = installFoundryStubs();
+installFoundryStubs();
 
 const warnings = [];
 const errors = [];
@@ -15,13 +15,26 @@ console.error = (...args) => {
   errors.push(args);
 };
 
-const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
+const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {default: Babel} = await import("../module/script/babele.js");
+const defaultDocumentMappings = new Babel().documentMappings;
+
+function translatedCompendium(metadata, translations, options = {}) {
+  return new MappedCompendium(metadata, translations, {
+    documentMappings: options.documentMappings ?? defaultDocumentMappings,
+    translationStrategies: options.translationStrategies,
+  });
+}
 
 test("invalid reference packs do not throw and warn only once per target", () => {
-  game.babele.packs = new TestCollection();
+  game.babele = {
+    mappedCompendiumFor() {
+      return null;
+    },
+  };
   warnings.length = 0;
 
-  const tc = new TranslatedCompendium({
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -47,8 +60,8 @@ test("invalid reference packs do not throw and warn only once per target", () =>
   assert.match(String(warnings[0][0]), /invalid reference pack 'missing\.pack'/);
 });
 
-test("TranslatedCompendium resolves entries with _id, then name, then sourceId precedence", () => {
-  const tc = new TranslatedCompendium({
+test("MappedCompendium resolves entries with _id, then name, then sourceId precedence", () => {
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -79,8 +92,8 @@ test("TranslatedCompendium resolves entries with _id, then name, then sourceId p
   }), "source-1");
 });
 
-test("TranslatedCompendium translationsFor returns an empty object when no entry matches", () => {
-  const tc = new TranslatedCompendium({
+test("MappedCompendium translationsFor returns an empty object when no entry matches", () => {
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -96,8 +109,8 @@ test("TranslatedCompendium translationsFor returns an empty object when no entry
   }), {});
 });
 
-test("TranslatedCompendium hasTranslation rejects mismatched top-level document types", () => {
-  const tc = new TranslatedCompendium({
+test("MappedCompendium hasTranslation rejects mismatched top-level document types", () => {
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -111,8 +124,8 @@ test("TranslatedCompendium hasTranslation rejects mismatched top-level document 
   assert.equal(tc.hasTranslation({_id: "shared-id", name: "Shared"}, "Actor"), false);
 });
 
-test("TranslatedCompendium hasTranslation is always false when the pack is not translated", () => {
-  const tc = new TranslatedCompendium({
+test("MappedCompendium hasTranslation is always false when the pack is not translated", () => {
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -122,12 +135,13 @@ test("TranslatedCompendium hasTranslation is always false when the pack is not t
 });
 
 test("converter failures do not throw and leave the original document untouched when nothing else translates", () => {
-  game.babele.converters.explode = () => {
+  game.babele = new Babel();
+  game.babele.registerConverter("explode", () => {
     throw new Error("converter boom");
-  };
+  });
   errors.length = 0;
 
-  const tc = new TranslatedCompendium({
+  const tc = translatedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -143,6 +157,8 @@ test("converter failures do not throw and leave the original document untouched 
         description: "ignored",
       },
     },
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
 
   const data = {
@@ -169,12 +185,13 @@ test("converter failures do not throw and leave the original document untouched 
 });
 
 test("converter failures still allow other mapped fields to translate", () => {
-  game.babele.converters.explode = () => {
+  game.babele = new Babel();
+  game.babele.registerConverter("explode", () => {
     throw new Error("converter boom with partial translation");
-  };
+  });
   errors.length = 0;
 
-  const tc = new TranslatedCompendium({
+  const tc = translatedCompendium({
     id: "test.items.partial",
     name: "items",
     type: "Item",
@@ -191,6 +208,8 @@ test("converter failures still allow other mapped fields to translate", () => {
         description: "ignored",
       },
     },
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
 
   const data = {

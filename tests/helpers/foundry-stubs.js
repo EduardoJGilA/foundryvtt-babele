@@ -124,11 +124,16 @@ export function installFoundryStubs() {
   globalThis.game = {
     babele: {
       converters: {},
-      packs: new TestCollection(),
+      mappedCompendiums: null,
       translations: [],
       translatedPackFor(documentType, data, options = {}) {
-        const registry = options.registry ?? this.packs;
-        return registry?.find?.((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
+        const registry = options.registry ?? this.mappedCompendiums;
+        if (registry?.find) {
+          return registry.find((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
+        }
+
+        const packs = registry?.values?.() ? [...registry.values()] : [];
+        return packs.find((pack) => pack.translated && pack.hasTranslation(data, documentType)) ?? null;
       },
       getCollection(metadata) {
         const prefix = metadata.packageType === "world" ? "world" : metadata.packageName;

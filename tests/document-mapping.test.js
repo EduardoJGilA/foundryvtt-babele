@@ -4,13 +4,204 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {DocumentMapping} = await import("../module/script/document-mapping.js");
-const {CompendiumMapping} = await import("../module/script/compendium-mapping.js");
+const {DocumentMapping} = await import("../module/script/mapping/document-mapping.js");
+const {DocumentMappings} = await import("../module/script/mapping/document-mappings.js");
+const {DocumentMappingHierarchy} = await import("../module/script/mapping/document-mapping-hierarchy.js");
+const {IdentityExtractorRegistry} = await import("../module/script/identity/identity-extractor-registry.js");
+const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
+const {default: Babel} = await import("../module/script/babele.js");
 
-test("DocumentMapping is the canonical class behind CompendiumMapping compatibility exports", () => {
-  const mapping = new DocumentMapping("Item", null, null);
+function identityExtractors() {
+  return new IdentityExtractorRegistry(IdentityExtractorRegistry.defaultExtractors());
+}
+
+function converterRegistry() {
+  return new ConverterRegistry();
+}
+
+test("DocumentMapping is the canonical mapping model", () => {
+  const mapping = new DocumentMapping("Item", {}, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
 
   assert.equal(mapping instanceof DocumentMapping, true);
-  assert.equal(mapping instanceof CompendiumMapping, true);
-  assert.equal(mapping.isDynamic(), false);
+  assert.equal(mapping.usesConverters(), false);
+});
+
+test("DocumentMapping exposes default identity candidates for generic documents", () => {
+  const mapping = new DocumentMapping("Item", {}, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+  const document = {
+    _id: "item-1",
+    id: "item-id-1",
+    name: "Longsword",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.items.source-1",
+      },
+    },
+  };
+
+  assert.deepEqual(mapping.exportKeyCandidates(document), ["Longsword", "item-1", "item-id-1"]);
+  assert.deepEqual(mapping.matchKeyCandidates(document), ["item-1", "Longsword", "source-1"]);
+});
+
+test("DocumentMapping resolves registered identity extractors from the provided registry", () => {
+  const registry = identityExtractors();
+  registry.register("range", (document) => {
+    const [start, end] = document?.range ?? [];
+    return Number.isInteger(start) && Number.isInteger(end) ? `${start}-${end}` : null;
+  });
+
+  const mapping = new DocumentMapping("TableResult", {
+    _identity: {
+      export: ["range", "_id"],
+      match: ["_id", "range"],
+    },
+    description: "description",
+  }, {
+    identityExtractors: registry,
+    converterRegistry: converterRegistry(),
+  });
+  const document = {
+    _id: "result-1",
+    range: [2, 3],
+    description: "<p>Wolf</p>",
+  };
+
+  assert.deepEqual(mapping.exportKeyCandidates(document), ["2-3", "result-1"]);
+  assert.deepEqual(mapping.matchKeyCandidates(document), ["result-1", "2-3"]);
+});
+
+test("DocumentMapping uses the default TableResult range identity when Babele registers it", () => {
+  game.babele = new Babel();
+
+  const mapping = game.babele.documentMappings.hierarchyFor("TableResult").mappingFor();
+  const document = {
+    _id: "result-1",
+    range: [2, 3],
+    description: "<p>Wolf</p>",
+  };
+
+  assert.deepEqual(mapping.exportKeyCandidates(document), ["2-3", "result-1"]);
+  assert.deepEqual(mapping.matchKeyCandidates(document), ["result-1", "2-3"]);
+});
+
+test("DocumentMappingHierarchy resolves subtype mappings as an inheritance-like hierarchy", () => {
+  const mappings = new DocumentMappings({
+    Item: {
+      description: "system.description.value",
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const registered = mappings.withRegistered({
+    Item: {
+      source: "system.source",
+    },
+  });
+  const layered = registered.withLoaded([{
+    "Item.weapon": {
+      damage: "system.damage.value",
+    },
+  }]);
+
+  const hierarchy = layered.hierarchyFor("Item", {
+    rarity: "system.rarity",
+  });
+
+  assert.equal(hierarchy instanceof DocumentMappingHierarchy, true);
+  assert.equal(hierarchy.base() instanceof DocumentMapping, true);
+  const weaponMapping = hierarchy.mappingFor({
+    type: "weapon",
+  });
+
+  assert.equal(weaponMapping.extractField("description", {
+    type: "weapon",
+    system: {
+      description: {value: "Sharp blade"},
+      source: "SRD",
+      damage: {value: "1d8"},
+      rarity: "common",
+    },
+  }), "Sharp blade");
+  assert.equal(weaponMapping.extractField("source", {
+    type: "weapon",
+    system: {
+      source: "SRD",
+    },
+  }), "SRD");
+  assert.equal(weaponMapping.extractField("damage", {
+    type: "weapon",
+    system: {
+      damage: {value: "1d8"},
+    },
+  }), "1d8");
+  assert.equal(weaponMapping.extractField("rarity", {
+    type: "weapon",
+    system: {
+      rarity: "common",
+    },
+  }), "common");
+});
+
+test("DocumentMappings materializes document mappings from effective loaded layers", () => {
+  const mappings = new DocumentMappings({
+    Item: {
+      description: "system.description.value",
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const registered = mappings.withRegistered({
+    Item: {
+      source: "system.source",
+    },
+  });
+  const layered = registered.withLoaded([{
+    "Item.weapon": {
+      damage: "system.damage.value",
+    },
+  }]);
+
+  const mapping = layered.hierarchyFor("Item", {
+    rarity: "system.rarity",
+  }).mappingFor({
+    type: "weapon",
+  });
+
+  assert.equal(mapping.extractField("description", {
+    type: "weapon",
+    system: {
+      description: {value: "Sharp blade"},
+      source: "SRD",
+      damage: {value: "1d8"},
+      rarity: "common",
+    },
+  }), "Sharp blade");
+  assert.equal(mapping.extractField("source", {
+    type: "weapon",
+    system: {
+      source: "SRD",
+    },
+  }), "SRD");
+  assert.equal(mapping.extractField("damage", {
+    type: "weapon",
+    system: {
+      damage: {value: "1d8"},
+    },
+  }), "1d8");
+  assert.equal(mapping.extractField("rarity", {
+    type: "weapon",
+    system: {
+      rarity: "common",
+    },
+  }), "common");
 });

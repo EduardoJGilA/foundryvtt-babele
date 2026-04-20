@@ -1,17 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {installFoundryStubs} from "./helpers/foundry-stubs.js";
+import {assignMappedCompendiums} from "./helpers/mapped-compendiums.js";
 
 installFoundryStubs();
 
-const {MappedCompendium} = await import("../module/script/mapped-compendium.js");
-const {AdventureMappedCompendium, createMappedCompendium} = await import("../module/script/mapped-compendium-decorator.js");
-const {CompendiumRuntime} = await import("../module/script/compendium-runtime.js");
-const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
+const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
 const {default: Babel} = await import("../module/script/babele.js");
+const defaultDocumentMappings = new Babel().documentMappings;
 
-test("MappedCompendium is the canonical class behind TranslatedCompendium compatibility exports", () => {
-  const compendium = new MappedCompendium({
+function mappedCompendium(metadata, translations, options = {}) {
+  return new MappedCompendium(metadata, translations, {
+    documentMappings: options.documentMappings ?? defaultDocumentMappings,
+    translationStrategies: options.translationStrategies,
+  });
+}
+
+test("MappedCompendium is the canonical compendium model", () => {
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -24,12 +30,11 @@ test("MappedCompendium is the canonical class behind TranslatedCompendium compat
   });
 
   assert.equal(compendium instanceof MappedCompendium, true);
-  assert.equal(compendium instanceof TranslatedCompendium, true);
   assert.equal(compendium.hasTranslation({_id: "item-1", name: "Sword"}), true);
 });
 
 test("MappedCompendium translates index rows in place", () => {
-  const compendium = new MappedCompendium({
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -50,7 +55,7 @@ test("MappedCompendium translates index rows in place", () => {
 });
 
 test("MappedCompendium caches translated index rows across equivalent index payloads", () => {
-  const compendium = new MappedCompendium({
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -63,10 +68,10 @@ test("MappedCompendium caches translated index rows across equivalent index payl
   });
 
   let resolutionCalls = 0;
-  const originalResolutionFor = compendium.resolver.resolutionFor.bind(compendium.resolver);
-  compendium.resolver.resolutionFor = (...args) => {
+  const originalMatchFor = compendium.translationEntries.matchFor.bind(compendium.translationEntries);
+  compendium.translationEntries.matchFor = (...args) => {
     resolutionCalls += 1;
-    return originalResolutionFor(...args);
+    return originalMatchFor(...args);
   };
 
   const firstIndex = [{_id: "item-1", name: "Sword"}];
@@ -81,35 +86,41 @@ test("MappedCompendium caches translated index rows across equivalent index payl
 });
 
 test("MappedCompendium clears cached index translations when strategies change", () => {
-  const compendium = new MappedCompendium({
+  const metadata = {
     id: "test.items",
     name: "items",
     type: "Item",
-  }, {
+  };
+  const translations = {
     entries: {
       alt: {
         name: "Ascia",
       },
     },
-  });
+  };
+  let compendium = mappedCompendium(metadata, translations);
 
-  compendium.useTranslationMatchStrategies([
-    {
-      name: "alt-key",
-      keyFor: () => "alt",
-    },
-  ]);
+  compendium = mappedCompendium(metadata, translations, {
+    translationStrategies: [
+      {
+        name: "alt-key",
+        keyFor: () => "alt",
+      },
+    ],
+  });
 
   const firstIndex = [{_id: "item-1", name: "Sword"}];
   compendium.translateIndex(firstIndex);
   assert.equal(firstIndex[0].name, "Ascia");
 
-  compendium.useTranslationMatchStrategies([
-    {
-      name: "missing-key",
-      keyFor: () => "missing",
-    },
-  ]);
+  compendium = mappedCompendium(metadata, translations, {
+    translationStrategies: [
+      {
+        name: "missing-key",
+        keyFor: () => "missing",
+      },
+    ],
+  });
 
   const secondIndex = [{_id: "item-1", name: "Sword"}];
   compendium.translateIndex(secondIndex);
@@ -117,7 +128,7 @@ test("MappedCompendium clears cached index translations when strategies change",
 });
 
 test("MappedCompendium leaves documents unchanged when no translation entry matches", () => {
-  const compendium = new MappedCompendium({
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -138,7 +149,7 @@ test("MappedCompendium leaves documents unchanged when no translation entry matc
 });
 
 test("MappedCompendium marks hasTranslation without marking translated when the merged payload is unchanged", () => {
-  const compendium = new MappedCompendium({
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -163,8 +174,22 @@ test("MappedCompendium marks hasTranslation without marking translated when the 
   assert.equal(translated.flags.babele.translated, false);
 });
 
+test("MappedCompendium exposes translated pack labels through metadata", () => {
+  const compendium = mappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+    label: "Items",
+  }, {
+    label: "Oggetti",
+    entries: {},
+  });
+
+  assert.equal(compendium.metadata.label, "Oggetti");
+});
+
 test("MappedCompendium extracts document payloads without requiring translations", () => {
-  const compendium = new MappedCompendium({
+  const compendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -189,8 +214,8 @@ test("MappedCompendium extracts document payloads without requiring translations
   });
 });
 
-test("createMappedCompendium decorates Adventure compendiums", () => {
-  const compendium = createMappedCompendium({
+test("createMappedCompendium returns the canonical mapped compendium for Adventure packs", () => {
+  const compendium = mappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -198,11 +223,11 @@ test("createMappedCompendium decorates Adventure compendiums", () => {
     entries: {},
   });
 
-  assert.equal(compendium instanceof AdventureMappedCompendium, true);
+  assert.equal(compendium instanceof MappedCompendium, true);
 });
 
-test("createMappedCompendium keeps Adventure entry virtual packs undecorated", () => {
-  const compendium = createMappedCompendium({
+test("createMappedCompendium keeps Adventure entry virtual packs as mapped compendiums", () => {
+  const compendium = mappedCompendium({
     id: "test.adventure::adventureA::items",
     name: "test.adventure::adventureA::items",
     type: "Item",
@@ -213,24 +238,11 @@ test("createMappedCompendium keeps Adventure entry virtual packs undecorated", (
     entries: {},
   });
 
-  assert.equal(compendium instanceof AdventureMappedCompendium, false);
   assert.equal(compendium instanceof MappedCompendium, true);
 });
 
-test("AdventureMappedCompendium fails fast when decorating a non-adventure compendium", () => {
-  const compendium = new MappedCompendium({
-    id: "test.items",
-    name: "items",
-    type: "Item",
-  }, {
-    entries: {},
-  });
-
-  assert.throws(() => new AdventureMappedCompendium(compendium), /Adventure compendiums/);
-});
-
 test("createMappedCompendium preserves Adventure translation access", () => {
-  const parent = createMappedCompendium({
+  const parent = mappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -264,46 +276,9 @@ test("createMappedCompendium preserves Adventure translation access", () => {
   });
 });
 
-test("AdventureMappedCompendium reuses the scoped runtime for the same entry", () => {
-  const parent = createMappedCompendium({
-    id: "test.adventure",
-    name: "adventure",
-    type: "Adventure",
-    packageName: "test",
-    packageType: "module",
-  }, {
-    entries: {
-      adventureA: {
-        actors: {
-          "actor-a": {
-            name: "Translated Actor",
-          },
-        },
-      },
-    },
-  });
-  const runtime = new CompendiumRuntime();
-  const entry = {
-    _id: "adventureA",
-    name: "Adventure A",
-  };
-
-  let childCalls = 0;
-  const originalChild = runtime.child.bind(runtime);
-  runtime.child = (localPacks) => {
-    childCalls += 1;
-    return originalChild(localPacks);
-  };
-
-  parent.translate(entry, true, runtime);
-  parent.translate(entry, true, runtime);
-
-  assert.equal(childCalls, 1);
-});
-
 test("Babel delegates translation and extraction operations to MappedCompendium", () => {
   const babele = new Babel();
-  const translatedCompendium = new MappedCompendium({
+  const translatedCompendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -313,9 +288,12 @@ test("Babel delegates translation and extraction operations to MappedCompendium"
         name: "Spada",
       },
     },
+  }, {
+    documentMappings: babele.documentMappings,
+    translationStrategies: babele.translationMatchStrategies(),
   });
 
-  babele.packs = new foundry.utils.Collection([["test.items", translatedCompendium]]);
+  assignMappedCompendiums(babele, [["test.items", translatedCompendium]]);
 
   assert.equal(babele.isTranslated("test.items"), true);
   assert.equal(babele.translate("test.items", {_id: "item-1", name: "Sword"}).name, "Spada");
@@ -323,9 +301,16 @@ test("Babel delegates translation and extraction operations to MappedCompendium"
   assert.equal(babele.translateIndex([{_id: "item-1", name: "Sword"}], "test.items")[0].name, "Spada");
 });
 
-test("Babel propagates registered translation match strategies to existing mapped compendiums", () => {
+test("Babel applies registered translation match strategies when mapped compendiums are built", () => {
   const babele = new Babel();
-  const translatedCompendium = new MappedCompendium({
+  babele.registerTranslationMatchStrategy({
+    name: "entry-type",
+    matches: (data, _key, translation, context) => (
+      context.documentType === "Item" && translation.type === data?.type
+    ),
+  });
+
+  const translatedCompendium = mappedCompendium({
     id: "test.items",
     name: "items",
     type: "Item",
@@ -336,25 +321,21 @@ test("Babel propagates registered translation match strategies to existing mappe
         type: "feat",
       },
     },
+  }, {
+    documentMappings: babele.documentMappings,
+    translationStrategies: babele.translationMatchStrategies(),
   });
 
-  babele.packs = new foundry.utils.Collection([["test.items", translatedCompendium]]);
-  babele.registerTranslationMatchStrategy({
-    name: "entry-type",
-    matches: (data, _key, translation, context) => (
-      context.documentType === "Item" && translation.type === data?.type
-    ),
-  });
+  assignMappedCompendiums(babele, [["test.items", translatedCompendium]]);
 
   assert.equal(
-    translatedCompendium.hasTranslation({_id: "missing-id", name: "Shared", type: "feat"}),
+    babele.mappedCompendiumFor("test.items").hasTranslation({_id: "missing-id", name: "Shared", type: "feat"}),
     true,
   );
 });
 
 test("Babel.init registers supported packs as mapped compendiums even without translations", async () => {
   const babele = new Babel();
-  babele.loadTranslations = async () => [];
   game.data.packs = [{
     type: "Item",
     packageName: "test",
@@ -370,7 +351,6 @@ test("Babel.init registers supported packs as mapped compendiums even without tr
 
 test("Babel extracts using the mapped compendium registered at init even when untranslated", async () => {
   const babele = new Babel();
-  babele.loadTranslations = async () => [];
   game.data.packs = [{
     type: "Item",
     packageName: "test",

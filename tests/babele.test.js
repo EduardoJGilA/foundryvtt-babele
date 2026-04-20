@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {installFoundryStubs} from "./helpers/foundry-stubs.js";
+import {assignMappedCompendiums} from "./helpers/mapped-compendiums.js";
 
 installFoundryStubs();
 
@@ -17,8 +18,8 @@ console.warn = (...args) => warnCalls.push(args);
 console.error = (...args) => errorCalls.push(args);
 
 const {default: Babel} = await import("../module/script/babele.js");
-const {TranslatedCompendium} = await import("../module/script/translated-compendium.js");
-const {ExportTranslationsDialog} = await import("../module/script/export-translations-dialog.js");
+const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {ExportTranslationsDialog} = await import("../module/script/ui/export-translations-dialog.js");
 
 test.beforeEach(() => {
   logCalls.length = 0;
@@ -59,8 +60,7 @@ test("Babel.init fails open and can retry after a bootstrap failure", async () =
 
 test("Babel prefers mappings.json over deprecated mapping.json in the same directory", async () => {
   const babele = new Babel();
-  const originalItemMapping = structuredClone(Babel.DEFAULT_MAPPINGS.Item);
-  babele.modules.push({module: "module-one", dir: "translations", lang: "en"});
+  babele.register({module: "module-one", dir: "translations", lang: "en"});
   game.settings.get = (_namespace, key) => {
     if (key === "language") {
       return "en";
@@ -115,22 +115,20 @@ test("Babel prefers mappings.json over deprecated mapping.json in the same direc
   warnCalls.length = 0;
   logCalls.length = 0;
 
-  await babele.loadTranslations();
+  await babele.init();
 
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.canonical, "system.canonical");
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.legacy, undefined);
+  assert.equal(babele.documentMappings.current().Item.canonical, "system.canonical");
+  assert.equal(babele.documentMappings.current().Item.legacy, undefined);
   assert.equal(warnCalls.length, 1);
   assert.match(String(warnCalls[0][0]), /both 'mappings\.json' and deprecated 'mapping\.json'/);
-
-  Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
 });
 
-test("Babel.loadTranslations logs and skips invalid translation JSON files", async () => {
+test("Babel.init logs and skips invalid translation JSON files", async () => {
   const babele = new Babel();
-  babele.modules.push(
+  babele.register(
     {module: "module-one", dir: "translations", lang: "en"},
-    {module: "module-two", dir: "translations", lang: "en"},
   );
+  babele.register({module: "module-two", dir: "translations", lang: "en"});
 
   game.settings.get = (_namespace, key) => {
     if (key === "language") {
@@ -179,7 +177,9 @@ test("Babel.loadTranslations logs and skips invalid translation JSON files", asy
     throw new Error(`Unexpected fetch: ${url}`);
   };
 
-  const translations = await babele.loadTranslations();
+  await babele.init();
+
+  const translations = babele.translations.values();
 
   assert.equal(translations.length, 1);
   assert.equal(translations[0].collection, "module-one.items");
@@ -192,13 +192,12 @@ test("Babel.loadTranslations logs and skips invalid translation JSON files", asy
   assert.match(String(errorCalls[0][1].error), /invalid translation JSON/);
 });
 
-test("Babel.loadTranslations logs and skips invalid mapping JSON files", async () => {
+test("Babel.init logs and skips invalid mapping JSON files", async () => {
   const babele = new Babel();
-  const originalItemMapping = structuredClone(Babel.DEFAULT_MAPPINGS.Item);
-  babele.modules.push(
+  babele.register(
     {module: "module-one", dir: "translations", lang: "en"},
-    {module: "module-two", dir: "translations", lang: "en"},
   );
+  babele.register({module: "module-two", dir: "translations", lang: "en"});
 
   game.settings.get = (_namespace, key) => {
     if (key === "language") {
@@ -243,25 +242,52 @@ test("Babel.loadTranslations logs and skips invalid mapping JSON files", async (
     throw new Error(`Unexpected fetch: ${url}`);
   };
 
-  await babele.loadTranslations();
+  await babele.init();
 
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.structured, "system.structured");
-  assert.equal(errorCalls.length, 1);
-  assert.match(String(errorCalls[0][0]), /failed to load mapping file/);
-  assert.equal(errorCalls[0][1].kind, "mapping");
-  assert.equal(errorCalls[0][1].phase, "global defaults enrichment");
-  assert.equal(errorCalls[0][1].file, "modules/module-one/translations/mappings.json");
-  assert.match(String(errorCalls[0][1].error), /mapping fetch failed/);
+  assert.equal(babele.documentMappings.current().Item.structured, "system.structured");
+  const mappingError = errorCalls.find(
+    ([message, details]) => /failed to load mapping file/.test(String(message))
+      && details?.file === "modules/module-one/translations/mappings.json",
+  );
+  assert.equal(!!mappingError, true);
+  assert.equal(mappingError[1].kind, "mapping");
+  assert.equal(mappingError[1].phase, "global defaults enrichment");
+  assert.equal(mappingError[1].file, "modules/module-one/translations/mappings.json");
+  assert.match(String(mappingError[1].error), /mapping fetch failed/);
+});
 
-  Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
+test("Babel.translatedPackFor delegates precedence to CompendiumRuntime", () => {
+  const babele = new Babel();
+  const firstPack = {
+    translated: true,
+    metadata: {type: "Item"},
+    hasTranslation(data, documentType) {
+      return documentType === "Item" && data._id === "shared-id";
+    },
+  };
+  const lastPack = {
+    translated: true,
+    metadata: {type: "Item"},
+    hasTranslation(data, documentType) {
+      return documentType === "Item" && data._id === "shared-id";
+    },
+  };
+
+  assignMappedCompendiums(babele, [
+    ["first.items", firstPack],
+    ["last.items", lastPack],
+  ]);
+
+  const resolved = babele.translatedPackFor("Item", {_id: "shared-id"});
+
+  assert.equal(resolved, lastPack);
 });
 
 test("Babel.reinitialize replaces loaded global mappings instead of accumulating them", async () => {
   const babele = new Babel();
-  const originalItemMapping = structuredClone(Babel.DEFAULT_MAPPINGS.Item);
   let phase = 1;
 
-  babele.modules.push({module: "module-one", dir: "translations", lang: "en"});
+  babele.register({module: "module-one", dir: "translations", lang: "en"});
   game.settings.get = (_namespace, key) => {
     if (key === "language") {
       return "en";
@@ -298,27 +324,25 @@ test("Babel.reinitialize replaces loaded global mappings instead of accumulating
   };
 
   await babele.init();
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseOne, "system.phaseOne");
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseTwo, undefined);
+  assert.equal(babele.documentMappings.current().Item.phaseOne, "system.phaseOne");
+  assert.equal(babele.documentMappings.current().Item.phaseTwo, undefined);
 
   phase = 2;
   await babele.reinitialize();
 
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseOne, undefined);
-  assert.equal(Babel.DEFAULT_MAPPINGS.Item.phaseTwo, "system.phaseTwo");
-
-  Babel.DEFAULT_MAPPINGS.Item = originalItemMapping;
+  assert.equal(babele.documentMappings.current().Item.phaseOne, undefined);
+  assert.equal(babele.documentMappings.current().Item.phaseTwo, "system.phaseTwo");
 });
 
 test("Babel.translate fails open for translated packs when a converter throws", () => {
   const babele = new Babel();
-  const originalConverter = game.babele.converters.explode;
-
-  game.babele.converters.explode = () => {
+  const originalGameBabele = game.babele;
+  game.babele = babele;
+  babele.registerConverter("explode", () => {
     throw new Error("import converter boom");
-  };
+  });
 
-  const tc = new TranslatedCompendium({
+  const tc = new MappedCompendium({
     id: "test.actors",
     name: "actors",
     type: "Actor",
@@ -334,9 +358,11 @@ test("Babel.translate fails open for translated packs when a converter throws", 
         items: {},
       },
     },
+  }, {
+    documentMappings: babele.documentMappings,
   });
 
-  babele.packs = new foundry.utils.Collection([["test.actors", tc]]);
+  assignMappedCompendiums(babele, [["test.actors", tc]]);
 
   const data = {
     _id: "actor-1",
@@ -354,11 +380,7 @@ test("Babel.translate fails open for translated packs when a converter throws", 
   assert.equal(errorCalls.length >= 1, true);
   assert.match(String(errorCalls.at(-1)[0]), /converter 'explode' failed during translate/);
 
-  if (typeof originalConverter === "undefined") {
-    delete game.babele.converters.explode;
-  } else {
-    game.babele.converters.explode = originalConverter;
-  }
+  game.babele = originalGameBabele;
 });
 
 test("Babel.translateSystemPackFolders uses special _packs-folders translations from pack folders payload", () => {
@@ -368,7 +390,7 @@ test("Babel.translateSystemPackFolders uses special _packs-folders translations 
     {name: "Rules"},
   ];
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test-system._packs-folders",
     {
       metadata: {
@@ -404,7 +426,7 @@ test("Babel.translatePackFolders uses the compendium translation folders payload
     ]),
   };
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.items",
     {
       folders: {
@@ -429,7 +451,7 @@ test("Babel.translateImportedCompendiumFolder uses the source pack folder transl
     },
   };
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.items",
     {
       folders: {
@@ -452,7 +474,7 @@ test("Babel.translateImportedCompendiumFolder falls back to matching the importe
     type: "Item",
   };
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.items",
     {
       folders: {
@@ -494,7 +516,7 @@ test("Babel.translateImportedCompendiumFolders reapplies translations to importe
     }],
   ]);
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.items",
     {
       folders: {
@@ -512,7 +534,7 @@ test("Babel.translateImportedCompendiumFolders reapplies translations to importe
 
 test("Babel.exportTranslationsFile includes compendium folders using original names", async () => {
   const babele = new Babel();
-  const originalDialogCreate = ExportTranslationsDialog.create;
+  const originalPrompt = ExportTranslationsDialog.prototype.prompt;
   const originalZip = globalThis.JSZip;
   const originalSaveAs = globalThis.saveAs;
   const originalInfo = globalThis.ui.notifications.info;
@@ -523,8 +545,13 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
   const progressCalls = [];
 
   try {
-    ExportTranslationsDialog.create = async (_pack, options) => {
-      dialogOptions = options;
+    ExportTranslationsDialog.prototype.prompt = async function () {
+      dialogOptions = {
+        hasTranslations: this.hasTranslations,
+        format: this.format,
+        selection: this.selection,
+        counts: this.counts,
+      };
       return {format: "compatible", selection: "all"};
     };
     globalThis.JSZip = class {
@@ -580,7 +607,7 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
     babele.extract = () => ({
       name: "Sword",
     });
-    babele.packs = new foundry.utils.Collection([[
+    assignMappedCompendiums(babele, [[
       "test.items",
       {
         folders: {
@@ -618,7 +645,7 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
     assert.equal(savedName, "test.items.zip");
     assert.equal(savedContent, zipInstance.files);
   } finally {
-    ExportTranslationsDialog.create = originalDialogCreate;
+    ExportTranslationsDialog.prototype.prompt = originalPrompt;
     globalThis.JSZip = originalZip;
     globalThis.saveAs = originalSaveAs;
     globalThis.ui.notifications.info = originalInfo;
@@ -627,13 +654,18 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
 
 test("Babel.exportTranslationsFile computes dialog counts from the index without loading documents before confirmation", async () => {
   const babele = new Babel();
-  const originalDialogCreate = ExportTranslationsDialog.create;
+  const originalPrompt = ExportTranslationsDialog.prototype.prompt;
   let getDocumentCalls = 0;
   let dialogOptions = null;
 
   try {
-    ExportTranslationsDialog.create = async (_pack, options) => {
-      dialogOptions = options;
+    ExportTranslationsDialog.prototype.prompt = async function () {
+      dialogOptions = {
+        hasTranslations: this.hasTranslations,
+        format: this.format,
+        selection: this.selection,
+        counts: this.counts,
+      };
       return null;
     };
 
@@ -655,7 +687,7 @@ test("Babel.exportTranslationsFile computes dialog counts from the index without
       },
     };
 
-    babele.packs = new foundry.utils.Collection([[
+    assignMappedCompendiums(babele, [[
       "test.items",
       {
         translated: true,
@@ -671,18 +703,23 @@ test("Babel.exportTranslationsFile computes dialog counts from the index without
     });
     assert.equal(getDocumentCalls, 0);
   } finally {
-    ExportTranslationsDialog.create = originalDialogCreate;
+    ExportTranslationsDialog.prototype.prompt = originalPrompt;
   }
 });
 
 test("Babel.exportTranslationsFile computes dialog counts correctly from Collection-backed indexes", async () => {
   const babele = new Babel();
-  const originalDialogCreate = ExportTranslationsDialog.create;
+  const originalPrompt = ExportTranslationsDialog.prototype.prompt;
   let dialogOptions = null;
 
   try {
-    ExportTranslationsDialog.create = async (_pack, options) => {
-      dialogOptions = options;
+    ExportTranslationsDialog.prototype.prompt = async function () {
+      dialogOptions = {
+        hasTranslations: this.hasTranslations,
+        format: this.format,
+        selection: this.selection,
+        counts: this.counts,
+      };
       return null;
     };
 
@@ -703,7 +740,7 @@ test("Babel.exportTranslationsFile computes dialog counts correctly from Collect
       },
     };
 
-    babele.packs = new foundry.utils.Collection([[
+    assignMappedCompendiums(babele, [[
       "test.items",
       {
         translated: true,
@@ -718,7 +755,7 @@ test("Babel.exportTranslationsFile computes dialog counts correctly from Collect
       missing: 1,
     });
   } finally {
-    ExportTranslationsDialog.create = originalDialogCreate;
+    ExportTranslationsDialog.prototype.prompt = originalPrompt;
   }
 });
 
@@ -756,7 +793,7 @@ test("Babel.exportDataFor exports present and missing entries according to selec
     description: data.description,
   });
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.items",
     {
       translated: true,
@@ -860,7 +897,7 @@ test("Babel.exportDataFor falls back to built-in extractor when a custom convert
     }),
   );
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.journals",
     {
       translated: false,
@@ -893,11 +930,16 @@ test("Babel.exportDataFor falls back to built-in extractor when a custom convert
   });
 });
 
-test("Babel.registerConverter normalizes legacy functions and OO converters to the internal OO contract", () => {
+test("Babel.registerConverter normalizes function and OO converters to the internal converter contract", () => {
   const babele = new Babel();
 
-  const legacy = (value) => `${value} legacy`;
-  legacy.extract = (value) => ({value});
+  const functional = (value) => `${value} functional`;
+  let prepareContext = null;
+  functional.prepare = (_value, _translation, _source, tc, _allTranslations, runtime, params) => {
+    prepareContext = {tc, runtime, params};
+    return undefined;
+  };
+  functional.extract = (value) => ({value});
 
   const ooConverter = {
     translate(context) {
@@ -906,32 +948,45 @@ test("Babel.registerConverter normalizes legacy functions and OO converters to t
     extract(context) {
       return {value: context.value};
     },
-    isDynamic() {
-      return true;
-    },
   };
 
-  babele.registerConverter("legacyExample", legacy);
+  babele.registerConverter("functionalExample", functional);
   babele.registerConverter("ooExample", ooConverter);
 
-  assert.equal(typeof babele.converters.legacyExample.translate, "function");
-  assert.equal(typeof babele.converters.legacyExample.extract, "function");
-  assert.equal(babele.converters.legacyExample.isDynamic(), true);
-  assert.equal(babele.converters.legacyExample.translate({
+  assert.equal(typeof babele.converters.functionalExample.translate, "function");
+  assert.equal(typeof babele.converters.functionalExample.extract, "function");
+  assert.equal(typeof babele.converters.functionalExample.isDynamic, "undefined");
+  babele.converters.functionalExample.prepare({
     value: "test",
     translation: null,
     source: {},
     field: "field",
     path: "field",
-    params: {converter: "legacyExample"},
+    params: {converter: "functionalExample"},
+    allTranslations: {},
+    contextCompendium: {id: "tc"},
+    runtime: {id: "runtime"},
+  });
+  assert.deepEqual(prepareContext, {
+    tc: {id: "tc"},
+    runtime: {id: "runtime"},
+    params: {converter: "functionalExample"},
+  });
+  assert.equal(babele.converters.functionalExample.translate({
+    value: "test",
+    translation: null,
+    source: {},
+    field: "field",
+    path: "field",
+    params: {converter: "functionalExample"},
     allTranslations: {},
     contextCompendium: null,
     runtime: {},
-  }), "test legacy");
+  }), "test functional");
 
   assert.equal(typeof babele.converters.ooExample.translate, "function");
   assert.equal(typeof babele.converters.ooExample.extract, "function");
-  assert.equal(babele.converters.ooExample.isDynamic(), true);
+  assert.equal(typeof babele.converters.ooExample.isDynamic, "undefined");
   assert.equal(babele.converters.ooExample.translate({
     value: "test",
     translation: null,
@@ -943,6 +998,18 @@ test("Babel.registerConverter normalizes legacy functions and OO converters to t
     contextCompendium: null,
     runtime: {},
   }), "test oo");
+});
+
+test("Babel.converters exposes a frozen compatibility view", () => {
+  const babele = new Babel();
+
+  assert.throws(
+    () => {
+      babele.converters.document = null;
+    },
+    /read only|object is not extensible|Cannot assign|Cannot add property/i,
+  );
+  assert.equal(typeof babele.converterNamed("document")?.translate, "function");
 });
 
 test("Babel.exportDataFor hydrates journal pages from embedded documents when toObject omits them", async () => {
@@ -989,7 +1056,7 @@ test("Babel.exportDataFor hydrates journal pages from embedded documents when to
     },
   };
 
-  babele.packs = new foundry.utils.Collection([[
+  assignMappedCompendiums(babele, [[
     "test.journals",
     {
       translated: false,
@@ -1028,7 +1095,7 @@ test("Babel.reinitialize restores translated indexes and clears cached closed co
   let clearCalls = 0;
   let initializeTreeCalls = 0;
 
-  babele.modules.push({module: "module-one", dir: "translations", lang: "en"});
+  babele.register({module: "module-one", dir: "translations", lang: "en"});
   game.settings.get = (_namespace, key) => {
     if (key === "language") {
       return "en";
@@ -1052,6 +1119,7 @@ test("Babel.reinitialize restores translated indexes and clears cached closed co
       return {
         async json() {
           return {
+            label: phase === 1 ? "Oggetti" : "Armi",
             entries: {
               "item-1": {
                 name: phase === 1 ? "Spada" : "Lama",
@@ -1075,7 +1143,7 @@ test("Babel.reinitialize restores translated indexes and clears cached closed co
     "module-one.items",
     {
       collection: "module-one.items",
-      metadata: {id: "module-one.items"},
+      metadata: {id: "module-one.items", label: "Items"},
       index: [{_id: "item-1", name: "Sword"}],
       folders: new foundry.utils.Collection(),
       initializeTree() {
@@ -1093,14 +1161,19 @@ test("Babel.reinitialize restores translated indexes and clears cached closed co
   await babele.applyRuntimeTranslations();
 
   const entry = game.packs.get("module-one.items").index[0];
+  const pack = game.packs.get("module-one.items");
   assert.equal(entry.name, "Spada");
   assert.equal(entry.originalName, "Sword");
+  assert.equal(pack.metadata.label, "Oggetti");
+  assert.equal(pack.metadata.originalLabel, "Items");
 
   phase = 2;
   await babele.reinitialize();
 
   assert.equal(entry.name, "Lama");
   assert.equal(entry.originalName, "Sword");
+  assert.equal(pack.metadata.label, "Armi");
+  assert.equal(pack.metadata.originalLabel, "Items");
   assert.equal(clearCalls >= 1, true);
   assert.equal(initializeTreeCalls >= 2, true);
 });

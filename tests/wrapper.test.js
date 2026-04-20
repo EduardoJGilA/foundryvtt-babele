@@ -14,7 +14,7 @@ const {
   contextFromArgs,
   translateResult,
   preserveIndexFlags,
-} = await import("../module/script/wrapper.js");
+} = await import("../module/script/foundry/wrapper.js");
 
 test("wrapper extracts normalized _getDocuments context from Foundry arguments", () => {
   class FakeDocument {}

@@ -4,7 +4,7 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {registerModuleSettings} = await import("../module/script/settings.js");
+const {registerModuleSettings} = await import("../module/script/foundry/settings.js");
 
 test("registerModuleSettings refreshes sources without forcing a page reload", async () => {
   const registrations = new Map();

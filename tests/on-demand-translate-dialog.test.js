@@ -4,7 +4,7 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {OnDemandTranslateDialog} = await import("../module/script/on-demand-translate-dialog.js");
+const {OnDemandTranslateDialog} = await import("../module/script/ui/on-demand-translate-dialog.js");
 
 test("OnDemandTranslateDialog only selects translated packs for the requested document type", () => {
   const actorPack = {

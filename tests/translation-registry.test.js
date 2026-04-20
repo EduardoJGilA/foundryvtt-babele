@@ -8,7 +8,7 @@ const warnings = [];
 const originalWarn = console.warn;
 console.warn = (...args) => warnings.push(args);
 
-const {TranslationRegistry} = await import("../module/script/translation-registry.js");
+const {TranslationRegistry} = await import("../module/script/translation/translation-registry.js");
 
 function createRegistry(overrides = {}) {
   game.settings.get = (_namespace, key) => {
@@ -33,10 +33,15 @@ function createRegistry(overrides = {}) {
   game.user.isGM = overrides.isGM ?? true;
   game.user.hasPermission = () => overrides.canIndexFiles ?? true;
   game.system.id = overrides.systemId ?? "test-system";
-  game.babele.systemTranslationsDir = overrides.systemTranslationsDir ?? null;
   foundry.applications.apps.FilePicker.browse = overrides.browse ?? (async () => ({files: []}));
 
-  return new TranslationRegistry(overrides.modules ?? []);
+  const registry = new TranslationRegistry();
+
+  for (const module of overrides.modules ?? []) {
+    registry.registerModule(module);
+  }
+
+  return registry;
 }
 
 test("TranslationRegistry deduplicates translation files and groups pack sources", async () => {
@@ -117,6 +122,33 @@ test("TranslationRegistry prefers canonical mappings.json within the same direct
   ]);
   assert.equal(warnings.length, 1);
   assert.match(String(warnings[0][0]), /both 'mappings\.json' and deprecated 'mapping\.json'/);
+});
+
+test("TranslationRegistry does not treat mapping files as compendium translation files", async () => {
+  const registry = createRegistry({
+    modules: [
+      {module: "module-one", dir: "translations", lang: "it"},
+    ],
+    browse: async (_source, dir) => {
+      if (dir === "modules/module-one/translations") {
+        return {
+          files: [
+            "modules/module-one/translations/mapping.json",
+            "modules/module-one/translations/mappings.json",
+            "modules/module-one/translations/test.items.json",
+          ],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+
+  const translationFiles = (await registry.translationSources()).map((source) => source.file);
+
+  assert.deepEqual(translationFiles, [
+    "modules/module-one/translations/test.items.json",
+  ]);
 });
 
 test("TranslationRegistry falls back to stored file lists when indexing is unavailable", async () => {

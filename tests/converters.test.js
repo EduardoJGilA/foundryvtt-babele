@@ -4,12 +4,31 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 const {TestCollection} = installFoundryStubs();
 
-const {Converters} = await import("../module/script/converters.js");
-const {CompendiumRuntime} = await import("../module/script/compendium-runtime.js");
-const {createMappedCompendium} = await import("../module/script/mapped-compendium-decorator.js");
+const {Converters} = await import("../module/script/converter/converters.js");
+const {CompendiumRuntime} = await import("../module/script/compendium/compendium-runtime.js");
+const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {DocumentConverter} = await import("../module/script/converter/document-converter.js");
+const {StructuredDataConverter} = await import("../module/script/converter/structured-data-converter.js");
+const {default: Babel} = await import("../module/script/babele.js");
+const defaultDocumentMappings = new Babel().documentMappings;
+
+function mappedCompendium(metadata, translations, options = {}) {
+  return new MappedCompendium(metadata, translations, {
+    documentMappings: options.documentMappings ?? defaultDocumentMappings,
+    translationStrategies: options.translationStrategies,
+  });
+}
+
+function runtimeCompendium(documentType, metadata = {}, translations = null, options = {}) {
+  return mappedCompendium({
+    type: documentType,
+    ...metadata,
+  }, translations, options);
+}
 
 test("fromPack.extract exports embedded documents keyed by name with id fallback", () => {
   const converter = Converters.fromPack(null, "Item");
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
 
   const items = [
     {
@@ -32,10 +51,10 @@ test("fromPack.extract exports embedded documents keyed by name with id fallback
     },
   ];
 
-  const extracted = converter.extract(items, {name: "Actor"}, {
-    metadata: {type: "Actor"},
-  }, {
-    options: {},
+  const extracted = converter.extract(items, {name: "Actor"}, actorContext, {
+    runtime: new CompendiumRuntime({
+      currentCompendium: actorContext,
+    }),
   });
 
   assert.deepEqual(extracted, {
@@ -53,7 +72,7 @@ test("fromPack.extract exports embedded documents keyed by name with id fallback
 test("adventure embedded extraction uses entry-specific translated compendium context", () => {
   const converter = Converters.fromDefaultMapping("Item", "items");
 
-  const parentTc = createMappedCompendium({
+  const parentTc = mappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -84,9 +103,9 @@ test("adventure embedded extraction uses entry-specific translated compendium co
       },
     },
   });
-  game.babele.packs = new TestCollection([["test.adventure", parentTc]]);
+  const globalPacks = new TestCollection([["test.adventure", parentTc]]);
 
-  const contextA = createMappedCompendium({
+  const contextA = mappedCompendium({
     id: "test.adventure::adventureA::items",
     name: "test.adventure::adventureA::items",
     type: "Item",
@@ -105,7 +124,7 @@ test("adventure embedded extraction uses entry-specific translated compendium co
     },
   });
 
-  const contextB = createMappedCompendium({
+  const contextB = mappedCompendium({
     id: "test.adventure::adventureB::items",
     name: "test.adventure::adventureB::items",
     type: "Item",
@@ -158,13 +177,13 @@ test("adventure embedded extraction uses entry-specific translated compendium co
 
   const extractedA = converter.extract(adventureA.items, adventureA, parentTc, {
     runtime: new CompendiumRuntime({
-      globalPacks: game.babele.packs,
+      globalPacks,
       localPacks: new TestCollection([["test.adventure::adventureA::items", contextA]]),
     }),
   });
   const extractedB = converter.extract(adventureB.items, adventureB, parentTc, {
     runtime: new CompendiumRuntime({
-      globalPacks: game.babele.packs,
+      globalPacks,
       localPacks: new TestCollection([["test.adventure::adventureB::items", contextB]]),
     }),
   });
@@ -183,7 +202,94 @@ test("adventure embedded extraction uses entry-specific translated compendium co
   });
 });
 
-test("fromPack uses TranslationResolver fallback order for sourceId-based matches", () => {
+test("fromDefaultMapping falls back to runtime currentCompendium when legacy tc is missing", () => {
+  const converter = Converters.fromDefaultMapping("Item", "items");
+
+  const parentTc = mappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      items: {
+        description: "system.description.value",
+      },
+    },
+    entries: {
+      adventureA: {
+        items: {
+          "item-a": {
+            name: "Translated A",
+            description: "Description A",
+          },
+        },
+      },
+    },
+  });
+
+  const runtime = new CompendiumRuntime({
+    currentCompendium: parentTc,
+  });
+
+  assert.doesNotThrow(() => {
+    converter.prepare(
+      [{
+        _id: "item-a",
+        name: "Original A",
+        system: {
+          description: {
+            value: "Original description A",
+          },
+        },
+      }],
+      {
+        "item-a": {
+          name: "Translated A",
+          description: "Description A",
+        },
+      },
+      {
+        _id: "adventureA",
+        name: "Adventure A",
+      },
+      null,
+      {},
+      runtime,
+    );
+  });
+});
+
+test("functional document converters accept null legacy tc when runtime currentCompendium is available", () => {
+  const runtimeTc = mappedCompendium({
+    id: "test.actor-pack",
+    name: "actor-pack",
+    type: "Actor",
+  }, {
+    mapping: {
+      items: {
+        description: "system.description.value",
+      },
+    },
+  });
+
+  const converter = Converters.fromDefaultMapping("Item", "items");
+
+  assert.doesNotThrow(() => {
+    converter(
+      [],
+      {},
+      {_id: "actor-1", name: "Actor"},
+      null,
+      {},
+      new CompendiumRuntime({currentCompendium: runtimeTc}),
+    );
+  });
+});
+
+test("fromPack uses TranslationEntries fallback order for sourceId-based matches", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
   const items = [
     {
       _id: "item-1",
@@ -201,29 +307,40 @@ test("fromPack uses TranslationResolver fallback order for sourceId-based matche
     },
   ];
 
-  const translated = Converters._fromPack(
-    items,
-    createMappedCompendium({
-      type: "Item",
-    }, {
+  const translated = new DocumentConverter().translate({
+    value: items,
+    translation: {
+      "shared-source": {
+        name: "Translated Sword",
+        description: "Translated description",
+      },
+    },
+    source: {name: "Actor"},
+    field: "items",
+    path: "items",
+    params: {
+      path: "items",
+      converter: "document",
+      documentType: "Item",
+      cardinality: "many",
       mapping: {
         description: "system.description.value",
       },
-      entries: {
-        "shared-source": {
-          name: "Translated Sword",
-          description: "Translated description",
-        },
-      },
+    },
+    allTranslations: {},
+    contextCompendium: actorContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: actorContext,
     }),
-  );
+  });
 
   assert.equal(translated[0].name, "Translated Sword");
   assert.equal(translated[0].system.description.value, "Translated description");
   assert.equal(translated[0].translated, true);
 });
 
-test("pages converter uses TranslationResolver fallback order", () => {
+test("pages converter uses TranslationEntries fallback order", () => {
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
   const pages = [
     {
       _id: "page-1",
@@ -254,6 +371,66 @@ test("pages converter uses TranslationResolver fallback order", () => {
       width: 800,
       height: 600,
     },
+  }, {_id: "journal-1", name: "Rules"}, journalContext, null, new CompendiumRuntime({
+    currentCompendium: journalContext,
+  }));
+
+  assert.equal(translated[0].name, "Translated Page");
+  assert.equal(translated[0].image.caption, "Translated caption");
+  assert.equal(translated[0].src, "translated.png");
+  assert.equal(translated[0].text.content, "<p>Translated</p>");
+  assert.equal(translated[0].video.width, 800);
+  assert.equal(translated[0].video.height, 600);
+});
+
+test("document converter translates embedded-only document fields without external pack fallback", () => {
+  const converter = new DocumentConverter();
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
+  const translated = converter.translate({
+    value: [
+      {
+        _id: "page-1",
+        name: "Original Page",
+        _stats: {
+          compendiumSource: "Compendium.test.journal.page-source",
+        },
+        image: {
+          caption: "Original caption",
+        },
+        src: "original.png",
+        text: {
+          content: "<p>Original</p>",
+        },
+        video: {
+          width: 640,
+          height: 480,
+        },
+      },
+    ],
+    translation: {
+      "page-source": {
+        name: "Translated Page",
+        caption: "Translated caption",
+        src: "translated.png",
+        text: "<p>Translated</p>",
+        width: 800,
+        height: 600,
+      },
+    },
+    source: {_id: "journal-1", name: "Rules"},
+    field: "pages",
+    path: "pages",
+    params: {
+      path: "pages",
+      converter: "document",
+      documentType: "JournalEntryPage",
+      cardinality: "many",
+    },
+    allTranslations: {},
+    contextCompendium: journalContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: journalContext,
+    }),
   });
 
   assert.equal(translated[0].name, "Translated Page");
@@ -265,6 +442,7 @@ test("pages converter uses TranslationResolver fallback order", () => {
 });
 
 test("pages.extract exports journal pages through the JournalEntryPage mapping", () => {
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
   const extracted = Converters.pages().extract([
     {
       _id: "page-1",
@@ -281,7 +459,11 @@ test("pages.extract exports journal pages through the JournalEntryPage mapping",
         height: 480,
       },
     },
-  ]);
+  ], {_id: "journal-1", name: "Rules"}, journalContext, {
+    runtime: new CompendiumRuntime({
+      currentCompendium: journalContext,
+    }),
+  });
 
   assert.deepEqual(extracted, {
     Introduction: {
@@ -295,7 +477,158 @@ test("pages.extract exports journal pages through the JournalEntryPage mapping",
   });
 });
 
+test("document converter extracts embedded documents through the configured document mapping", () => {
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
+  const extracted = new DocumentConverter().extract({
+    value: [
+      {
+        _id: "page-1",
+        name: "Introduction",
+        image: {
+          caption: "Cover",
+        },
+        src: "intro.webp",
+        text: {
+          content: "<p>Hello</p>",
+        },
+        video: {
+          width: 640,
+          height: 480,
+        },
+      },
+    ],
+    translation: undefined,
+    source: {_id: "journal-1", name: "Rules"},
+    field: "pages",
+    path: "pages",
+    params: {
+      path: "pages",
+      converter: "document",
+      documentType: "JournalEntryPage",
+      cardinality: "many",
+    },
+    allTranslations: {},
+    contextCompendium: journalContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: journalContext,
+    }),
+  });
+
+  assert.deepEqual(extracted, {
+    Introduction: {
+      name: "Introduction",
+      caption: "Cover",
+      src: "intro.webp",
+      text: "<p>Hello</p>",
+      width: 640,
+      height: 480,
+    },
+  });
+});
+
+test("document converter falls back to the parent compendium custom mapping for embedded documents", () => {
+  const adventureContext = runtimeCompendium("Adventure", {id: "adventure-1", name: "Adventure"}, {
+    mapping: {
+      actors: {
+        description: "system.details.biography.value",
+      },
+    },
+  });
+  const translated = new DocumentConverter().translate({
+    value: [
+      {
+        _id: "actor-1",
+        name: "Goblin",
+        system: {
+          details: {
+            biography: {
+              value: "Original biography",
+            },
+          },
+        },
+        items: [],
+      },
+    ],
+    translation: {
+      "actor-1": {
+        name: "Goblin IT",
+        description: "Biografia tradotta",
+      },
+    },
+    source: {_id: "adventure-1", name: "Adventure"},
+    field: "actors",
+    path: "actors",
+    params: {
+      path: "actors",
+      converter: "document",
+      documentType: "Actor",
+      cardinality: "many",
+    },
+    allTranslations: {},
+    contextCompendium: adventureContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: adventureContext,
+    }),
+  });
+
+  assert.equal(translated[0].name, "Goblin IT");
+  assert.equal(translated[0].system.details.biography.value, "Biografia tradotta");
+});
+
+test("structured data converter translates nested arrays by index and extracts arrays", () => {
+  const converter = new StructuredDataConverter({
+    path: "faces",
+    cardinality: "many",
+    mapping: {
+      name: "name",
+      text: "text",
+    },
+  });
+
+  const faces = [
+    {name: "Front", text: "Original front"},
+    {name: "Back", text: "Original back"},
+  ];
+
+  const translated = converter.translate({
+    value: faces,
+    translation: [
+      {text: "Tradotto fronte"},
+      undefined,
+    ],
+    source: {_id: "card-1", name: "Card"},
+    field: "faces",
+    path: "faces",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: faces,
+    source: {_id: "card-1", name: "Card"},
+    field: "faces",
+    path: "faces",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated[0].text, "Tradotto fronte");
+  assert.equal(translated[1].text, "Original back");
+  assert.deepEqual(extracted, [
+    {name: "Front", text: "Original front"},
+    {name: "Back", text: "Original back"},
+  ]);
+});
+
 test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {
+  game.babele = new Babel();
+  const tableTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
   const extracted = Converters.tableResults().extract([
     {
       _id: "result-1",
@@ -314,7 +647,7 @@ test("tableResults.extract prefers range keys and exports the canonical structur
       img: "icons/svg/mystery-man.svg",
       weight: 2,
     },
-  ]);
+  ], {_id: "table-1", name: "Encounter Table"}, tableTc);
 
   assert.deepEqual(extracted, {
     "1-1": {
@@ -328,6 +661,14 @@ test("tableResults.extract prefers range keys and exports the canonical structur
 });
 
 test("tableResults.extract falls back to result id when no range key is available", () => {
+  game.babele = new Babel();
+  const tableTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
   const extracted = Converters.tableResults().extract([
     {
       _id: "result-3",
@@ -335,7 +676,7 @@ test("tableResults.extract falls back to result id when no range key is availabl
       name: "Fallback Result",
       description: "<p>No range present</p>",
     },
-  ]);
+  ], {_id: "table-1", name: "Encounter Table"}, tableTc);
 
   assert.deepEqual(extracted, {
     "result-3": {
@@ -345,7 +686,52 @@ test("tableResults.extract falls back to result id when no range key is availabl
   });
 });
 
-test("tableResultsCollection uses TranslationResolver fallback order and exports only present fields", () => {
+test("tableResults translates using the TableResult identity fallback order", () => {
+  game.babele = new Babel();
+  const tableTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
+  const translated = Converters.tableResults()([
+    {
+      _id: "result-1",
+      range: [1, 1],
+      description: "<p>Wolf</p>",
+    },
+    {
+      _id: "result-2",
+      range: [2, 2],
+      name: "Goblin",
+      description: "<p>Goblin</p>",
+    },
+  ], {
+    "1-1": {
+      description: "<p>Lupo</p>",
+    },
+    "result-2": {
+      name: "Goblin Tradotto",
+    },
+  }, {
+    _id: "table-1",
+    name: "Encounter Table",
+  }, tableTc);
+
+  assert.equal(translated[0].description, "<p>Lupo</p>");
+  assert.equal(translated[1].name, "Goblin Tradotto");
+});
+
+test("tableResultsCollection delegates to the generic RollTable mapping", () => {
+  game.babele = new Babel();
+  const tableCollectionTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
   const tables = [
     {
       _id: "table-1",
@@ -370,15 +756,20 @@ test("tableResultsCollection uses TranslationResolver fallback order and exports
         },
       },
     },
-  });
+  }, {_id: "tables-collection", name: "Tables"}, tableCollectionTc);
 
-  const extracted = Converters.tableResultsCollection().extract(tables);
+  const extracted = Converters.tableResultsCollection().extract(
+    tables,
+    {_id: "tables-collection", name: "Tables"},
+    tableCollectionTc,
+  );
 
   assert.equal(translated[0].name, "Tabella Incontri");
   assert.equal(translated[0].results[0].description, "<p>Lupo</p>");
   assert.deepEqual(extracted, {
     "Encounter Table": {
       name: "Encounter Table",
+      description: "",
       results: {
         "1-1": {
           description: "<p>Wolf</p>",
@@ -388,7 +779,21 @@ test("tableResultsCollection uses TranslationResolver fallback order and exports
   });
 });
 
-test("deckCards uses TranslationResolver fallback order and export keeps only present translatable fields", () => {
+test("document converter handles Card collections through Card mappings including structured faces and back", () => {
+  game.babele = new Babel();
+  const deckContext = new MappedCompendium({
+    id: "test.cards",
+    name: "cards",
+    type: "Cards",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
+  const converter = new DocumentConverter({
+    path: "cards",
+    documentType: "Card",
+    cardinality: "many",
+  });
+
   const cards = [
     {
       _id: "card-1",
@@ -406,24 +811,48 @@ test("deckCards uses TranslationResolver fallback order and export keeps only pr
     },
   ];
 
-  const translated = Converters.deckCards()(cards, {
-    "card-1": {
-      name: "Asso delle Stelle",
-      faces: [
-        {
-          text: "Brilla intensa",
-        },
-      ],
+  const translated = converter.translate({
+    value: cards,
+    translation: {
+      "card-1": {
+        name: "Asso delle Stelle",
+        faces: [
+          {
+            text: "Brilla intensa",
+          },
+        ],
+      },
     },
+    source: {_id: "deck-1", name: "Stars"},
+    field: "cards",
+    path: "cards",
+    params: {},
+    allTranslations: {},
+    contextCompendium: deckContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: deckContext,
+    }),
   });
 
-  const extracted = Converters.deckCards().extract(cards);
+  const extracted = converter.extract({
+    value: cards,
+    source: {_id: "deck-1", name: "Stars"},
+    field: "cards",
+    path: "cards",
+    params: {},
+    allTranslations: {},
+    contextCompendium: deckContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: deckContext,
+    }),
+  });
 
   assert.equal(translated[0].name, "Asso delle Stelle");
   assert.equal(translated[0].faces[0].text, "Brilla intensa");
   assert.deepEqual(extracted, {
     "Ace of Stars": {
       name: "Ace of Stars",
+      description: "",
       faces: [
         {
           name: "Front",
@@ -437,7 +866,14 @@ test("deckCards uses TranslationResolver fallback order and export keeps only pr
   });
 });
 
-test("playlistSounds uses TranslationResolver fallback order and export omits missing fields", () => {
+test("document converter handles PlaylistSound collections through the PlaylistSound mapping", () => {
+  const playlistContext = runtimeCompendium("Playlist", {id: "playlist-1", name: "Weather"});
+  const converter = new DocumentConverter({
+    path: "sounds",
+    documentType: "PlaylistSound",
+    cardinality: "many",
+  });
+
   const sounds = [
     {
       _id: "sound-1",
@@ -446,23 +882,48 @@ test("playlistSounds uses TranslationResolver fallback order and export omits mi
     },
   ];
 
-  const translated = Converters.playlistSounds()(sounds, {
-    "sound-1": {
-      name: "Vento",
+  const translated = converter.translate({
+    value: sounds,
+    translation: {
+      "sound-1": {
+        name: "Vento",
+      },
     },
+    source: {_id: "playlist-1", name: "Weather"},
+    field: "sounds",
+    path: "sounds",
+    params: {},
+    allTranslations: {},
+    contextCompendium: playlistContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: playlistContext,
+    }),
   });
 
-  const extracted = Converters.playlistSounds().extract(sounds);
+  const extracted = converter.extract({
+    value: sounds,
+    source: {_id: "playlist-1", name: "Weather"},
+    field: "sounds",
+    path: "sounds",
+    params: {},
+    allTranslations: {},
+    contextCompendium: playlistContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: playlistContext,
+    }),
+  });
 
   assert.equal(translated[0].name, "Vento");
   assert.deepEqual(extracted, {
     Wind: {
       name: "Wind",
+      description: "",
     },
   });
 });
 
 test("fromPack fallback only uses translated packs with the same document type", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
   const item = {
     _id: "shared-id",
     name: "Shared Name",
@@ -508,17 +969,34 @@ test("fromPack fallback only uses translated packs with the same document type",
     },
   };
 
-  game.babele.packs = [actorPack, itemPack];
+  const globalPacks = [actorPack, itemPack];
 
-  const translated = Converters._fromPack(
-    [item],
-    createMappedCompendium({type: "Item"}, null),
-  );
+  const translated = new DocumentConverter().translate({
+    value: [item],
+    translation: undefined,
+    source: {name: "Actor"},
+    field: "items",
+    path: "items",
+    params: {
+      path: "items",
+      converter: "document",
+      documentType: "Item",
+      cardinality: "many",
+      mapping: null,
+    },
+    allTranslations: {},
+    contextCompendium: actorContext,
+    runtime: new CompendiumRuntime({
+      globalPacks,
+      currentCompendium: actorContext,
+    }),
+  });
 
   assert.equal(translated[0].name, "Correct Item Translation");
 });
 
 test("fromPack translates embedded spell names through deterministic resolver lookup", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
   const spell = {
     _id: "spell-1",
     name: "Magic Missile",
@@ -534,7 +1012,7 @@ test("fromPack translates embedded spell names through deterministic resolver lo
     },
   };
 
-  const spellsPack = createMappedCompendium({
+  const spellsPack = mappedCompendium({
     id: "test.spells",
     name: "spells",
     type: "Item",
@@ -552,13 +1030,28 @@ test("fromPack translates embedded spell names through deterministic resolver lo
     },
   });
 
-  const translated = Converters._fromPack(
-    [spell],
-    createMappedCompendium({type: "Item"}, {entries: {}}),
-    new CompendiumRuntime({
+  const translated = new DocumentConverter().translate({
+    value: [spell],
+    translation: undefined,
+    source: {name: "Actor"},
+    field: "items",
+    path: "items",
+    params: {
+      path: "items",
+      converter: "document",
+      documentType: "Item",
+      cardinality: "many",
+      mapping: {
+        description: "system.description.value",
+      },
+    },
+    allTranslations: {},
+    contextCompendium: actorContext,
+    runtime: new CompendiumRuntime({
       globalPacks: new TestCollection([["test.spells", spellsPack]]),
+      currentCompendium: actorContext,
     }),
-  );
+  });
 
   assert.equal(translated[0].name, "Dardo Incantato");
   assert.equal(translated[0].system.description.value, "Descrizione tradotta");
@@ -566,13 +1059,13 @@ test("fromPack translates embedded spell names through deterministic resolver lo
 });
 
 test("adventure actors translate tokenName through the embedded actor context", () => {
-  game.babele.converters = {
-    ...game.babele.converters,
+  game.babele = new Babel();
+  game.babele.registerConverters({
     name: Converters.mappedField("name"),
     fromPack: Converters.fromPack(),
-  };
+  });
   const converter = Converters.fromDefaultMapping("Actor", "actors");
-  const adventure = createMappedCompendium({
+  const adventure = new MappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -588,6 +1081,8 @@ test("adventure actors translate tokenName through the embedded actor context", 
         },
       },
     },
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
   const adventureData = {
     _id: "adventureA",
@@ -625,14 +1120,14 @@ test("adventure actors translate tokenName through the embedded actor context", 
 });
 
 test("adventure deep translation keeps nested actor items inside the adventure-local scope", () => {
-  game.babele.converters = {
-    ...game.babele.converters,
+  game.babele = new Babel();
+  game.babele.registerConverters({
     name: Converters.mappedField("name"),
     fromPack: Converters.fromPack(),
-  };
+  });
 
   const converter = Converters.fromDefaultMapping("Actor", "actors");
-  const adventure = createMappedCompendium({
+  const adventure = new MappedCompendium({
     id: "test.adventure",
     name: "adventure",
     type: "Adventure",
@@ -658,6 +1153,8 @@ test("adventure deep translation keeps nested actor items inside the adventure-l
         },
       },
     },
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
 
   const adventureData = {
@@ -702,18 +1199,20 @@ test("adventure deep translation keeps nested actor items inside the adventure-l
 });
 
 test("fromPack fallback re-branches runtime to the translated root compendium", () => {
-  game.babele.converters = {
-    ...game.babele.converters,
+  game.babele = new Babel();
+  game.babele.registerConverters({
     name: Converters.mappedField("name"),
     fromPack: Converters.fromPack(),
-  };
+  });
 
-  const contextPack = createMappedCompendium({
+  const contextPack = new MappedCompendium({
     type: "Actor",
   }, {
     entries: {},
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
-  const externalPack = createMappedCompendium({
+  const externalPack = new MappedCompendium({
     id: "ext.actors",
     name: "actors",
     type: "Actor",
@@ -725,12 +1224,14 @@ test("fromPack fallback re-branches runtime to the translated root compendium", 
         name: "Goblin IT",
       },
     },
+  }, {
+    documentMappings: game.babele.documentMappings,
   });
 
-  game.babele.packs = new TestCollection([["ext.actors", externalPack]]);
+  const globalPacks = new TestCollection([["ext.actors", externalPack]]);
 
-  const translated = Converters._fromPack(
-    [
+  const translated = new DocumentConverter().translate({
+    value: [
       {
         _id: "actor-a",
         name: "Goblin",
@@ -747,18 +1248,38 @@ test("fromPack fallback re-branches runtime to the translated root compendium", 
         },
       },
     ],
-    contextPack,
-    new CompendiumRuntime({
-      globalPacks: game.babele.packs,
+    translation: undefined,
+    source: {name: "Encounter"},
+    field: "actors",
+    path: "actors",
+    params: {
+      path: "actors",
+      converter: "document",
+      documentType: "Actor",
+      cardinality: "many",
+      mapping: null,
+    },
+    allTranslations: {},
+    contextCompendium: contextPack,
+    runtime: new CompendiumRuntime({
+      globalPacks,
       currentCompendium: contextPack,
     }),
-  );
+  });
 
   assert.equal(translated[0].name, "Goblin IT");
   assert.equal(translated[0].prototypeToken.name, "Goblin IT");
 });
 
 test("sceneRegions translates supported behavior text fields and ignores script source", () => {
+  game.babele = new Babel();
+  const sceneContext = new MappedCompendium({
+    id: "test.scenes",
+    name: "scenes",
+    type: "Scene",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
   const regions = [
     {
       _id: "region-1",
@@ -806,10 +1327,8 @@ test("sceneRegions translates supported behavior text fields and ignores script 
         },
         "behavior-2": {
           name: "Portale",
-          dialog: {
-            revealed: "Attraversare?",
-            unrevealed: "Entrare nella nebbia?",
-          },
+          revealedDialog: "Attraversare?",
+          unrevealedDialog: "Entrare nella nebbia?",
         },
         "behavior-3": {
           name: "Automazione",
@@ -817,7 +1336,7 @@ test("sceneRegions translates supported behavior text fields and ignores script 
         },
       },
     },
-  });
+  }, {_id: "scene-1", name: "Scene"}, sceneContext);
 
   assert.equal(translated[0].name, "Corridoio infestato");
   assert.equal(translated[0].behaviors[0].name, "Avviso");
@@ -830,6 +1349,14 @@ test("sceneRegions translates supported behavior text fields and ignores script 
 });
 
 test("sceneRegions.extract exports supported behavior text fields only", () => {
+  game.babele = new Babel();
+  const sceneContext = new MappedCompendium({
+    id: "test.scenes",
+    name: "scenes",
+    type: "Scene",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
   const extracted = Converters.sceneRegions().extract([
     {
       _id: "region-1",
@@ -868,7 +1395,7 @@ test("sceneRegions.extract exports supported behavior text fields only", () => {
         },
       ],
     },
-  ]);
+  ], {_id: "scene-1", name: "Scene"}, sceneContext);
 
   assert.deepEqual(extracted, {
     "Haunted Hall": {
@@ -880,10 +1407,8 @@ test("sceneRegions.extract exports supported behavior text fields only", () => {
         },
         Portal: {
           name: "Portal",
-          dialog: {
-            revealed: "Step through?",
-            unrevealed: "Enter the mist?",
-          },
+          revealedDialog: "Step through?",
+          unrevealedDialog: "Enter the mist?",
         },
         Automation: {
           name: "Automation",

@@ -85,6 +85,24 @@ export class MappedCompendium {
     }
 
     /**
+     * Return the folder-translation payload owned by this compendium.
+     *
+     * Normal compendiums expose folder translations through the `folders`
+     * property of their translation file. Synthetic `_packs-folders`
+     * collections instead expose folder names through `entries`, because they
+     * do not contain document entries at all.
+     *
+     * @returns {object}
+     */
+    folderTranslations() {
+        if (this.metadata?.name === "_packs-folders") {
+            return this.translations ?? {};
+        }
+
+        return this.folders ?? {};
+    }
+
+    /**
      * Determine whether this compendium can provide a translation for the
      * given document. This is narrower than the `translated` pack state: a
      * pack may be marked as translated and still have no matching entry for a

@@ -15,6 +15,7 @@ import {PackFoldersExport} from "./export/pack-folders-export.js";
 import {TranslationExport} from "./export/translation-export.js";
 import {FolderTranslations} from "./compendium/folder-translations.js";
 import {MappedCompendiums} from "./compendium/mapped-compendiums.js";
+import {PackFolderTranslationRegistry} from "./compendium/pack-folder-translation-registry.js";
 import {ConverterRegistry} from "./converter/converter-registry.js";
 import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
 import {TranslationRegistry} from "./translation/translation-registry.js";
@@ -109,6 +110,7 @@ class Babel {
     constructor() {
         this.translations = null;
         this.mappedCompendiums = null;
+        this.packFolderTranslations = null;
         this.folders = null;
         this.#initialized = null;
         this.#dataLoaded = false;
@@ -124,6 +126,7 @@ class Babel {
         this.#catalog = new CompendiumCatalog();
         this.#folderTranslations = new FolderTranslations({
             mappedCompendiums: () => this.mappedCompendiums,
+            packFolderTranslations: () => this.packFolderTranslations,
             catalog: this.#catalog,
         });
         this.#translationRegistry = new TranslationRegistry();
@@ -435,6 +438,7 @@ class Babel {
      * @returns {Promise<{
      *   translations: import("./translation/compendium-translations.js").CompendiumTranslations,
      *   mappedCompendiums: import("./compendium/mapped-compendiums.js").MappedCompendiums,
+     *   packFolderTranslations: import("./compendium/pack-folder-translation-registry.js").PackFolderTranslationRegistry,
      *   documentMappings: import("./mapping/document-mappings.js").DocumentMappings,
      *   folders: object[]|null
      * }>}
@@ -452,10 +456,14 @@ class Babel {
                 translations,
                 translationStrategies: this.translationMatchStrategies(),
             }).load();
+            const packFolderTranslations = await new PackFolderTranslationRegistry({
+                translations,
+            }).load();
 
             return {
                 translations,
                 mappedCompendiums,
+                packFolderTranslations,
                 documentMappings,
                 folders: game.data.folders,
             };
@@ -472,6 +480,7 @@ class Babel {
      * @param {object} state
      * @param {import("./translation/compendium-translations.js").CompendiumTranslations} state.translations
      * @param {import("./compendium/mapped-compendiums.js").MappedCompendiums} state.mappedCompendiums
+     * @param {import("./compendium/pack-folder-translation-registry.js").PackFolderTranslationRegistry} state.packFolderTranslations
      * @param {import("./mapping/document-mappings.js").DocumentMappings} state.documentMappings
      * @param {object[]|null} [state.folders]
      * @param {object} [options]
@@ -736,9 +745,10 @@ class Babel {
         this.#folderTranslations.translateSystemPackFolders();
     }
 
-    #applyRuntimeState({translations, mappedCompendiums, documentMappings, folders = null}) {
+    #applyRuntimeState({translations, mappedCompendiums, packFolderTranslations, documentMappings, folders = null}) {
         this.translations = translations;
         this.mappedCompendiums = mappedCompendiums ?? null;
+        this.packFolderTranslations = packFolderTranslations ?? null;
         this.folders = folders;
         this.documentMappings = documentMappings ?? this.documentMappings;
         this.documentMappings.publish();

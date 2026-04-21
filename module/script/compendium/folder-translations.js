@@ -12,11 +12,15 @@ export class FolderTranslations {
 
     constructor({
         mappedCompendiums = null,
+        packFolderTranslations = null,
         catalog,
     } = {}) {
         this._mappedCompendiums = typeof mappedCompendiums === "function"
             ? mappedCompendiums
             : () => mappedCompendiums;
+        this._packFolderTranslations = typeof packFolderTranslations === "function"
+            ? packFolderTranslations
+            : () => packFolderTranslations;
         this.catalog = catalog;
     }
 
@@ -26,7 +30,7 @@ export class FolderTranslations {
         }
 
         const collection = pack?.collection ?? pack?.metadata?.id ?? null;
-        const translations = this.#mappedCompendiumFor(collection)?.folders ?? [];
+        const translations = this.#folderTranslationsFor(collection);
 
         pack.folders.forEach((folder) => {
             const originalName = folder.originalName ?? folder.name;
@@ -49,7 +53,7 @@ export class FolderTranslations {
             return;
         }
 
-        const translations = this.#mappedCompendiumFor(sourceCollection)?.folders ?? [];
+        const translations = this.#folderTranslationsFor(sourceCollection);
         const originalName = folder.originalName ?? folder.name;
         const translatedName = translations[originalName];
 
@@ -70,10 +74,8 @@ export class FolderTranslations {
 
         const translations = {};
 
-        (this.#mappedCompendiums()?.matching?.(
-            (pack) => pack?.metadata?.name === FolderTranslations.FOLDER_TRANSLATION_NAME,
-        ) ?? [])
-            .forEach((pack) => Object.assign(translations, pack.translations ?? {}, pack.folders ?? {}));
+        (this.#packFolderTranslations()?.values?.() ?? [])
+            .forEach((pack) => Object.assign(translations, pack.translations()));
 
         game.collections.get("Folder").forEach((folder) => {
             const originalName = folder.originalName ?? folder.name;
@@ -123,6 +125,30 @@ export class FolderTranslations {
         }
 
         return this.#mappedCompendiums()?.get?.(collection) ?? null;
+    }
+
+    #folderTranslationsFor(collection) {
+        return this.#folderTranslationsPayload(this.#mappedCompendiumFor(collection));
+    }
+
+    #folderTranslationsPayload(compendium) {
+        if (!compendium) {
+            return {};
+        }
+
+        if (typeof compendium.folderTranslations === "function") {
+            return compendium.folderTranslations();
+        }
+
+        if (compendium?.metadata?.name === FolderTranslations.FOLDER_TRANSLATION_NAME) {
+            return compendium.entries ?? compendium.translations ?? {};
+        }
+
+        return compendium.folders ?? {};
+    }
+
+    #packFolderTranslations() {
+        return this._packFolderTranslations?.() ?? null;
     }
 
     #mappedCompendiums() {

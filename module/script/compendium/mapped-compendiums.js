@@ -4,12 +4,9 @@ import {MappedCompendium} from "./mapped-compendium.js";
  * Aggregate of Babele-managed compendiums.
  *
  * This object owns the registry of `MappedCompendium` instances materialized
- * for the current runtime state, including synthetic `_packs-folders`
- * compendiums when their translation payloads exist.
+ * for the current runtime state.
  */
 export class MappedCompendiums {
-
-    static FOLDER_TRANSLATION_NAME = "_packs-folders";
 
     /**
      * @param {object} options
@@ -35,9 +32,6 @@ export class MappedCompendiums {
 
     /**
      * Materialize all managed compendiums visible in the current Foundry data
-     * plus synthetic `_packs-folders` payloads present in the loaded
-     * translations aggregate.
-     *
      * @returns {Promise<MappedCompendiums>}
      */
     async load() {
@@ -143,13 +137,6 @@ export class MappedCompendiums {
             this.#register(metadata, this.translations?.for?.(this.catalog.collectionOf(metadata)) ?? null);
         }
 
-        for (const translation of this.translations?.values?.() ?? []) {
-            if (!this.#isFolderTranslationCollection(translation.collection)) {
-                continue;
-            }
-
-            this.#register(this.#folderTranslationMetadata(translation.collection), translation);
-        }
     }
 
     #register(metadata, translation = null) {
@@ -166,18 +153,4 @@ export class MappedCompendiums {
         return compendium;
     }
 
-    #isFolderTranslationCollection(collection) {
-        return String(collection ?? "").endsWith(`.${MappedCompendiums.FOLDER_TRANSLATION_NAME}`);
-    }
-
-    #folderTranslationMetadata(collection) {
-        const [packageName] = String(collection).split(".");
-
-        return {
-            packageType: "system",
-            type: "Folder",
-            packageName,
-            name: MappedCompendiums.FOLDER_TRANSLATION_NAME,
-        };
-    }
 }

@@ -48,3 +48,27 @@ export function assignMappedCompendiums(babele, entries = []) {
   babele.mappedCompendiums = mappedCompendiums;
   return mappedCompendiums;
 }
+
+export function mockPackFolderTranslations(entries = []) {
+  const packs = new foundry.utils.Collection(entries);
+
+  return {
+    get(collection) {
+      return packs.get(collection) ?? null;
+    },
+
+    values() {
+      return packs.values();
+    },
+
+    matching(predicate) {
+      return [...packs.values()].filter(predicate);
+    },
+  };
+}
+
+export function assignPackFolderTranslations(babele, entries = []) {
+  const packFolderTranslations = mockPackFolderTranslations(entries);
+  babele.packFolderTranslations = packFolderTranslations;
+  return packFolderTranslations;
+}

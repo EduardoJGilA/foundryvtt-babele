@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {installFoundryStubs} from "./helpers/foundry-stubs.js";
-import {assignMappedCompendiums} from "./helpers/mapped-compendiums.js";
+import {assignMappedCompendiums, assignPackFolderTranslations} from "./helpers/mapped-compendiums.js";
 
 installFoundryStubs();
 
@@ -390,17 +390,14 @@ test("Babel.translateSystemPackFolders uses special _packs-folders translations 
     {name: "Rules"},
   ];
 
-  assignMappedCompendiums(babele, [[
+  assignPackFolderTranslations(babele, [[
     "test-system._packs-folders",
     {
-      metadata: {
-        name: "_packs-folders",
-      },
-      translations: {
-        Bestiary: "Bestiario",
-      },
-      folders: {
-        Rules: "Regole",
+      translations() {
+        return {
+          Bestiary: "Bestiario",
+          Rules: "Regole",
+        };
       },
     },
   ]]);

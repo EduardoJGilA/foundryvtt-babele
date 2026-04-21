@@ -7,9 +7,10 @@ installFoundryStubs();
 const {default: Babel} = await import("../module/script/babele.js");
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
 const {MappedCompendiums} = await import("../module/script/compendium/mapped-compendiums.js");
+const {PackFolderTranslationRegistry} = await import("../module/script/compendium/pack-folder-translation-registry.js");
 const {CompendiumCatalog} = await import("../module/script/compendium/compendium-catalog.js");
 
-test("MappedCompendiums loads supported packs and synthetic _packs-folders payloads", async () => {
+test("MappedCompendiums loads only supported compendium packs", async () => {
   const babele = new Babel();
   const catalog = new CompendiumCatalog();
 
@@ -69,5 +70,24 @@ test("MappedCompendiums loads supported packs and synthetic _packs-folders paylo
   assert.equal(mappedCompendiums.get("test.items") instanceof MappedCompendium, true);
   assert.equal(mappedCompendiums.get("test.items").translated, true);
   assert.equal(mappedCompendiums.get("test.chat"), null);
-  assert.equal(mappedCompendiums.get("test._packs-folders") instanceof MappedCompendium, true);
+  assert.equal(mappedCompendiums.get("test._packs-folders"), null);
+});
+
+test("PackFolderTranslationRegistry loads synthetic _packs-folders payloads separately from compendiums", async () => {
+  const translations = {
+    values() {
+      return [{
+        collection: "test._packs-folders",
+        entries: {
+          Bestiary: "Bestiario",
+        },
+      }];
+    },
+  };
+
+  const registry = await new PackFolderTranslationRegistry({translations}).load();
+
+  assert.deepEqual(registry.get("test._packs-folders")?.translations(), {
+    Bestiary: "Bestiario",
+  });
 });

@@ -46,6 +46,14 @@
                 </label>
 
                 <label class="babele-export-option">
+                    <input type="radio" name="selection" value="source" {{#if isSource}}checked{{/if}}>
+                    <span class="babele-export-option__body">
+                        <span class="babele-export-option__label">{{texts.selectionSource}}</span>
+                        <small class="hint">{{counts.all}}</small>
+                    </span>
+                </label>
+
+                <label class="babele-export-option">
                     <input type="radio" name="selection" value="present" {{#if isPresent}}checked{{/if}} {{#unless hasPresentEntries}}disabled{{/unless}}>
                     <span class="babele-export-option__body">
                         <span class="babele-export-option__label">{{texts.selectionPresent}}</span>

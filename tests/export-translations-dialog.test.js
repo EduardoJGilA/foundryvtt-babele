@@ -37,6 +37,7 @@ test("ExportTranslationsDialog uses DialogV2 with compatible format as default",
   assert.equal(templateContext.hasTranslations, true);
   assert.equal(templateContext.isCompatible, true);
   assert.equal(templateContext.isAll, true);
+  assert.equal(templateContext.isSource, false);
   assert.deepEqual(templateContext.counts, {all: 12, present: 7, missing: 5});
   assert.equal(templateContext.hasPresentEntries, true);
   assert.equal(templateContext.hasMissingEntries, true);

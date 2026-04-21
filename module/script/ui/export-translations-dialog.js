@@ -63,6 +63,7 @@ export class ExportTranslationsDialog {
             isCompatible: format === "compatible",
             isLegacy: format === "legacy",
             isAll: selection === "all",
+            isSource: selection === "source",
             isPresent: selection === "present",
             isMissing: selection === "missing",
             hasPresentEntries: counts.present > 0,
@@ -89,14 +90,15 @@ export class ExportTranslationsDialog {
                 ),
                 translationFileDetectedHint: localizeWithFallback(
                     "BABELE.ExportTranslationFileDetectedHint",
-                    "Babele found a translation file matching this compendium. You can therefore choose whether to export all entries, only those already present in that file, or only the missing ones.",
+                    "Babele found a translation file matching this compendium. You can therefore choose whether to export all entries with current translated values, all source-language entries, only those already present in that file, or only the missing ones.",
                 ),
                 selection: localizeWithFallback("BABELE.ExportTranslationSelection", "Entries"),
                 selectionHint: localizeWithFallback(
                     "BABELE.ExportTranslationSelectionHint",
-                    "Choose whether to export all entries, only entries present in the translation file, or only entries missing from it.",
+                    "Choose whether to export all entries with current translated values, all source-language entries, only entries present in the translation file, or only entries missing from it.",
                 ),
                 selectionAll: localizeWithFallback("BABELE.ExportTranslationSelectionAll", "All Entries"),
+                selectionSource: localizeWithFallback("BABELE.ExportTranslationSelectionSource", "All Original Entries"),
                 selectionPresent: localizeWithFallback("BABELE.ExportTranslationSelectionPresent", "Entries Present in Translation File"),
                 selectionMissing: localizeWithFallback("BABELE.ExportTranslationSelectionMissing", "Entries Missing from Translation File"),
                 noTranslations: localizeWithFallback(

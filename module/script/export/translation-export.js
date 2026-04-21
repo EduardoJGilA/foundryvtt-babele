@@ -66,7 +66,7 @@ export class TranslationExport {
         const skippedDynamicFields = [];
 
         for (const {entity, sourceData, hasTranslation} of exportEntries) {
-            const exportedData = this.#payloadData(sourceData, hasTranslation, mappedCompendium);
+            const exportedData = this.#payloadData(sourceData, hasTranslation, mappedCompendium, selection);
             const name = this.#entryName(entity, exportedData, sourceData);
 
             if (!this.#shouldInclude(selection, hasTranslation)) {
@@ -169,6 +169,10 @@ export class TranslationExport {
     }
 
     #normalizedSelection(selection) {
+        if (selection === "source" || selection === "original") {
+            return "source";
+        }
+
         if (selection === "present" || selection === "translated") {
             return "present";
         }
@@ -276,7 +280,11 @@ export class TranslationExport {
         return true;
     }
 
-    #payloadData(sourceData, hasTranslation, mappedCompendium) {
+    #payloadData(sourceData, hasTranslation, mappedCompendium, selection) {
+        if (selection === "source") {
+            return sourceData;
+        }
+
         if (!hasTranslation) {
             return sourceData;
         }

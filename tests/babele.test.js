@@ -825,6 +825,7 @@ test("Babel.exportDataFor exports present and missing entries according to selec
   ]]);
 
   const allEntries = await babele.exportDataFor(pack, {format: "compatible", selection: "all"});
+  const sourceOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "source"});
   const presentOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "present"});
   const missingOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "missing"});
 
@@ -832,6 +833,16 @@ test("Babel.exportDataFor exports present and missing entries according to selec
     Sword: {
       name: "Spada",
       description: "Descrizione tradotta",
+    },
+    Shield: {
+      name: "Shield",
+      description: "Original shield",
+    },
+  });
+  assert.deepEqual(sourceOnly.entries, {
+    Sword: {
+      name: "Sword",
+      description: "Original sword",
     },
     Shield: {
       name: "Shield",

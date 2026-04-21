@@ -76,6 +76,28 @@ test("BabeleUiBridge adds a single ApplicationV2 compendium export control", () 
   assert.equal(controls[0].action, "babele-export-translations");
 });
 
+test("BabeleUiBridge injects a single compendium-directory export button", () => {
+  const bridge = new BabeleUiBridge();
+  const root = new FakeElement("section");
+  const header = root.appendChild(new FakeElement("div"));
+  header.className = "header-actions action-buttons";
+
+  let calls = 0;
+  game.user.isGM = true;
+  game.settings.get = (_namespace, key) => key === "export";
+  game.babele.exportPackFoldersFile = () => { calls += 1; };
+
+  bridge.extendCompendiumDirectoryControls({}, root);
+  bridge.extendCompendiumDirectoryControls({}, root);
+
+  const buttons = root.querySelectorAll(".babele-export-pack-folders");
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].dataset.action, "babele-export-pack-folders");
+
+  buttons[0].listeners.get("click")();
+  assert.equal(calls, 1);
+});
+
 test("BabeleUiBridge decorates compendium entries by entry id without duplicating original-name labels", () => {
   const bridge = new BabeleUiBridge();
   const {root, list} = createCompendiumRoot();

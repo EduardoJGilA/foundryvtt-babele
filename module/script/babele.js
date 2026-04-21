@@ -11,6 +11,7 @@ import {LookupConverter} from "./converter/lookup-converter.js";
 import {TokenizedLookupConverter} from "./converter/tokenized-lookup-converter.js";
 import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
 import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
+import {PackFoldersExport} from "./export/pack-folders-export.js";
 import {TranslationExport} from "./export/translation-export.js";
 import {FolderTranslations} from "./compendium/folder-translations.js";
 import {MappedCompendiums} from "./compendium/mapped-compendiums.js";
@@ -662,6 +663,26 @@ class Babel {
      */
     async exportDataFor(pack, options = {}) {
         return new TranslationExport(this, pack).data(options);
+    }
+
+    /**
+     * Export synthetic package-scoped `_packs-folders` starter files.
+     *
+     * @returns {Promise<void>}
+     */
+    async exportPackFoldersFile() {
+        return new PackFoldersExport(this).download();
+    }
+
+    /**
+     * Produce raw synthetic `_packs-folders` export payloads without
+     * downloading them.
+     *
+     * @param {object} [options]
+     * @returns {Array<object>}
+     */
+    exportPackFoldersData(options = {}) {
+        return new PackFoldersExport(this).data(options);
     }
 
     /**

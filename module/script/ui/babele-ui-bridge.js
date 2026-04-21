@@ -10,6 +10,7 @@ export class BabeleUiBridge {
         Hooks.on("getActorSheetHeaderButtons", (app, buttons) => this.extendLegacyActorSheetHeaderButtons(app, buttons));
         Hooks.on("getHeaderControlsActorSheetV2", (sheet, controls) => this.extendActorSheetHeaderControls(sheet, controls));
         Hooks.on("getHeaderControlsCompendium", (app, controls) => this.extendCompendiumHeaderControls(app, controls));
+        Hooks.on("renderCompendiumDirectory", (app, html) => this.extendCompendiumDirectoryControls(app, html));
         Hooks.on("renderCompendium", (app, html, data) => this.renderCompendium(app, html, data));
     }
 
@@ -102,6 +103,45 @@ export class BabeleUiBridge {
             label: game.i18n.localize("BABELE.CompendiumTranslations"),
             onClick: () => game.babele.exportTranslationsFile(app.collection),
         });
+    }
+
+    /**
+     * Inject a compendium-directory level export control for synthetic
+     * `_packs-folders` starter files.
+     *
+     * @param {ApplicationV2} app
+     * @param {HTMLElement|jQuery} html
+     */
+    extendCompendiumDirectoryControls(app, html) {
+        if (!this.#canExportCompendium()) {
+            return;
+        }
+
+        const root = this.#element(html);
+        const actions = root?.querySelector?.(".header-actions");
+        if (!actions) {
+            return;
+        }
+
+        if (actions.querySelector(".babele-export-pack-folders")) {
+            return;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "babele-export-pack-folders";
+        button.dataset.action = "babele-export-pack-folders";
+
+        const icon = document.createElement("i");
+        icon.className = "fas fa-folder-tree";
+        button.appendChild(icon);
+
+        const label = document.createElement("span");
+        label.textContent = game.i18n.localize("BABELE.ExportPackFoldersBtn");
+        button.appendChild(label);
+
+        button.addEventListener("click", () => game.babele.exportPackFoldersFile(app));
+        actions.appendChild(button);
     }
 
     /**

@@ -118,6 +118,41 @@ test("DocumentMapping.extract omits lookup-backed fields because they do not exp
   });
 });
 
+test("DocumentMapping.extract omits tokenizedLookup-backed fields because they do not export translation payload", () => {
+  const babele = new Babel();
+  const mapping = new DocumentMapping("Actor", {
+    name: "name",
+    languages: {
+      path: "system.traits.languages.custom",
+      converter: "tokenizedLookup",
+      delimiter: "; ",
+      normalize: "trim-lowercase",
+      values: {
+        common: "Comune",
+        draconic: "Draconico",
+      },
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: babele.converterRegistry,
+  });
+  const data = {
+    _id: "actor-1",
+    name: "Cultist",
+    system: {
+      traits: {
+        languages: {
+          custom: "Common; Draconic",
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(mapping.extract(data), {
+    name: "Cultist",
+  });
+});
+
 test("DocumentMappingHierarchy resolves subtype mappings as an inheritance-like hierarchy", () => {
   const mappings = new DocumentMappings({
     Item: {

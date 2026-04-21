@@ -136,6 +136,103 @@ test("FieldMapping.extract skips lookup-backed fields because they are mapping-d
   assert.equal(mapping.extract(data), undefined);
 });
 
+test("FieldMapping.map translates tokenizedLookup-backed fields through inline values", () => {
+  const babele = new Babel();
+  const registry = new ConverterRegistry({
+    tokenizedLookup: babele.converterRegistry.named("tokenizedLookup"),
+  });
+  const mapping = new FieldMapping("languages", {
+    path: "system.traits.languages.custom",
+    converter: "tokenizedLookup",
+    delimiter: "; ",
+    normalize: "trim-lowercase",
+    values: {
+      common: "Comune",
+      draconic: "Draconico",
+    },
+  }, registry);
+  const data = {
+    system: {
+      traits: {
+        languages: {
+          custom: "Common; Draconic",
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(mapping.map(data, {}), {
+    system: {
+      traits: {
+        languages: {
+          custom: "Comune; Draconico",
+        },
+      },
+    },
+  });
+});
+
+test("FieldMapping.map tokenizedLookup keeps unknown tokens unchanged", () => {
+  const babele = new Babel();
+  const registry = new ConverterRegistry({
+    tokenizedLookup: babele.converterRegistry.named("tokenizedLookup"),
+  });
+  const mapping = new FieldMapping("languages", {
+    path: "system.traits.languages.custom",
+    converter: "tokenizedLookup",
+    delimiter: "; ",
+    normalize: "trim-lowercase",
+    values: {
+      common: "Comune",
+    },
+  }, registry);
+  const data = {
+    system: {
+      traits: {
+        languages: {
+          custom: "Common; Deep Speech",
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(mapping.map(data, {}), {
+    system: {
+      traits: {
+        languages: {
+          custom: "Comune; Deep Speech",
+        },
+      },
+    },
+  });
+});
+
+test("FieldMapping.extract skips tokenizedLookup-backed fields because they are mapping-defined", () => {
+  const babele = new Babel();
+  const registry = new ConverterRegistry({
+    tokenizedLookup: babele.converterRegistry.named("tokenizedLookup"),
+  });
+  const mapping = new FieldMapping("languages", {
+    path: "system.traits.languages.custom",
+    converter: "tokenizedLookup",
+    delimiter: "; ",
+    values: {
+      Common: "Comune",
+    },
+  }, registry);
+  const data = {
+    system: {
+      traits: {
+        languages: {
+          custom: "Common; Draconic",
+        },
+      },
+    },
+  };
+
+  assert.equal(mapping.extract(data), undefined);
+});
+
 test("FieldMapping.map warns and fails open when the mapped path does not exist", () => {
   const mapping = new FieldMapping("description", "system.description.value", null);
   const data = {

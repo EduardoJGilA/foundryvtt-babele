@@ -133,14 +133,14 @@ export class BabeleUiBridge {
         button.dataset.action = "babele-export-pack-folders";
 
         const icon = document.createElement("i");
-        icon.className = "fas fa-folder-tree";
+        icon.className = "fas fa-globe";
         button.appendChild(icon);
 
         const label = document.createElement("span");
-        label.textContent = game.i18n.localize("BABELE.ExportPackFoldersBtn");
+        label.textContent = game.i18n.localize("BABELE.ExportDirectoryBtn");
         button.appendChild(label);
 
-        button.addEventListener("click", () => game.babele.exportPackFoldersFile(app));
+        button.addEventListener("click", () => game.babele.exportDirectoryTranslations(app));
         actions.appendChild(button);
     }
 

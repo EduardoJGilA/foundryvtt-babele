@@ -43,9 +43,9 @@ export class PackFoldersExport {
     }
 
     data(options = {}) {
-        const selection = this.#normalizedSelection(options.selection);
+        const packageIds = this.#normalizedPackageIds(options);
         return this.#packagePayloads()
-            .filter((entry) => selection === "all" || entry.packageId === selection)
+            .filter((entry) => packageIds === "all" || packageIds.includes(entry.packageId))
             .map((entry) => ({
                 packageId: entry.packageId,
                 name: `${entry.packageId}.${PackFoldersExport.FILE_SUFFIX}`,
@@ -63,8 +63,18 @@ export class PackFoldersExport {
         }));
     }
 
-    #normalizedSelection(selection) {
-        return typeof selection === "string" && selection ? selection : "all";
+    #normalizedPackageIds(options = {}) {
+        if (Array.isArray(options.packageIds)) {
+            const ids = options.packageIds.filter(Boolean);
+            return ids.length ? ids : [];
+        }
+
+        const selection = options.selection;
+        if (typeof selection === "string" && selection && selection !== "all") {
+            return [selection];
+        }
+
+        return "all";
     }
 
     #packagePayloads() {

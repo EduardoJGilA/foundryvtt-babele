@@ -85,7 +85,7 @@ test("BabeleUiBridge injects a single compendium-directory export button", () =>
   let calls = 0;
   game.user.isGM = true;
   game.settings.get = (_namespace, key) => key === "export";
-  game.babele.exportPackFoldersFile = () => { calls += 1; };
+  game.babele.exportDirectoryTranslations = () => { calls += 1; };
 
   bridge.extendCompendiumDirectoryControls({}, root);
   bridge.extendCompendiumDirectoryControls({}, root);

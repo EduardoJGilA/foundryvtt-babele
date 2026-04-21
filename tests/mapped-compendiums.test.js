@@ -7,7 +7,7 @@ installFoundryStubs();
 const {default: Babel} = await import("../module/script/babele.js");
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
 const {MappedCompendiums} = await import("../module/script/compendium/mapped-compendiums.js");
-const {PackFolderTranslationRegistry} = await import("../module/script/compendium/pack-folder-translation-registry.js");
+const {PackFolderTranslationRegistry} = await import("../module/script/translation/pack-folder-translation-registry.js");
 const {CompendiumCatalog} = await import("../module/script/compendium/compendium-catalog.js");
 
 test("MappedCompendiums loads only supported compendium packs", async () => {

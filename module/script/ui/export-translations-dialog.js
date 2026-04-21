@@ -98,7 +98,15 @@ export class ExportTranslationsDialog {
                     "Choose whether to export all entries with current translated values, all source-language entries, only entries present in the translation file, or only entries missing from it.",
                 ),
                 selectionAll: localizeWithFallback("BABELE.ExportTranslationSelectionAll", "All Entries"),
+                selectionAllHint: localizeWithFallback(
+                    "BABELE.ExportTranslationSelectionAllHint",
+                    "Export both entries already present in the translation file and entries still missing from it.",
+                ),
                 selectionSource: localizeWithFallback("BABELE.ExportTranslationSelectionSource", "All Original Entries"),
+                selectionSourceHint: localizeWithFallback(
+                    "BABELE.ExportTranslationSelectionSourceHint",
+                    "Export every entry using the current source-language values only.",
+                ),
                 selectionPresent: localizeWithFallback("BABELE.ExportTranslationSelectionPresent", "Entries Present in Translation File"),
                 selectionMissing: localizeWithFallback("BABELE.ExportTranslationSelectionMissing", "Entries Missing from Translation File"),
                 noTranslations: localizeWithFallback(

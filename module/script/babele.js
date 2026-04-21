@@ -12,12 +12,13 @@ import {TokenizedLookupConverter} from "./converter/tokenized-lookup-converter.j
 import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
 import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
 import {PackFoldersExport} from "./export/pack-folders-export.js";
+import {DirectoryExport} from "./export/directory-export.js";
 import {TranslationExport} from "./export/translation-export.js";
 import {FolderTranslations} from "./compendium/folder-translations.js";
 import {MappedCompendiums} from "./compendium/mapped-compendiums.js";
-import {PackFolderTranslationRegistry} from "./compendium/pack-folder-translation-registry.js";
 import {ConverterRegistry} from "./converter/converter-registry.js";
 import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
+import {PackFolderTranslationRegistry} from "./translation/pack-folder-translation-registry.js";
 import {TranslationRegistry} from "./translation/translation-registry.js";
 
 /****************
@@ -438,7 +439,7 @@ class Babel {
      * @returns {Promise<{
      *   translations: import("./translation/compendium-translations.js").CompendiumTranslations,
      *   mappedCompendiums: import("./compendium/mapped-compendiums.js").MappedCompendiums,
-     *   packFolderTranslations: import("./compendium/pack-folder-translation-registry.js").PackFolderTranslationRegistry,
+     *   packFolderTranslations: import("./translation/pack-folder-translation-registry.js").PackFolderTranslationRegistry,
      *   documentMappings: import("./mapping/document-mappings.js").DocumentMappings,
      *   folders: object[]|null
      * }>}
@@ -480,7 +481,7 @@ class Babel {
      * @param {object} state
      * @param {import("./translation/compendium-translations.js").CompendiumTranslations} state.translations
      * @param {import("./compendium/mapped-compendiums.js").MappedCompendiums} state.mappedCompendiums
-     * @param {import("./compendium/pack-folder-translation-registry.js").PackFolderTranslationRegistry} state.packFolderTranslations
+     * @param {import("./translation/pack-folder-translation-registry.js").PackFolderTranslationRegistry} state.packFolderTranslations
      * @param {import("./mapping/document-mappings.js").DocumentMappings} state.documentMappings
      * @param {object[]|null} [state.folders]
      * @param {object} [options]
@@ -692,6 +693,29 @@ class Babel {
      */
     exportPackFoldersData(options = {}) {
         return new PackFoldersExport(this).data(options);
+    }
+
+    /**
+     * Export translation starter files from the compendium directory.
+     *
+     * This global flow can include synthetic `_packs-folders` files, bulk
+     * compendium exports, or both in the same zip.
+     *
+     * @returns {Promise<void>}
+     */
+    async exportDirectoryTranslations() {
+        return new DirectoryExport(this).download();
+    }
+
+    /**
+     * Produce raw compendium-directory export payloads without downloading
+     * them.
+     *
+     * @param {object} [options]
+     * @returns {Promise<Array<object>>}
+     */
+    async exportDirectoryData(options = {}) {
+        return new DirectoryExport(this).data(options);
     }
 
     /**

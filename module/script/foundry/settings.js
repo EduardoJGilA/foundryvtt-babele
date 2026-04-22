@@ -9,8 +9,12 @@ export function registerModuleSettings() {
         config: true,
         filePicker: "folder",
         default: '',
-        onChange: directory => {
-            window.location.reload();
+        onChange: () => {
+            if (!game.user.isGM) {
+                return;
+            }
+
+            void game.babele?.refreshTranslationSources?.();
         }
     });
 
@@ -41,10 +45,43 @@ export function registerModuleSettings() {
         default: true
     });
 
+    game.settings.register('babele', 'warnMissingPaths', {
+        name: game.i18n.localize("BABELE.WarnMissingPaths"),
+        hint: game.i18n.localize("BABELE.WarnMissingPathsHint"),
+        scope: 'client',
+        type: Boolean,
+        config: true,
+        default: false
+    });
+
     game.settings.register('babele', 'translationFiles', {
         type: Array,
         default: [],
         scope: 'world',
         config: false
+    });
+
+    game.settings.register('babele', 'mappingFiles', {
+        type: Array,
+        default: [],
+        scope: 'world',
+        config: false
+    });
+
+    game.settings.register('babele', 'sourcesRevision', {
+        type: Number,
+        default: 0,
+        scope: 'world',
+        config: false,
+        onChange: () => {
+            if (game.user.isGM) {
+                return;
+            }
+
+            void game.babele?.reinitialize?.({
+                shareSources: false,
+                notify: true,
+            });
+        },
     });
 }

@@ -69,7 +69,7 @@ test("buildFoundryReleasePayload mirrors manifest compatibility and notes URL", 
       manifest: "https://gitlab.com/example/-/jobs/artifacts/2.7.8/raw/module/module.json?job=build",
       compatibility: {
         minimum: 13,
-        verified: "13.351",
+        verified: "14",
       },
     },
     notesUrl: "https://gitlab.com/example/-/releases/2.7.8",
@@ -82,6 +82,6 @@ test("buildFoundryReleasePayload mirrors manifest compatibility and notes URL", 
   assert.equal(payload.release.notes, "https://gitlab.com/example/-/releases/2.7.8");
   assert.deepEqual(payload.release.compatibility, {
     minimum: 13,
-    verified: "13.351",
+    verified: "14",
   });
 });

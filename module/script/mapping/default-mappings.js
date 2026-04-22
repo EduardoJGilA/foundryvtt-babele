@@ -71,6 +71,10 @@ export const defaultMappings = {
             "converter": "name"
         }
     },
+    "ActiveEffect": {
+        "name": "name",
+        "description": "description"
+    },
     "Cards": {
         "name": "name",
         "description": "description",

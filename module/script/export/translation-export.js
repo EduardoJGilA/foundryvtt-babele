@@ -326,11 +326,6 @@ export class TranslationExport {
 
         if (progress?.update) {
             progress.update({message, pct});
-            return;
-        }
-
-        if (typeof SceneNavigation?.displayProgressBar === "function") {
-            SceneNavigation.displayProgressBar({label: message, pct: pct * 100});
         }
     }
 

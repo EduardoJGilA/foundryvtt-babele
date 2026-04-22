@@ -90,6 +90,34 @@ test("DocumentMapping uses the default TableResult range identity when Babele re
   assert.deepEqual(mapping.matchKeyCandidates(document), ["result-1", "2-3"]);
 });
 
+test("DocumentMappings provides a conservative default mapping for ActiveEffect", () => {
+  game.babele = new Babel();
+
+  const mapping = game.babele.documentMappings.hierarchyFor("ActiveEffect").mappingFor();
+  const document = {
+    _id: "effect-1",
+    name: "Blessed",
+    description: "<p>Add 1d4 to attack rolls and saving throws.</p>",
+    statuses: ["blessed"],
+    duration: {
+      value: 10,
+      units: "rounds",
+    },
+    system: {
+      changes: [{
+        key: "system.bonuses.mwak.attack",
+        type: "add",
+        value: "1d4",
+      }],
+    },
+  };
+
+  assert.deepEqual(mapping.extract(document), {
+    name: "Blessed",
+    description: "<p>Add 1d4 to attack rolls and saving throws.</p>",
+  });
+});
+
 test("DocumentMapping.extract omits lookup-backed fields because they do not export translation payload", () => {
   const babele = new Babel();
   const mapping = new DocumentMapping("Item", {

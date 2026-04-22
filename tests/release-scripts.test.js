@@ -52,7 +52,7 @@ async function createReleaseFixture() {
     version: "2.7.8",
     compatibility: {
       minimum: 13,
-      verified: "13.351",
+      verified: "14",
     },
     manifest: "https://gitlab.example.com/babele/-/jobs/artifacts/2.7.8/raw/module/module.json?job=build",
     download: "https://gitlab.example.com/babele/-/jobs/artifacts/2.7.8/raw/babele.zip?job=build",

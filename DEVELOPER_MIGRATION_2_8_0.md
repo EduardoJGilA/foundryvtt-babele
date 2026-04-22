@@ -1,86 +1,87 @@
 # Developer Migration Notes for 2.8.0
 
-This document summarizes the API and contract changes introduced during the 2.8.0 refactor cycle.
+This document summarizes the architectural and API changes introduced during
+the 2.8.0 refactor cycle.
 
 It is intended for:
 
 - module developers integrating with `game.babele`
 - authors of custom converters
-- advanced users importing Babele classes directly from `module/script/*`
+- advanced users importing Babele internals from `module/script/*`
 
-This is a migration note, not end-user documentation.
+This is not end-user documentation. For usage documentation, refer to
+`doc.md`.
 
 ## Scope
 
-The main goals of the refactor were:
+The 2.8.0 cycle did more than add features. It also clarified the internal
+model around:
 
-- separate "mapped pack" concerns from "translated pack" concerns
-- make runtime pack visibility explicit
-- keep Adventure-local virtual packs scoped to the active translation flow
-- make nested translation logic rely on runtime context instead of ad hoc state
+- document mappings
+- translation entry matching
+- nested translation runtime scope
+- embedded document translation
+- translation source discovery and precedence
+- export flows
+- Foundry v13/v14 UI integration
 
-As a consequence, some names changed and some low-level contracts became more explicit.
+The practical consequence is that some historical concepts are no longer the
+canonical way to think about Babele internals.
 
-## Compatibility Summary
+## Important Boundary
 
-The following legacy imports still work through compatibility re-exports:
+`game.babele` is the supported facade.
 
-- `TranslatedCompendium` -> re-export of `MappedCompendium`
-- `CompendiumMapping` -> re-export of `DocumentMapping`
+Anything imported directly from `module/script/*` should be considered an
+advanced integration point. Internal classes are much cleaner and more coherent
+than before, but they are still internal implementation details unless they are
+explicitly exposed by the facade.
 
-This means older code may continue to run, but new code should migrate to the canonical names.
+If your integration can be written against `game.babele`, prefer that.
 
-## Renamed Classes
+## High-Level Design Changes
 
-### `TranslatedCompendium` -> `MappedCompendium`
+The main conceptual shifts are:
 
-Use:
+- Babele now reasons primarily in terms of `DocumentMapping`, not
+  "compendium mapping"
+- translation matching is owned by `TranslationEntries`
+- mapping layers are owned by `DocumentMappings`
+- nested translation visibility is owned by `CompendiumRuntime`
+- document-valued fields are handled by the built-in OO `DocumentConverter`
+- function-based converters are still supported, but they are normalized to the
+  internal converter contract through `FunctionalConverter`
 
-```js
-import {MappedCompendium} from "./module/script/mapped-compendium.js";
-```
+This means the old mental model of "a translated pack plus a few special-case
+converters" is no longer accurate.
 
-Legacy compatibility import:
+## Canonical Names and Imports
 
-```js
-import {TranslatedCompendium} from "./module/script/translated-compendium.js";
-```
+The canonical internal classes are now:
 
-Why this changed:
+- `module/script/compendium/mapped-compendium.js`
+- `module/script/mapping/document-mapping.js`
+- `module/script/mapping/document-mappings.js`
+- `module/script/translation/translation-entries.js`
+- `module/script/compendium/compendium-runtime.js`
+- `module/script/converter/document-converter.js`
+- `module/script/converter/functional-converter.js`
 
-- a managed compendium may now exist even when no translation file is available
-- the object represents mapping, extraction, translation, and reference resolution
-- "translated" is now a state of the compendium, not its whole identity
+Notably:
 
-Migration guidance:
+- `MappedCompendium` is the canonical compendium model
+- `DocumentMapping` is the canonical single-document-type mapping model
+- `DocumentMappings` is the aggregate of effective mapping layers
+- `TranslationEntries` is the canonical translation-entry matching object
 
-- if your code only needs packs that really have translations, keep using `translated` checks or `game.babele.translatedCompendiumFor(pack)`
-- if your code needs extraction or mapping support even without translations, use `MappedCompendium` or `game.babele.mappedCompendiumFor(pack)`
+Older names such as `TranslatedCompendium` and `CompendiumMapping` should now be
+treated as historical terminology, not as the current design center.
 
-### `CompendiumMapping` -> `DocumentMapping`
+## `game.babele` Facade Changes
 
-Use:
+### Mapped vs translated compendiums
 
-```js
-import {DocumentMapping} from "./module/script/document-mapping.js";
-```
-
-Legacy compatibility import:
-
-```js
-import {CompendiumMapping} from "./module/script/compendium-mapping.js";
-```
-
-Why this changed:
-
-- the object models the mapping for a Foundry `Document` type
-- it is not a container for an entire compendium
-
-## `game.babele` API Changes
-
-### New distinction: mapped vs translated compendiums
-
-`game.babele` now exposes two different retrieval semantics:
+`game.babele` now exposes two distinct retrieval semantics:
 
 ```js
 const mapped = game.babele.mappedCompendiumFor("dnd5e.items");
@@ -89,17 +90,21 @@ const translated = game.babele.translatedCompendiumFor("dnd5e.items");
 
 Behavior:
 
-- `mappedCompendiumFor(pack)` returns the managed compendium if Babele supports the pack type, even if it has no translation file
-- `translatedCompendiumFor(pack)` returns a compendium only if `compendium.translated === true`
+- `mappedCompendiumFor(pack)` returns the managed compendium when the pack type
+  is supported by Babele, even if no translation file exists
+- `translatedCompendiumFor(pack)` returns a compendium only when it has an
+  associated translation payload
 
-Migration guidance:
+Use:
 
-- use `mappedCompendiumFor(pack)` for extraction, mapping, field-level translation, and advanced inspection
-- use `translatedCompendiumFor(pack)` only when you explicitly require a loaded translation file
+- `mappedCompendiumFor(pack)` for extraction, mapping, field translation,
+  diagnostics, or advanced inspection
+- `translatedCompendiumFor(pack)` only when you explicitly require loaded
+  translations
 
-### Existing facade methods still exist
+### Existing facade methods remain available
 
-These methods remain available on `game.babele`:
+These methods still exist and delegate to the new internal model:
 
 - `translateIndex(index, pack)`
 - `isTranslated(pack)`
@@ -107,95 +112,309 @@ These methods remain available on `game.babele`:
 - `translateField(field, pack, data)`
 - `extract(pack, data, options)`
 - `extractField(pack, field, data)`
+- `translatedPackFor(documentType, data, options)`
+- `mappedCompendiumFor(pack)`
+- `translatedCompendiumFor(pack)`
 
-Important semantic note:
+### Registrations should happen before `init()`
 
-- `translate()` and `translateIndex()` still operate only on translated packs
-- `extract()` and `translateField()` delegate through the mapped compendium and therefore can work even when no translation file exists, as long as a mapping exists
+This is an important behavioral rule now documented more explicitly in the
+codebase.
 
-## Converter Contract Changes
+The following registration APIs are intended to be used before `init()`:
 
-This is the most important migration area for third-party code.
+- `registerConverter()`
+- `registerConverters()`
+- `registerTranslationMatchStrategy()`
+- `registerTranslationMatchStrategies()`
+- `registerIdentityExtractor()`
+- `registerIdentityExtractors()`
+- `registerMapping()`
+- `register()`
+- `setSystemTranslationsDir()`
 
-### Translation callback
+If these are called after initialization, they do not mutate the already-built
+runtime state in place. They affect the next full rebuild instead.
 
-The converter callback contract is now:
+This is deliberate: Babele now prefers rebuilding coherent state over mutating
+live state ad hoc.
+
+## Mapping Model Changes
+
+### `DocumentMapping` is the canonical unit
+
+The old mental model was often "a compendium mapping."
+
+The current model is:
+
+- a `DocumentMapping` describes how one `Document` type is translated and
+  exported
+- a `MappedCompendium` uses the appropriate `DocumentMapping` to translate the
+  documents it contains
+
+Example:
 
 ```js
-function converter(value, translation, data, tc, allTranslations, runtime) {
-  // return translated value
-}
+const hierarchy = game.babele.documentMappings.hierarchyFor("Item");
+const mapping = hierarchy.mappingFor({type: "weapon"});
 ```
 
-Notes:
+### `entityType` became `documentType`
 
-- `runtime` is the authoritative execution context
-- `tc` is retained for backward compatibility
-- new internal code should prefer `runtime.currentCompendium()` over `tc`
+This is a naming correction throughout the design.
 
-Recommended pattern:
+When adapting old code, rename mental models and variable names accordingly:
+
+- `entityType` -> `documentType`
+
+### `DocumentMappings` owns mapping layers
+
+`DocumentMappings` is now the aggregate responsible for effective mapping
+precedence.
+
+Its layer order is:
+
+1. built-in default mappings
+2. mappings registered through the public API
+3. mappings loaded from discovered mapping files
+
+Implications:
+
+- mapping precedence no longer needs to be reimplemented outside the aggregate
+- `Babel.DEFAULT_MAPPINGS` should be considered a compatibility view only
+- advanced code should prefer the live aggregate owned by `game.babele`
+
+### Subtype mappings are modeled as hierarchy
+
+Subtype-specific mappings such as `Item.weapon` are now better understood as a
+hierarchy-like refinement of the base document mapping.
+
+Use:
 
 ```js
-function converter(value, translation, data, tc, allTranslations, runtime = {}) {
-  const current = runtime.currentCompendium?.() ?? tc;
-  return current?.translateField("name", data, runtime) ?? value;
-}
+const mapping = game.babele.documentMappings
+  .hierarchyFor("Item")
+  .mappingFor({type: "weapon"});
 ```
 
-### Extraction callback
+This replaces older, flatter mental models where subtype handling looked like a
+special case layered on top of generic mapping lookup.
 
-Dynamic converter extraction now receives a fourth argument with metadata and runtime:
+## Translation Matching Changes
+
+### `TranslationEntries` owns matching
+
+Translation entry normalization and matching are now owned by
+`TranslationEntries`.
+
+That object is responsible for:
+
+- normalizing compatible/object payloads
+- normalizing legacy array payloads
+- generating candidate keys
+- applying custom strategies
+- applying the built-in `_id` / `name` / `sourceId` fallback order
+
+This is a major design change.
+
+Matching logic should no longer be spread across compendium classes, converters,
+or ad hoc utilities.
+
+### Custom match strategies are now first-class
+
+Developers can register custom translation match strategies through the facade:
 
 ```js
-converter.extract(value, data, tc, {
-  field,
-  path,
-  mapping,
-  runtime,
+game.babele.registerTranslationMatchStrategy({
+  name: "my-strategy",
+  keyFor(data, context) {
+    return null;
+  },
+  matches(data, key, entry, context) {
+    return false;
+  },
 });
 ```
 
-This replaces the old informal pattern where extraction only received the value and parent context.
+Important notes:
 
-Migration guidance:
+- custom strategies run before Babele’s internal defaults
+- the default strategies are now an internal detail of `TranslationEntries`
+- callers should register only their custom logic, not re-register the built-in
+  fallback order
 
-- if your custom converter already ignored extra arguments, it may continue to work unchanged
-- if your converter defines `extract`, update it to read `context.runtime`
-- prefer `context.runtime.currentCompendium?.()` when you need the active mapped compendium
+### Identity extractors and matching are related, but distinct
+
+`DocumentMapping` can provide identity candidates for export and matching.
+
+`TranslationEntries` consumes those candidates when present.
+
+At the same time, custom identity extractors can be registered through:
+
+```js
+game.babele.registerIdentityExtractor("range", (document) => {
+  const [start, end] = document?.range ?? [];
+  return Number.isInteger(start) && Number.isInteger(end) ? `${start}-${end}` : null;
+});
+```
+
+Use identity extractors when you need reusable key extraction logic.
+Use translation match strategies when you need custom matching behavior across
+entries.
+
+## Converter Contract Changes
+
+This is the most important migration area for module developers.
+
+### Function-based converters are still supported
+
+Babele still supports a plain function as a converter:
+
+```js
+game.babele.registerConverter("myConverter", function (
+  value,
+  translation,
+  data,
+  tc,
+  allTranslations,
+  runtime,
+  params,
+) {
+  return value;
+});
+```
+
+This is no longer described as a purely legacy escape hatch. It is still a
+valid first-class extension pattern for simple cases.
+
+Internally, Babele wraps these through `FunctionalConverter`.
+
+### `runtime` is the authoritative execution context
+
+Historically, many converters treated `tc` as the active compendium context.
+
+This is no longer a safe assumption.
+
+You should now assume:
+
+- `tc` exists for compatibility
+- `runtime.currentCompendium()` is the source of truth
 
 Recommended pattern:
+
+```js
+game.babele.registerConverter("myConverter", function (
+  value,
+  translation,
+  data,
+  tc,
+  allTranslations,
+  runtime = {},
+) {
+  const current = runtime.currentCompendium?.() ?? tc ?? null;
+  return current ? current.translateField("name", data, runtime) : value;
+});
+```
+
+### `params` is the field declaration payload
+
+Function-based converters now receive `params` as their last argument.
+
+This is the field-level configuration object from the mapping declaration. It
+lets a converter read its own configuration without relying on ad hoc external
+state.
+
+### Extraction hooks now receive structured context
+
+If a function-based converter defines `extract`, it now receives:
 
 ```js
 converter.extract = function (value, data, tc, context = {}) {
   const runtime = context.runtime ?? {};
-  const current = runtime.currentCompendium?.() ?? tc;
-  return current ? current.extract(data, runtime) : value;
+  const params = context.params ?? {};
+  return value;
 };
 ```
 
-### `tc` is no longer the source of truth
+The `context` object includes:
 
-Historically many converters assumed the fourth parameter was the active compendium context.
+- `field`
+- `path`
+- `params`
+- `mapping`
+- `runtime`
 
-This is no longer a safe assumption in nested translation scenarios.
+`mapping` currently mirrors `params` for compatibility and convenience.
 
-You should now assume:
+### Built-in OO converters are now the reference model
 
-- `tc` exists for backward compatibility
-- `runtime.currentCompendium()` is the active context for the current translation branch
-- when Babele falls back from one root compendium to another, the runtime is re-branched so the destination compendium becomes the current one
+The internal converter model is object-oriented. The built-in first-class
+converters include:
 
-This matters for:
+- `document`
+- `structured`
+- `lookup`
+- `tokenizedLookup`
 
-- `fromPack`-style converters
-- nested Adventure translation
-- converters that call `translateField`, `extractField`, or inspect `customMapping`
+The most important one for migration purposes is `DocumentConverter`.
 
-## Runtime-Aware Pack Resolution
+## `DocumentConverter` and Embedded Documents
 
-### New low-level object: `CompendiumRuntime`
+### Document-valued fields now have a canonical built-in converter
 
-Nested translation flows now use an explicit runtime object:
+The built-in `document` converter is now the canonical mechanism for translating
+embedded document collections and nested document payloads.
+
+Typical mapping shape:
+
+```js
+"items": {
+  "path": "items",
+  "converter": "document",
+  "documentType": "Item",
+  "cardinality": "many"
+}
+```
+
+### What `DocumentConverter` now owns
+
+`DocumentConverter` is responsible for:
+
+- resolving the effective embedded mapping
+- preparing an `EmbeddedCompendium` for the field
+- publishing that embedded context to the runtime when configured
+- translating embedded documents through the runtime-aware current context
+- falling back to other visible translated packs of the same document type
+
+### `expose` is optional and conservative
+
+The `document` converter supports:
+
+- `documentType`
+- `cardinality`
+- `mapping`
+- `expose`
+
+The default for `expose` is conservative. It should only be enabled where the
+embedded collection must become visible to sibling lookup flows, such as
+Adventure-local document scopes.
+
+### Inline mapping merges with the canonical mapping
+
+When a document field defines inline mapping data, that mapping is treated as an
+override/enrichment of the canonical mapping model, not as a wholesale
+replacement of the document type.
+
+This matters when migrating custom `fromPack`-style logic toward the modern
+`document` converter.
+
+## Runtime Model Changes
+
+### `CompendiumRuntime` is now the core scope object
+
+Nested translation is no longer modeled through loosely passed contextual state.
+
+The explicit scope object is:
 
 ```js
 const runtime = new CompendiumRuntime({
@@ -213,104 +432,99 @@ Important methods:
 - `translatedPackFor(documentType, data)`
 - `child({localPacks, currentCompendium})`
 
-Migration guidance for advanced integrations:
+### Scope precedence is stack-like
 
-- use `runtime.translatedPackFor(documentType, data)` instead of iterating `game.babele.packs` manually
-- use `runtime.currentCompendium()` instead of assuming the current parent is passed as `tc`
-- when you create a nested translation branch, prefer `runtime.child(...)`
+When nested flows publish local packs, the innermost scope wins.
 
-### Scope precedence is now stack-like
+This affects:
 
-When child scopes add local packs, the innermost scope wins for:
+- document-type local lookups
+- translated-pack fallback lookups
+- Adventure-local document visibility
+- nested embedded document translation branches
 
-- document-type lookups
-- translated pack fallback lookups
-
-This is especially relevant for Adventure-local virtual packs and other nested translation branches.
-
-## Adventure Virtual Packs
-
-Adventure embedded documents are now handled through runtime-local virtual compendiums.
-
-What changed conceptually:
-
-- Adventure-local packs are no longer meant to be treated as globally visible registries
-- they exist inside the active runtime scope of the translated Adventure entry
-- nested `fromPack` resolution can see them through runtime lookup
-
-Migration guidance:
-
-- do not rely on `game.babele.packs` containing Adventure entry virtual packs
-- inside converters, use the provided runtime to resolve contextual packs
-- if you need the current embedded context, read `runtime.currentCompendium()`
-
-## Direct Class Constructor Changes
-
-These are low-level changes. They mostly matter if your code instantiates Babele internals directly.
-
-### `DocumentMapping`
-
-Old mental model:
-
-```js
-new CompendiumMapping(entityType, mapping, tc)
-```
-
-Current form:
-
-```js
-new DocumentMapping(documentType, mapping)
-```
-
-Changes:
-
-- `entityType` was renamed to `documentType`
-- the compendium instance is no longer passed into the constructor
-- runtime is passed when calling `map`, `translateField`, `extractField`, or `extract`
-
-### `FieldMapping`
-
-Old mental model:
-
-```js
-new FieldMapping(field, mapping, tc)
-```
-
-Current form:
-
-```js
-new FieldMapping(field, mapping)
-```
-
-Changes:
-
-- no compendium binding in the constructor
-- active compendium is resolved from runtime
-- `bind()` was removed
-
-If your code imported `FieldMapping` directly and relied on constructor-time compendium binding, move that logic to runtime-aware calls instead.
+If your integration previously searched a global registry manually, migrate that
+logic to `CompendiumRuntime`.
 
 ## Translation Source Discovery
 
-`TranslationRegistry` is now the object responsible for source discovery and precedence.
+### `TranslationRegistry` owns source discovery and precedence
 
-Main methods:
+`TranslationRegistry` is now the authoritative object for translation-source
+discovery.
 
-- `discover()`
-- `translationSources()`
-- `mappingSources()`
-- `sourcesFor(collection)`
-- `diagnostics()`
+It is responsible for:
 
-Notes:
+- registered module sources
+- system translation directory
+- configured directory source
+- published fallback source for non-GM clients
+- source precedence
+- discovery deduplication
+- canonical `mappings.json` preference over deprecated `mapping.json`
 
-- `discover()` is an optional warm-up step
-- the registry is source-oriented: it discovers files and precedence, not document-level translations
-- canonical `mappings.json` is preferred over deprecated `mapping.json`
+This means external tooling should not duplicate Babele’s discovery logic unless
+strictly necessary.
 
-If you built custom tooling around Babele file discovery, prefer `TranslationRegistry` instead of reproducing directory scanning logic yourself.
+### Source precedence is explicit
 
-## Recommended Migration Patterns
+Effective source precedence is now source-driven:
+
+1. system translations
+2. module translations
+3. configured directory translations
+4. published fallback only when direct filesystem discovery is not available
+
+Later sources override earlier ones.
+
+## Export Changes Relevant to Developers
+
+### Export flows are now dedicated objects
+
+Export logic is no longer an undifferentiated blob on the facade.
+
+The main flows are:
+
+- single compendium export through `TranslationExport`
+- synthetic `_packs-folders` export through `PackFoldersExport`
+- bulk directory export through `DirectoryExport`
+
+From the facade you still use:
+
+- `exportTranslationsFile(pack)`
+- `exportDataFor(pack, options)`
+- `exportPackFoldersFile()`
+- `exportPackFoldersData(options)`
+- `exportDirectoryTranslations()`
+- `exportDirectoryData(options)`
+
+### Dynamic export is now stronger
+
+Because converters now participate coherently in extraction, export can include
+structured and embedded data that older Babele versions could only export
+through ad hoc external tooling.
+
+This is especially relevant if you maintained helper modules just to generate
+starter translation files.
+
+## UI and Foundry v14 Notes
+
+2.8.0 also modernized parts of the UI integration layer for recent Foundry
+versions.
+
+Relevant developer-facing changes:
+
+- export dialogs now use `DialogV2`
+- the on-demand actor translation flow now uses `DialogV2`
+- export progress now uses `ui.notifications.info(..., {progress: true})`
+  rather than deprecated `SceneNavigation.displayProgressBar`
+- default mappings now include an initial conservative `ActiveEffect` mapping:
+  `name` and `description`
+
+If your integration extended or monkey-patched old dialog implementations, you
+should review those assumptions against the current `DialogV2`-based flows.
+
+## Practical Migration Guidance
 
 ### If you wrote custom converters
 
@@ -318,47 +532,71 @@ Do this:
 
 - keep accepting `tc` for compatibility
 - read active context from `runtime.currentCompendium?.()`
+- read `params` instead of relying on hidden external configuration
 - read `context.runtime` inside `extract`
 - use runtime-aware pack resolution for nested lookups
 
 Avoid this:
 
 - assuming `tc` is always the active compendium
-- searching `game.babele.packs` directly for nested contextual packs
-- assuming Adventure-local virtual packs are globally visible
-
-### If you used translated compendium objects directly
-
-Do this:
-
-- migrate imports from `TranslatedCompendium` to `MappedCompendium`
-- use `translated` as state, not class identity
-- call `game.babele.mappedCompendiumFor(pack)` when you need extraction without a translation file
+- reimplementing embedded document translation manually if `document`
+  already models the case
+- searching global pack registries directly for nested contextual lookups
 
 ### If you used mapping classes directly
 
 Do this:
 
-- migrate imports from `CompendiumMapping` to `DocumentMapping`
-- rename `entityType` concepts to `documentType`
-- pass runtime at execution time instead of binding compendium state in constructors
+- think in terms of `DocumentMapping`
+- use `DocumentMappings.hierarchyFor(documentType).mappingFor(data)`
+- pass runtime at execution time
+
+Avoid this:
+
+- binding compendium context in constructors
+- treating subtype mappings as a special-case side channel
+
+### If you built custom matching logic
+
+Do this:
+
+- register custom translation match strategies
+- register reusable identity extractors where appropriate
+- let `TranslationEntries` remain the place where entry matching happens
+
+Avoid this:
+
+- scattering matching heuristics across converters and compendium code
+- replacing the built-in fallback order unless you really mean to
 
 ## Quick Checklist
 
-- Replace `TranslatedCompendium` imports with `MappedCompendium`
-- Replace `CompendiumMapping` imports with `DocumentMapping`
+- Migrate low-level mental models from "translated compendium" to
+  `MappedCompendium`
+- Migrate low-level mental models from "compendium mapping" to
+  `DocumentMapping`
 - Stop assuming `tc` is the active context in converters
 - Use `runtime.currentCompendium()` in new converter code
-- Update `extract` implementations to read `context.runtime`
-- Prefer `game.babele.mappedCompendiumFor(pack)` when extraction must work without translations
-- Do not rely on Adventure virtual packs being globally registered
+- Pass and read `params` in function-based converters when configuration is
+  needed
+- Update `extract` hooks to read `context.runtime`
+- Prefer the built-in `document` converter for document-valued fields
+- Use `DocumentMappings` and `TranslationEntries` instead of reproducing their
+  logic externally
+- Register converters, mappings, strategies, and identity extractors before
+  `init()`
+- Review old dialog hooks if you relied on ApplicationV1-era dialog behavior
 
 ## Stability Note
 
-The compatibility re-exports exist to ease migration, but new integrations should move to the canonical names and runtime-aware patterns immediately.
+2.8.0 substantially improves the coherence of the internal model, but direct
+imports from `module/script/*` are still advanced usage.
 
-Future work will continue in the direction introduced here:
+The supported long-term direction is:
 
 - explicit runtime context
-- source discovery via `TranslationRegistry`
-- clearer separation between mapped, translated, and scoped compendium behavior
+- document-centric mappings
+- translation matching centralized in `TranslationEntries`
+- source precedence centralized in `TranslationRegistry`
+- embedded document handling through `DocumentConverter`
+- UI integration aligned with modern Foundry APIs

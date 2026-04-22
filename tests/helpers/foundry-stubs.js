@@ -76,6 +76,21 @@ export function installFoundryStubs() {
     displayProgressBar() {},
   };
 
+  class DialogV2 {
+    constructor(config = {}) {
+      this.config = config;
+    }
+
+    render(options = {}) {
+      this.renderOptions = options;
+      return this;
+    }
+
+    static async input() {
+      return null;
+    }
+  }
+
   globalThis.foundry = {
     utils: {
       mergeObject,
@@ -97,11 +112,7 @@ export function installFoundryStubs() {
         },
       },
       api: {
-        DialogV2: {
-          async input() {
-            return null;
-          },
-        },
+        DialogV2,
       },
       ux: {
         FormDataExtended: globalThis.FormDataExtended,

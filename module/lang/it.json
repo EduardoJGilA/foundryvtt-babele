@@ -58,5 +58,6 @@
   "BABELE.ShowTranslateOptionHint": "Abilita/disabilita il pulsante di traduzione sulle schede PG",
   "BABELE.WarnMissingPaths": "Segnala Path Sorgente Mancanti",
   "BABELE.WarnMissingPathsHint": "Abilita warning diagnostici quando una traduzione statica punta a un path sorgente non presente nei dati originali del documento.",
-  "BABELE.requireLibWrapperMessage": "Babele richiede il modulo 'libWrapper'. Si prega di installarlo e attivarlo."
+  "BABELE.requireLibWrapperMessage": "Babele richiede il modulo 'libWrapper'. Si prega di installarlo e attivarlo.",
+  "BABELE.TranslationSourcesRefreshed": "Babele ha aggiornato i file di traduzione. I documenti del compendio chiusi sono stati aggiornati; potrebbe essere necessario riaprire i documenti già aperti."
 }

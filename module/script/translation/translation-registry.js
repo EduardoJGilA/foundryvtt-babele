@@ -35,6 +35,7 @@ export class TranslationRegistry {
         jsonLoader = null,
     } = {}) {
         this._sources = [];
+        this._moduleRegistrations = new Map();
         this._publishedSource = new PublishedTranslationSource({
             translationFiles: () => game.settings.get("babele", "translationFiles"),
             mappingFiles: () => game.settings.get("babele", "mappingFiles"),
@@ -78,16 +79,18 @@ export class TranslationRegistry {
      * directory, so they can enrich or override system payloads while still
      * remaining overridable by the explicit user directory.
      *
-     * @param {{module: string, dir: string, lang?: string}} module
+     * @param {{module: string, dir?: string|string[], dirs?: string[], lang?: string}} module
      * @returns {TranslationRegistry}
      */
     registerModule(module) {
+        const registration = this.#moduleRegistrationFor(module);
+
         return this.register(new DirectoryTranslationSource({
-            name: `module:${module.module}`,
+            name: registration.name,
             weight: 20,
-            supports: (language) => module.lang === language,
-            translationDirectories: () => [`modules/${module.module}/${module.dir}`],
-            mappingDirectories: () => [`modules/${module.module}/${module.dir}`],
+            supports: (language) => registration.lang === language,
+            translationDirectories: () => registration.dirs.map((dir) => `modules/${registration.module}/${dir}`),
+            mappingDirectories: () => registration.dirs.map((dir) => `modules/${registration.module}/${dir}`),
         }));
     }
 
@@ -503,5 +506,31 @@ export class TranslationRegistry {
 
     #canIndexFiles() {
         return game.user.hasPermission("FILES_BROWSE") && game.user.isGM;
+    }
+
+    #moduleRegistrationFor(module) {
+        const name = this.#moduleSourceName(module);
+        const current = this._moduleRegistrations.get(name) ?? {
+            name,
+            module: module.module,
+            lang: module.lang,
+            dirs: [],
+        };
+
+        current.dirs = [...new Set([
+            ...current.dirs,
+            ...this.#moduleDirs(module),
+        ])];
+        this._moduleRegistrations.set(name, current);
+        return current;
+    }
+
+    #moduleSourceName(module) {
+        return `module:${module.module}:${module.lang ?? "*"}`;
+    }
+
+    #moduleDirs(module) {
+        const dirs = module.dirs ?? module.dir ?? [];
+        return (Array.isArray(dirs) ? dirs : [dirs]).filter(Boolean);
     }
 }

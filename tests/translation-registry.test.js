@@ -93,6 +93,83 @@ test("TranslationRegistry deduplicates translation files and groups pack sources
   );
 });
 
+test("TranslationRegistry supports multiple directories from one module registration", async () => {
+  const registry = createRegistry({
+    modules: [
+      {module: "translation-suite", dirs: ["pf2e", "sf2e"], lang: "it"},
+    ],
+    browse: async (_source, dir) => {
+      if (dir === "modules/translation-suite/pf2e") {
+        return {
+          files: [
+            "modules/translation-suite/pf2e/pf2e.feats.json",
+          ],
+        };
+      }
+
+      if (dir === "modules/translation-suite/sf2e") {
+        return {
+          files: [
+            "modules/translation-suite/sf2e/sf2e.actions.json",
+          ],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+
+  const sources = await registry.translationSources();
+
+  assert.deepEqual(sources.map((source) => source.file), [
+    "modules/translation-suite/pf2e/pf2e.feats.json",
+    "modules/translation-suite/sf2e/sf2e.actions.json",
+  ]);
+  assert.deepEqual(sources.map((source) => source.source), [
+    "module:translation-suite:it",
+    "module:translation-suite:it",
+  ]);
+});
+
+test("TranslationRegistry merges repeated module registrations into one multi-directory source", async () => {
+  const registry = createRegistry({
+    modules: [
+      {module: "translation-suite", dir: "pf2e", lang: "it"},
+      {module: "translation-suite", dir: "sf2e", lang: "it"},
+    ],
+    browse: async (_source, dir) => {
+      if (dir === "modules/translation-suite/pf2e") {
+        return {
+          files: [
+            "modules/translation-suite/pf2e/pf2e.feats.json",
+          ],
+        };
+      }
+
+      if (dir === "modules/translation-suite/sf2e") {
+        return {
+          files: [
+            "modules/translation-suite/sf2e/sf2e.actions.json",
+          ],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+
+  const sources = await registry.translationSources();
+
+  assert.deepEqual(sources.map((source) => source.file), [
+    "modules/translation-suite/pf2e/pf2e.feats.json",
+    "modules/translation-suite/sf2e/sf2e.actions.json",
+  ]);
+  assert.deepEqual(sources.map((source) => source.source), [
+    "module:translation-suite:it",
+    "module:translation-suite:it",
+  ]);
+});
+
 test("TranslationRegistry prefers canonical mappings.json within the same directory", async () => {
   warnings.length = 0;
 

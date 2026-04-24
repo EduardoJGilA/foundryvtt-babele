@@ -255,7 +255,7 @@ export class TranslationRegistry {
             translations.add(payload);
         }
 
-        return translations;
+        return translations.resolveInheritance();
     }
 
     /**

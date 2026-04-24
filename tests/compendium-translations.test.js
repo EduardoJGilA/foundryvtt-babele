@@ -90,3 +90,125 @@ test("CompendiumTranslations indexes loaded payloads by collection", () => {
   assert.equal(translations.has("test.actors"), true);
   assert.equal(translations.empty(), false);
 });
+
+test("TranslationRegistry.loadTranslations resolves inherited payloads after per-collection merge", async () => {
+  const sources = new TranslationRegistry();
+  sources.translationSources = async () => [
+    {file: "modules/a/shared.base.json", baseName: "shared.base.json"},
+    {file: "modules/a/test.items.json", baseName: "test.items.json"},
+  ];
+  sources.loadJsonFile = async (file) => {
+    if (file === "modules/a/shared.base.json") {
+      return {
+        entries: {
+          sword: {name: "Sword"},
+        },
+        mapping: {
+          description: "system.description.value",
+        },
+        reference: ["shared.reference"],
+        types: ["weapon"],
+      };
+    }
+
+    if (file === "modules/a/test.items.json") {
+      return {
+        extends: "shared.base",
+        label: "Localized Items",
+        entries: {
+          sword: {name: "Spada"},
+          shield: {name: "Scudo"},
+        },
+        folders: {
+          Equipment: "Equipaggiamento",
+        },
+      };
+    }
+
+    throw new Error(`Unexpected file ${file}`);
+  };
+
+  const translations = await sources.loadTranslations("en");
+  const items = translations.for("test.items");
+
+  assert.equal(items.label, "Localized Items");
+  assert.deepEqual(items.entries, {
+    sword: {name: "Spada"},
+    shield: {name: "Scudo"},
+  });
+  assert.deepEqual(items.mapping, {
+    description: "system.description.value",
+  });
+  assert.deepEqual(items.folders, {
+    Equipment: "Equipaggiamento",
+  });
+  assert.deepEqual(items.reference, ["shared.reference"]);
+  assert.deepEqual(items.types, ["weapon"]);
+  assert.deepEqual(items.extends, ["shared.base"]);
+});
+
+test("CompendiumTranslations.resolveInheritance fails open on missing parents", () => {
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+
+  try {
+    const translations = new CompendiumTranslations({
+      translations: [
+        {
+          collection: "test.items",
+          extends: "shared.base",
+          entries: {
+            sword: {name: "Spada"},
+          },
+        },
+      ],
+    }).resolveInheritance();
+
+    assert.deepEqual(translations.for("test.items")?.entries, {
+      sword: {name: "Spada"},
+    });
+    assert.match(String(warnings[0][0]), /extends missing parent 'shared\.base'/);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test("CompendiumTranslations.resolveInheritance fails open on inheritance cycles", () => {
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+
+  try {
+    const translations = new CompendiumTranslations({
+      translations: [
+        {
+          collection: "shared.a",
+          extends: "shared.b",
+          entries: {
+            a: {name: "A"},
+          },
+        },
+        {
+          collection: "shared.b",
+          extends: "shared.a",
+          entries: {
+            b: {name: "B"},
+          },
+        },
+      ],
+    }).resolveInheritance();
+
+    assert.deepEqual(translations.for("shared.a")?.entries, {
+      b: {name: "B"},
+      a: {name: "A"},
+    });
+    assert.deepEqual(translations.for("shared.b")?.entries, {
+      a: {name: "A"},
+      b: {name: "B"},
+    });
+    assert.match(String(warnings[0][0]), /inheritance cycle detected/);
+  } finally {
+    console.warn = warn;
+  }
+});

@@ -13,6 +13,7 @@ export class CompendiumTranslation {
         this.entries = undefined;
         this.mapping = undefined;
         this.folders = undefined;
+        this.extends = undefined;
         this.reference = undefined;
         this.types = undefined;
         this.#loaded = false;
@@ -34,6 +35,7 @@ export class CompendiumTranslation {
             this.entries = payload.entries ? {...payload.entries} : undefined;
             this.mapping = payload.mapping ? {...payload.mapping} : undefined;
             this.folders = payload.folders ? {...payload.folders} : undefined;
+            this.extends = this.#normalizeExtends(payload.extends);
             this.reference = Array.isArray(payload.reference) ? [...payload.reference] : payload.reference;
             this.types = Array.isArray(payload.types) ? [...payload.types] : payload.types;
             this.#loaded = true;
@@ -41,6 +43,7 @@ export class CompendiumTranslation {
         }
 
         this.label = payload.label ?? this.label;
+        this.extends = this.#normalizeExtends(payload.extends) ?? this.extends;
 
         if (payload.entries) {
             this.entries = {
@@ -66,7 +69,87 @@ export class CompendiumTranslation {
         return this;
     }
 
+    /**
+     * Merge one inherited parent payload beneath this translation.
+     *
+     * The parent establishes defaults; local payload data remains authoritative.
+     *
+     * @param {CompendiumTranslation|object|null} parent
+     * @returns {CompendiumTranslation}
+     */
+    inherit(parent) {
+        if (!parent) {
+            return this;
+        }
+
+        this.label = this.label ?? parent.label;
+
+        if (parent.entries) {
+            this.entries = {
+                ...parent.entries,
+                ...(this.entries ?? {}),
+            };
+        }
+
+        if (parent.mapping) {
+            this.mapping = {
+                ...parent.mapping,
+                ...(this.mapping ?? {}),
+            };
+        }
+
+        if (parent.folders) {
+            this.folders = {
+                ...parent.folders,
+                ...(this.folders ?? {}),
+            };
+        }
+
+        this.reference = this.reference ?? this.#clone(parent.reference);
+        this.types = this.types ?? this.#clone(parent.types);
+
+        return this;
+    }
+
+    clone() {
+        return new CompendiumTranslation(this.collection, {
+            label: this.label,
+            entries: this.#clone(this.entries),
+            mapping: this.#clone(this.mapping),
+            folders: this.#clone(this.folders),
+            extends: this.#clone(this.extends),
+            reference: this.#clone(this.reference),
+            types: this.#clone(this.types),
+        });
+    }
+
     loaded() {
         return this.#loaded;
+    }
+
+    #normalizeExtends(value) {
+        if (typeof value === "undefined" || value === null) {
+            return undefined;
+        }
+
+        return (Array.isArray(value) ? value : [value]).filter(Boolean);
+    }
+
+    #clone(value) {
+        if (typeof value === "undefined" || value === null) {
+            return value;
+        }
+
+        if (Array.isArray(value)) {
+            return value.map((item) => this.#clone(item));
+        }
+
+        if (typeof value === "object") {
+            return Object.fromEntries(
+                Object.entries(value).map(([key, item]) => [key, this.#clone(item)]),
+            );
+        }
+
+        return value;
     }
 }

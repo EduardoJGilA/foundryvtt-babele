@@ -118,6 +118,15 @@ test("DocumentMappings provides a conservative default mapping for ActiveEffect"
   });
 });
 
+test("DocumentMappings.supports reflects the effective mapping registry", () => {
+  game.babele = new Babel();
+
+  assert.equal(game.babele.documentMappings.supports("Item"), true);
+  assert.equal(game.babele.documentMappings.supports("ActiveEffect"), true);
+  assert.equal(game.babele.documentMappings.supports("Item.weapon"), false);
+  assert.equal(game.babele.documentMappings.supports("ChatMessage"), false);
+});
+
 test("DocumentMapping.extract omits lookup-backed fields because they do not export translation payload", () => {
   const babele = new Babel();
   const mapping = new DocumentMapping("Item", {

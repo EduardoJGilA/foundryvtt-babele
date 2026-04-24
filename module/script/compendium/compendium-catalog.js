@@ -7,20 +7,16 @@
  */
 export class CompendiumCatalog {
 
-    #supportedTypes;
-
-    static get SUPPORTED_TYPES() {
-        return ["Adventure", "Actor", "Cards", "Folder", "Item", "JournalEntry", "Macro", "Playlist", "RollTable", "Scene"];
-    }
+    #documentMappings;
 
     constructor({
-        supportedTypes = CompendiumCatalog.SUPPORTED_TYPES,
+        documentMappings,
     } = {}) {
-        this.#supportedTypes = [...supportedTypes];
+        this.#documentMappings = documentMappings;
     }
 
     supported(metadata) {
-        return this.#supportedTypes.includes(metadata?.type);
+        return this.#documentMappings?.supports?.(metadata?.type) ?? false;
     }
 
     collectionOf(metadata) {

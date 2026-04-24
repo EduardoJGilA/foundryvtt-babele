@@ -124,7 +124,9 @@ class Babel {
             converterRegistry: this.converterRegistry,
         });
         this.documentMappings.publish();
-        this.#catalog = new CompendiumCatalog();
+        this.#catalog = new CompendiumCatalog({
+            documentMappings: this.documentMappings,
+        });
         this.#folderTranslations = new FolderTranslations({
             mappedCompendiums: () => this.mappedCompendiums,
             packFolderTranslations: () => this.packFolderTranslations,

@@ -12,7 +12,9 @@ const {CompendiumCatalog} = await import("../module/script/compendium/compendium
 
 test("MappedCompendiums loads only supported compendium packs", async () => {
   const babele = new Babel();
-  const catalog = new CompendiumCatalog();
+  const catalog = new CompendiumCatalog({
+    documentMappings: babele.documentMappings,
+  });
 
   game.data.packs = [
     {
@@ -21,6 +23,13 @@ test("MappedCompendiums loads only supported compendium packs", async () => {
       packageType: "module",
       name: "items",
       label: "Items",
+    },
+    {
+      type: "ActiveEffect",
+      packageName: "test",
+      packageType: "module",
+      name: "effects",
+      label: "Effects",
     },
     {
       type: "ChatMessage",
@@ -35,6 +44,13 @@ test("MappedCompendiums loads only supported compendium packs", async () => {
       entries: {
         "item-1": {
           name: "Spada",
+        },
+      },
+    },
+    "test.effects": {
+      entries: {
+        "effect-1": {
+          name: "Benedetto",
         },
       },
     },
@@ -69,6 +85,8 @@ test("MappedCompendiums loads only supported compendium packs", async () => {
 
   assert.equal(mappedCompendiums.get("test.items") instanceof MappedCompendium, true);
   assert.equal(mappedCompendiums.get("test.items").translated, true);
+  assert.equal(mappedCompendiums.get("test.effects") instanceof MappedCompendium, true);
+  assert.equal(mappedCompendiums.get("test.effects").translated, true);
   assert.equal(mappedCompendiums.get("test.chat"), null);
   assert.equal(mappedCompendiums.get("test._packs-folders"), null);
 });

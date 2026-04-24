@@ -81,6 +81,23 @@ export class DocumentMappings {
     }
 
     /**
+     * Determine whether the effective mapping layers define one exact
+     * document-type mapping.
+     *
+     * This is intentionally an exact lookup: subtype mappings such as
+     * `Item.weapon` do not imply support for some other unrelated type, while
+     * root document types like `Item` or `ActiveEffect` are resolved by their
+     * canonical mapping key.
+     *
+     * @param {string|null} documentType
+     * @returns {boolean}
+     */
+    supports(documentType) {
+        return typeof documentType === "string"
+            && Object.prototype.hasOwnProperty.call(this.effectiveMappings, documentType);
+    }
+
+    /**
      * Materialize the effective mapping hierarchy for one document type,
      * optionally enriching it with a compendium-local mapping layer.
      *

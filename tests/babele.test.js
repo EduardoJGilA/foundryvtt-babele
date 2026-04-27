@@ -58,6 +58,33 @@ test("Babel.init fails open and can retry after a bootstrap failure", async () =
   });
 });
 
+test("importAdventure handles tokens with null delta and reuses prototype token names", () => {
+  const updates = [];
+
+  game.scenes = [{
+    tokens: [{
+      actorId: "actor-1",
+      delta: null,
+      update(data) {
+        updates.push(data);
+      },
+    }, {
+      actorId: "actor-1",
+      delta: {name: "Custom Name"},
+      update() {
+        throw new Error("token with explicit delta name should not be updated");
+      },
+    }],
+  }];
+
+  game.actors.get = (actorId) => actorId === "actor-1"
+    ? {prototypeToken: {name: "Prototype Goblin"}}
+    : null;
+
+  assert.doesNotThrow(() => Hooks.callAll("importAdventure"));
+  assert.deepEqual(updates, [{name: "Prototype Goblin"}]);
+});
+
 test("Babel prefers mappings.json over deprecated mapping.json in the same directory", async () => {
   const babele = new Babel();
   babele.register({module: "module-one", dir: "translations", lang: "en"});

@@ -44,10 +44,30 @@ class TestCollection extends Map {
 }
 
 export function installFoundryStubs() {
+  const hookRegistry = new Map();
+  const hookEntries = (hook) => hookRegistry.get(hook) ?? [];
+
   globalThis.Hooks = {
-    once() {},
-    on() {},
-    callAll() {},
+    once(hook, fn) {
+      const entries = hookEntries(hook);
+      entries.push({fn, once: true});
+      hookRegistry.set(hook, entries);
+    },
+    on(hook, fn) {
+      const entries = hookEntries(hook);
+      entries.push({fn, once: false});
+      hookRegistry.set(hook, entries);
+    },
+    callAll(hook, ...args) {
+      const entries = [...hookEntries(hook)];
+      for (const entry of entries) {
+        entry.fn(...args);
+      }
+      hookRegistry.set(
+        hook,
+        hookEntries(hook).filter((entry) => !entry.once),
+      );
+    },
   };
 
   globalThis.Dialog = class {};

@@ -133,7 +133,14 @@ export class StructuredDataConverter {
         }
 
         if (descriptor.container === "keyed") {
-            return entries.map((entry) => translation[entry.sourceKey]);
+            return entries.map((entry) => {
+                const key = this._translationLookupKey(entry, descriptor);
+                if (key !== null && typeof translation[key] !== "undefined") {
+                    return translation[key];
+                }
+
+                return translation[entry.sourceKey];
+            });
         }
 
         if (Array.isArray(translation)) {
@@ -221,7 +228,7 @@ export class StructuredDataConverter {
                     return out;
                 }
 
-                out[entry.sourceKey] = value;
+                out[this._extractedEntryKey(entry, descriptor, out)] = value;
                 return out;
             }, {});
         }
@@ -237,5 +244,61 @@ export class StructuredDataConverter {
         }
 
         return descriptor.compact ? extracted.filter((value) => Object.keys(value ?? {}).length > 0) : extracted;
+    }
+
+    /**
+     * Resolve the translator-facing lookup key for one entry.
+     *
+     * Keyed containers default to `sourceKey`, but when `key` is configured
+     * they can match by a property inside each value object instead.
+     *
+     * @param {{sourceKey: string|null, value: *}} entry
+     * @param {{key: string|null}} descriptor
+     * @returns {string|null}
+     */
+    _translationLookupKey(entry, descriptor) {
+        if (!descriptor.key) {
+            return entry.sourceKey;
+        }
+
+        return this._normalizedEntryKey(entry.value, descriptor.key);
+    }
+
+    /**
+     * Resolve the extracted output key for one keyed entry.
+     *
+     * When `key` is configured Babele exports keyed collections using that
+     * property so the extracted payload matches the expected translation
+     * template. If the property is missing or collides with an existing key,
+     * extraction falls back to the original `sourceKey`.
+     *
+     * @param {{sourceKey: string|null, value: *}} entry
+     * @param {{key: string|null}} descriptor
+     * @param {object} output
+     * @returns {string}
+     */
+    _extractedEntryKey(entry, descriptor, output = {}) {
+        const preferred = this._translationLookupKey(entry, descriptor);
+        if (preferred !== null && !Object.hasOwn(output, preferred)) {
+            return preferred;
+        }
+
+        return entry.sourceKey;
+    }
+
+    /**
+     * Read and normalize a translator-facing key from a nested object.
+     *
+     * @param {*} value
+     * @param {string} path
+     * @returns {string|null}
+     */
+    _normalizedEntryKey(value, path) {
+        const key = foundry.utils.getProperty(value, path);
+        if (key === null || typeof key === "undefined") {
+            return null;
+        }
+
+        return String(key);
     }
 }

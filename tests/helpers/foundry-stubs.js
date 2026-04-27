@@ -28,6 +28,16 @@ function mergeObject(original = {}, other = {}, options = {}) {
   return target;
 }
 
+function getProperty(object, path) {
+  if (!path) {
+    return object;
+  }
+
+  return String(path)
+    .split(".")
+    .reduce((value, part) => (value === null || typeof value === "undefined") ? undefined : value[part], object);
+}
+
 class TestCollection extends Map {
   find(predicate) {
     for (const value of this.values()) {
@@ -115,6 +125,7 @@ export function installFoundryStubs() {
   globalThis.foundry = {
     utils: {
       mergeObject,
+      getProperty,
       parseUuid(uuid) {
         if (!uuid) {
           return null;

@@ -684,6 +684,147 @@ test("structured data converter translates keyed objects by source key and extra
   });
 });
 
+test("structured data converter matches keyed objects by an internal property and exports the same template shape", () => {
+  const converter = new StructuredDataConverter({
+    path: "activities",
+    cardinality: "many",
+    container: "keyed",
+    key: "name",
+    mapping: {
+      name: "name",
+      condition: "activation.condition",
+      range: "range.special",
+    },
+  });
+
+  const activities = {
+    a1b2c3: {
+      name: "Cast",
+      activation: {condition: ""},
+      range: {special: "60 feet"},
+    },
+    d4e5f6: {
+      name: "Cast at Higher Level",
+      activation: {condition: "When heightened"},
+      range: {special: "120 feet"},
+    },
+  };
+
+  const translated = converter.translate({
+    value: activities,
+    translation: {
+      Cast: {
+        name: "Lancer",
+        range: "18 metres",
+      },
+      "Cast at Higher Level": {
+        condition: "Quand le sort est renforcé",
+      },
+    },
+    source: {_id: "spell-1", name: "Spell"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: activities,
+    source: {_id: "spell-1", name: "Spell"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated.a1b2c3.name, "Lancer");
+  assert.equal(translated.a1b2c3.range.special, "18 metres");
+  assert.equal(translated.d4e5f6.name, "Cast at Higher Level");
+  assert.equal(translated.d4e5f6.activation.condition, "Quand le sort est renforcé");
+  assert.deepEqual(extracted, {
+    Cast: {
+      name: "Cast",
+      condition: "",
+      range: "60 feet",
+    },
+    "Cast at Higher Level": {
+      name: "Cast at Higher Level",
+      condition: "When heightened",
+      range: "120 feet",
+    },
+  });
+});
+
+test("structured data converter falls back to source keys when keyed property matching is missing or duplicated", () => {
+  const converter = new StructuredDataConverter({
+    path: "activities",
+    cardinality: "many",
+    container: "keyed",
+    key: "name",
+    mapping: {
+      name: "name",
+      range: "range.special",
+    },
+  });
+
+  const activities = {
+    alpha: {
+      name: "Shared Name",
+      range: {special: "30 feet"},
+    },
+    beta: {
+      name: "Shared Name",
+      range: {special: "60 feet"},
+    },
+    gamma: {
+      range: {special: "90 feet"},
+    },
+  };
+
+  const translated = converter.translate({
+    value: activities,
+    translation: {
+      "Shared Name": {
+        range: "9 metres",
+      },
+      gamma: {
+        range: "27 metres",
+      },
+    },
+    source: {_id: "spell-1", name: "Spell"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: activities,
+    source: {_id: "spell-1", name: "Spell"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated.alpha.range.special, "9 metres");
+  assert.equal(translated.beta.range.special, "9 metres");
+  assert.equal(translated.gamma.range.special, "27 metres");
+  assert.deepEqual(extracted, {
+    "Shared Name": {
+      name: "Shared Name",
+      range: "30 feet",
+    },
+    beta: {
+      name: "Shared Name",
+      range: "60 feet",
+    },
+    gamma: {
+      range: "90 feet",
+    },
+  });
+});
+
 test("structured data converter exposes sourceKey to nested converters for keyed containers", () => {
   const babele = new Babel();
   babele.registerConverter("sourceKeyEcho", {

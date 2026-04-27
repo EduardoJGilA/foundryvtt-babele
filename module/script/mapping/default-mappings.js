@@ -171,7 +171,12 @@ export const defaultMappings = {
             "export": ["range", "_id"],
             "match": ["_id", "range"]
         },
-        "name": "name",
+        "name": {
+            "path": "name",
+            "converter": "referencedDocumentField",
+            "uuidPath": "documentUuid",
+            "referencedField": "name"
+        },
         "description": "description"
     },
     "Scene": {

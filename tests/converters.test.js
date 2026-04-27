@@ -723,6 +723,77 @@ test("tableResults translates using the TableResult identity fallback order", ()
   assert.equal(translated[1].name, "Goblin Tradotto");
 });
 
+test("tableResults falls back to the referenced compendium translation via documentUuid", () => {
+  game.babele = new Babel();
+  game.babele.translateField = (field, pack, data) => {
+    assert.equal(field, "name");
+    assert.equal(pack, "Compendium.test.items.Item.item-1");
+    assert.deepEqual(data, {name: "Charging Quiver"});
+    return "Заряжающий Колчан";
+  };
+
+  const tableTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
+
+  const translated = Converters.tableResults()([
+    {
+      _id: "result-1",
+      type: "document",
+      range: [3, 3],
+      name: "Charging Quiver",
+      documentUuid: "Compendium.test.items.Item.item-1",
+    },
+  ], {}, {
+    _id: "table-1",
+    name: "Encounter Table",
+  }, tableTc);
+
+  assert.equal(translated[0].name, "Заряжающий Колчан");
+  assert.equal(translated[0].translated, true);
+});
+
+test("tableResults keeps explicit RollTable result name translations over the documentUuid fallback", () => {
+  game.babele = new Babel();
+  let fallbackCalls = 0;
+  game.babele.translateField = () => {
+    fallbackCalls += 1;
+    return "Should Not Be Used";
+  };
+
+  const tableTc = new MappedCompendium({
+    id: "test.tables",
+    name: "tables",
+    type: "RollTable",
+  }, null, {
+    documentMappings: game.babele.documentMappings,
+  });
+
+  const translated = Converters.tableResults()([
+    {
+      _id: "result-1",
+      type: "document",
+      range: [3, 3],
+      name: "Charging Quiver",
+      documentUuid: "Compendium.test.items.Item.item-1",
+    },
+  ], {
+    "3-3": {
+      name: "Translated In RollTable",
+    },
+  }, {
+    _id: "table-1",
+    name: "Encounter Table",
+  }, tableTc);
+
+  assert.equal(translated[0].name, "Translated In RollTable");
+  assert.equal(fallbackCalls, 0);
+});
+
 test("tableResultsCollection delegates to the generic RollTable mapping", () => {
   game.babele = new Babel();
   const tableCollectionTc = new MappedCompendium({

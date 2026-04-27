@@ -1,6 +1,7 @@
 import {DocumentConverter} from "./document-converter.js";
 import {converterContext} from "./converter-context.js";
 import {StructuredDataConverter} from "./structured-data-converter.js";
+import {ReferencedDocumentFieldConverter} from "./referenced-document-field-converter.js";
 
 class FunctionalConverterFactory {
 

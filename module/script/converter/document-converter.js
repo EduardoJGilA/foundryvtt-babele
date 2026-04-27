@@ -250,8 +250,15 @@ export class DocumentConverter {
         const currentCompendium = activeRuntime.currentCompendium();
 
         return entities.map((data) => {
-            if (currentCompendium?.hasTranslation(data, currentCompendium.metadata?.type ?? null)) {
-                return currentCompendium.translate(data, false, activeRuntime);
+            const currentMapping = currentCompendium?.mappingFor?.(data);
+            const shouldTranslateCurrent = currentCompendium?.hasTranslation(data, currentCompendium.metadata?.type ?? null)
+                || currentMapping?.usesConverters?.() === true;
+
+            if (shouldTranslateCurrent) {
+                const translatedCurrent = currentCompendium.translate(data, false, activeRuntime);
+                if (translatedCurrent !== data) {
+                    return translatedCurrent;
+                }
             }
 
             const documentType = currentCompendium?.metadata?.type ?? null;

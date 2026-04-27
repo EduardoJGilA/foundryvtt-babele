@@ -8,6 +8,7 @@ import {BabeleUiBridge} from "./ui/babele-ui-bridge.js";
 import {DocumentConverter} from "./converter/document-converter.js";
 import {StructuredDataConverter} from "./converter/structured-data-converter.js";
 import {LookupConverter} from "./converter/lookup-converter.js";
+import {ReferencedDocumentFieldConverter} from "./converter/referenced-document-field-converter.js";
 import {TokenizedLookupConverter} from "./converter/tokenized-lookup-converter.js";
 import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
 import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
@@ -170,6 +171,7 @@ class Babel {
             "structured": new StructuredDataConverter(),
             "lookup": new LookupConverter(),
             "tokenizedLookup": new TokenizedLookupConverter(),
+            "referencedDocumentField": new ReferencedDocumentFieldConverter(),
         });
     }
 

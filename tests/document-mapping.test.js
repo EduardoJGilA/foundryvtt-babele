@@ -90,6 +90,25 @@ test("DocumentMapping uses the default TableResult range identity when Babele re
   assert.deepEqual(mapping.matchKeyCandidates(document), ["result-1", "2-3"]);
 });
 
+test("DocumentMapping resolves TableResult.name through the referenced document field fallback", () => {
+  game.babele = new Babel();
+  game.babele.translateField = (field, pack, data) => {
+    assert.equal(field, "name");
+    assert.equal(pack, "Compendium.test.items.Item.item-1");
+    assert.deepEqual(data, {name: "Charging Quiver"});
+    return "Заряжающий Колчан";
+  };
+
+  const mapping = game.babele.documentMappings.hierarchyFor("TableResult").mappingFor();
+  const translated = mapping.translateField("name", {
+    _id: "result-1",
+    name: "Charging Quiver",
+    documentUuid: "Compendium.test.items.Item.item-1",
+  }, {});
+
+  assert.equal(translated, "Заряжающий Колчан");
+});
+
 test("DocumentMappings provides a conservative default mapping for ActiveEffect", () => {
   game.babele = new Babel();
 

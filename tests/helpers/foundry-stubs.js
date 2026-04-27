@@ -92,6 +92,7 @@ export function installFoundryStubs() {
   globalThis.window = {};
   globalThis.saveAs = () => {};
   globalThis.JSZip = class {};
+  globalThis.fromUuidSync = () => null;
   globalThis.SceneNavigation = {
     displayProgressBar() {},
   };

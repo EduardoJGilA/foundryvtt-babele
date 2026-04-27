@@ -1265,6 +1265,100 @@ test("fromPack translates embedded spell names through deterministic resolver lo
   assert.equal(translated[0].translated, true);
 });
 
+test("document converter prefers the exact compendium source and layers actor item overrides", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
+  const item = {
+    _id: "actor-item-1",
+    name: "Wrong Match Name",
+    _stats: {
+      compendiumSource: "Compendium.test.exact.Item.source-sword",
+    },
+    system: {
+      description: {
+        value: "Original embedded description",
+      },
+    },
+  };
+
+  const exactPack = mappedCompendium({
+    id: "test.exact",
+    name: "exact",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "Original Sword": {
+        name: "Exact Pack Translation",
+        description: "Exact pack description",
+      },
+    },
+  });
+
+  const wrongPack = mappedCompendium({
+    id: "test.wrong",
+    name: "wrong",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "Wrong Match Name": {
+        name: "Wrong Pack Translation",
+        description: "Wrong pack description",
+      },
+    },
+  });
+
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = (uuid) => uuid === "Compendium.test.exact.Item.source-sword"
+    ? {name: "Original Sword"}
+    : null;
+
+  try {
+    const translated = new DocumentConverter().translate({
+      value: [item],
+      translation: {
+        "actor-item-1": {
+          name: "Actor Override Name",
+        },
+      },
+      source: {name: "Actor"},
+      field: "items",
+      path: "items",
+      params: {
+        path: "items",
+        converter: "document",
+        documentType: "Item",
+        cardinality: "many",
+        mapping: null,
+      },
+      allTranslations: {},
+      contextCompendium: actorContext,
+      runtime: new CompendiumRuntime({
+        globalPacks: new TestCollection([
+          ["test.exact", exactPack],
+          ["test.wrong", wrongPack],
+        ]),
+        currentCompendium: actorContext,
+      }),
+    });
+
+    assert.equal(translated[0].name, "Actor Override Name");
+    assert.equal(translated[0].system.description.value, "Exact pack description");
+    assert.equal(translated[0].translated, true);
+    assert.equal(translated[0].hasTranslation, true);
+  } finally {
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
 test("adventure actors translate tokenName through the embedded actor context", () => {
   game.babele = new Babel();
   game.babele.registerConverters({

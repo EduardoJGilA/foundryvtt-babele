@@ -236,9 +236,17 @@ export class DocumentConverter {
     }
 
     /**
-     * Translate embedded documents first through the prepared local mapped
-     * compendium, then through any other visible mapped compendium of the same
-     * document type.
+     * Translate embedded documents by layering the visible translation sources
+     * for the current runtime scope.
+     *
+     * The effective order is:
+     * - base translation from the exact source compendium when a translated
+     *   pack matching `_stats.compendiumSource` / `flags.core.sourceId` is
+     *   visible
+     * - otherwise base translation from the generic translated-pack fallback
+     *   for the same document type
+     * - local embedded translation payload from the current runtime scope as
+     *   the final override layer
      *
      * @param {Array<object>} entities
      * @param {*} contextPack
@@ -251,20 +259,289 @@ export class DocumentConverter {
 
         return entities.map((data) => {
             const currentMapping = currentCompendium?.mappingFor?.(data);
-            const shouldTranslateCurrent = currentCompendium?.hasTranslation(data, currentCompendium.metadata?.type ?? null)
-                || currentMapping?.usesConverters?.() === true;
+            const documentType = currentCompendium?.metadata?.type ?? null;
+            const hasCurrentTranslation = currentCompendium?.hasTranslation(data, documentType) === true;
+            const shouldTranslateCurrent = hasCurrentTranslation || currentMapping?.usesConverters?.() === true;
+            const currentPayload = shouldTranslateCurrent
+                ? this._pruneUnchangedPayload(currentCompendium.translate(data, true, activeRuntime) ?? {}, data)
+                : {};
 
-            if (shouldTranslateCurrent) {
-                const translatedCurrent = currentCompendium.translate(data, false, activeRuntime);
-                if (translatedCurrent !== data) {
-                    return translatedCurrent;
-                }
+            const fallback = this._fallbackTranslationSource(data, activeRuntime, currentCompendium, documentType);
+            const fallbackPack = fallback?.pack ?? null;
+            const fallbackData = fallback?.data ?? data;
+            const hasFallbackTranslation = fallbackPack?.hasTranslation(fallbackData, documentType) === true;
+            const fallbackPayload = fallbackPack
+                ? (fallbackPack.translate(fallbackData, true, activeRuntime) ?? {})
+                : {};
+
+            const translatedData = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
+            if (!this._hasTranslatedData(translatedData)) {
+                return data;
             }
 
-            const documentType = currentCompendium?.metadata?.type ?? null;
-            const pack = activeRuntime.translatedPackFor(documentType, data);
+            const translatedDocument = foundry.utils.mergeObject(data, translatedData, {inplace: false});
+            const hasTranslation = hasCurrentTranslation || hasFallbackTranslation;
+            const translated = this._documentChanged(data, translatedDocument);
 
-            return pack ? pack.translate(data, false, activeRuntime) : data;
+            if (!hasTranslation && !translated) {
+                return data;
+            }
+
+            return foundry.utils.mergeObject(
+                translatedDocument,
+                {
+                    translated,
+                    hasTranslation,
+                    originalName: data.name,
+                    flags: {
+                        babele: {
+                            translated,
+                            hasTranslation,
+                            originalName: data.name,
+                        },
+                    },
+                },
+                {inplace: false},
+            );
         });
+    }
+
+    /**
+     * Resolve the best fallback translation source for one embedded document.
+     *
+     * This prefers the exact source compendium when the embedded document
+     * still exposes a stable source reference. When no exact pack can be used,
+     * it falls back to the generic translated-pack lookup for the same
+     * document type.
+     *
+     * @param {object} data
+     * @param {import("../compendium/compendium-runtime.js").CompendiumRuntime} runtime
+     * @param {*} currentCompendium
+     * @param {string|null} [documentType]
+     * @returns {{pack: *, data: object}|null}
+     */
+    _fallbackTranslationSource(data, runtime, currentCompendium, documentType = currentCompendium?.metadata?.type ?? null) {
+        const exactSource = this._exactSourceTranslationSource(data, runtime, currentCompendium, documentType);
+        if (exactSource) {
+            return exactSource;
+        }
+
+        const sourceAwareData = this._sourceAwareData(data);
+        const genericPack = runtime.translatedPackFor(documentType, sourceAwareData)
+            ?? (sourceAwareData !== data ? runtime.translatedPackFor(documentType, data) : null);
+
+        if (!genericPack || genericPack === currentCompendium) {
+            return null;
+        }
+
+        return {
+            pack: genericPack,
+            data: sourceAwareData,
+        };
+    }
+
+    /**
+     * Resolve the translated pack explicitly referenced by the embedded
+     * document source metadata, if any.
+     *
+     * The returned data may be a detached copy whose `name` has been restored
+     * from the original source document so name-keyed translations in the
+     * source compendium can still match imported embedded documents.
+     *
+     * @param {object} data
+     * @param {import("../compendium/compendium-runtime.js").CompendiumRuntime} runtime
+     * @param {*} currentCompendium
+     * @param {string|null} [documentType]
+     * @returns {{pack: *, data: object}|null}
+     */
+    _exactSourceTranslationSource(data, runtime, currentCompendium, documentType = currentCompendium?.metadata?.type ?? null) {
+        const collection = this._sourceCollection(data);
+        if (!collection) {
+            return null;
+        }
+
+        const pack = runtime.mappedCompendiumFor(collection);
+        if (!pack || pack === currentCompendium || pack.translated !== true) {
+            return null;
+        }
+
+        const sourceAwareData = this._sourceAwareData(data);
+        if (!pack.hasTranslation(sourceAwareData, documentType)) {
+            return null;
+        }
+
+        return {
+            pack,
+            data: sourceAwareData,
+        };
+    }
+
+    /**
+     * Return a detached source-aware copy when the original source document
+     * exposes a different canonical name than the current embedded payload.
+     *
+     * @param {object} data
+     * @returns {object}
+     */
+    _sourceAwareData(data) {
+        const sourceName = this._sourceDocumentName(data);
+        if (!sourceName || sourceName === data?.name) {
+            return data;
+        }
+
+        return foundry.utils.mergeObject(data, {name: sourceName}, {inplace: false});
+    }
+
+    /**
+     * Resolve the canonical name of the original source document referenced by
+     * this embedded payload.
+     *
+     * @param {object} data
+     * @returns {string|null}
+     */
+    _sourceDocumentName(data) {
+        const sourceDocument = this._sourceDocument(data);
+        return sourceDocument?.flags?.babele?.originalName
+            ?? sourceDocument?.name
+            ?? null;
+    }
+
+    /**
+     * Resolve the original source document referenced by this embedded
+     * payload, if Foundry can synchronously resolve the UUID.
+     *
+     * @param {object} data
+     * @returns {object|null}
+     */
+    _sourceDocument(data) {
+        const sourceUuid = this._sourceUuid(data);
+        if (!sourceUuid || typeof fromUuidSync !== "function") {
+            return null;
+        }
+
+        try {
+            return fromUuidSync(sourceUuid, {strict: false}) ?? null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    /**
+     * Extract the `package.collection` identifier from the embedded source
+     * UUID so runtime can look up the exact mapped compendium.
+     *
+     * @param {object} data
+     * @returns {string|null}
+     */
+    _sourceCollection(data) {
+        return String(this._sourceUuid(data) ?? "").match(/^Compendium\.([^.]+\.[^.]+)\./)?.[1] ?? null;
+    }
+
+    /**
+     * Return the source UUID reference exported by Foundry for imported
+     * embedded documents.
+     *
+     * @param {object} data
+     * @returns {string|null}
+     */
+    _sourceUuid(data) {
+        return data?.flags?.core?.sourceId ?? data?._stats?.compendiumSource ?? null;
+    }
+
+    /**
+     * Whether a translated payload contains at least one field to merge.
+     *
+     * @param {object|undefined|null} translatedData
+     * @returns {boolean}
+     */
+    _hasTranslatedData(translatedData) {
+        return !!translatedData && Object.keys(translatedData).length > 0;
+    }
+
+    /**
+     * Remove entries from a local translated payload that are identical to the
+     * original source data.
+     *
+     * This keeps local derived fields from reapplying untranslated source
+     * values on top of a real fallback translation.
+     *
+     * @param {*} payload
+     * @param {*} originalData
+     * @returns {*}
+     */
+    _pruneUnchangedPayload(payload, originalData) {
+        if (!this._isPlainObject(payload)) {
+            return this._sameValue(payload, originalData) ? undefined : payload;
+        }
+
+        const pruned = {};
+        for (const [key, value] of Object.entries(payload)) {
+            const filtered = this._pruneUnchangedPayload(value, originalData?.[key]);
+            if (typeof filtered !== "undefined") {
+                pruned[key] = filtered;
+            }
+        }
+
+        return Object.keys(pruned).length > 0 ? pruned : undefined;
+    }
+
+    /**
+     * Whether merging the translated payload would actually change the source
+     * document.
+     *
+     * @param {*} originalData
+     * @param {*} translatedData
+     * @returns {boolean}
+     */
+    _documentChanged(originalData, translatedData) {
+        if (!this._hasTranslatedData(translatedData)) {
+            return false;
+        }
+
+        return !this._sameValue(originalData, translatedData);
+    }
+
+    /**
+     * Deep structural equality used to detect no-op translated payloads.
+     *
+     * @param {*} left
+     * @param {*} right
+     * @returns {boolean}
+     */
+    _sameValue(left, right) {
+        if (left === right) {
+            return true;
+        }
+
+        if (Array.isArray(left) || Array.isArray(right)) {
+            if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+                return false;
+            }
+
+            return left.every((value, index) => this._sameValue(value, right[index]));
+        }
+
+        if (!this._isPlainObject(left) || !this._isPlainObject(right)) {
+            return false;
+        }
+
+        const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+        for (const key of keys) {
+            if (!this._sameValue(left[key], right[key])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Narrow the value to a plain object for recursive payload comparisons.
+     *
+     * @param {*} value
+     * @returns {boolean}
+     */
+    _isPlainObject(value) {
+        return !!value && typeof value === "object" && !Array.isArray(value);
     }
 }

@@ -376,6 +376,7 @@ class NamedFieldConverter {
             allTranslations,
             contextCompendium: this._contextCompendium(runtime),
             runtime,
+            sourceKey: runtime?.sourceKey ?? null,
         });
     }
 

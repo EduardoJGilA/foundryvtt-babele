@@ -148,6 +148,95 @@ test("MappedCompendium leaves documents unchanged when no translation entry matc
   assert.deepEqual(compendium.translate(data), data);
 });
 
+test("MappedCompendium exposes a hook to patch translated document data before merge", () => {
+  const compendium = mappedCompendium({
+    id: "test.effects",
+    name: "effects",
+    type: "Item",
+  }, {
+    entries: {
+      "effect-cover": {
+        name: "Effet : Abri",
+      },
+    },
+  });
+  const data = {
+    _id: "effect-cover",
+    name: "Effect: Cover",
+    type: "effect",
+    system: {
+      rules: [
+        {
+          key: "FlatModifier",
+          slug: "explicit-cover",
+          selector: "ac",
+          type: "circumstance",
+          value: 2,
+        },
+      ],
+    },
+  };
+
+  Hooks.once("babele.translateDocumentData", (context) => {
+    context.translated = foundry.utils.mergeObject(context.translated, {
+      system: {
+        rules: [
+          {
+            key: "FlatModifier",
+            slug: "cover",
+            selector: "ac",
+            type: "circumstance",
+            value: 2,
+          },
+        ],
+      },
+    }, {inplace: false});
+  });
+
+  const translated = compendium.translate(data);
+
+  assert.equal(translated.name, "Effet : Abri");
+  assert.equal(translated.system.rules[0].slug, "cover");
+});
+
+test("MappedCompendium fails open when translateDocumentData hook listeners throw", () => {
+  const compendium = mappedCompendium({
+    id: "test.effects",
+    name: "effects",
+    type: "Item",
+  }, {
+    entries: {
+      "effect-cover": {
+        name: "Effet : Abri",
+      },
+    },
+  });
+  const data = {
+    _id: "effect-cover",
+    name: "Effect: Cover",
+    type: "effect",
+    system: {
+      rules: [
+        {
+          key: "FlatModifier",
+          selector: "ac",
+          type: "circumstance",
+          value: 2,
+        },
+      ],
+    },
+  };
+
+  Hooks.once("babele.translateDocumentData", () => {
+    throw new Error("hook failure");
+  });
+
+  const translated = compendium.translate(data);
+
+  assert.equal(translated.name, "Effet : Abri");
+  assert.equal(translated.system.rules[0].slug, undefined);
+});
+
 test("MappedCompendium marks hasTranslation without marking translated when the merged payload is unchanged", () => {
   const compendium = mappedCompendium({
     id: "test.items",

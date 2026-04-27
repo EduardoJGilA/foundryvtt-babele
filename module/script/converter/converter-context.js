@@ -15,6 +15,7 @@
  * @param {object} [options.allTranslations]
  * @param {*} [options.contextCompendium]
  * @param {object} [options.runtime]
+ * @param {string|null} [options.sourceKey]
  * @returns {object}
  */
 export function converterContext({
@@ -27,6 +28,7 @@ export function converterContext({
     allTranslations = {},
     contextCompendium = null,
     runtime = {},
+    sourceKey = null,
 }) {
     return {
         value,
@@ -38,5 +40,6 @@ export function converterContext({
         allTranslations,
         contextCompendium,
         runtime,
+        sourceKey,
     };
 }

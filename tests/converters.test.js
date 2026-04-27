@@ -620,6 +620,142 @@ test("structured data converter translates nested arrays by index and extracts a
   ]);
 });
 
+test("structured data converter translates keyed objects by source key and extracts keyed objects", () => {
+  const converter = new StructuredDataConverter({
+    path: "levels",
+    cardinality: "many",
+    container: "keyed",
+    mapping: {
+      target: "target.value",
+      range: "range.value",
+    },
+  });
+
+  const levels = {
+    "4": {
+      target: {value: "1 creature"},
+      range: {value: "30 feet"},
+    },
+    "8": {
+      target: {value: "up to 10 creatures"},
+      range: {value: "60 feet"},
+    },
+  };
+
+  const translated = converter.translate({
+    value: levels,
+    translation: {
+      "4": {
+        target: "1 creatura",
+      },
+      "8": {
+        range: "18 metri",
+      },
+    },
+    source: {_id: "spell-1", name: "Spell"},
+    field: "heightening",
+    path: "system.heightening.levels",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: levels,
+    source: {_id: "spell-1", name: "Spell"},
+    field: "heightening",
+    path: "system.heightening.levels",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated["4"].target.value, "1 creatura");
+  assert.equal(translated["4"].range.value, "30 feet");
+  assert.equal(translated["8"].target.value, "up to 10 creatures");
+  assert.equal(translated["8"].range.value, "18 metri");
+  assert.deepEqual(extracted, {
+    "4": {
+      target: "1 creature",
+      range: "30 feet",
+    },
+    "8": {
+      target: "up to 10 creatures",
+      range: "60 feet",
+    },
+  });
+});
+
+test("structured data converter exposes sourceKey to nested converters for keyed containers", () => {
+  const babele = new Babel();
+  babele.registerConverter("sourceKeyEcho", {
+    translate(context) {
+      return `${context.sourceKey}:${context.translation}`;
+    },
+    extract(context) {
+      return `${context.sourceKey}:${context.value}`;
+    },
+  });
+
+  const contextPack = mappedCompendium({
+    id: "test.spells",
+    name: "spells",
+    type: "Item",
+  }, null, {
+    documentMappings: babele.documentMappings,
+  });
+
+  const converter = new StructuredDataConverter({
+    path: "overlays",
+    cardinality: "many",
+    container: "keyed",
+    mapping: {
+      marker: {
+        path: "marker",
+        converter: "sourceKeyEcho",
+      },
+    },
+  });
+
+  const overlays = {
+    alpha: {marker: "original-a"},
+    beta: {marker: "original-b"},
+  };
+
+  const runtime = new CompendiumRuntime({
+    currentCompendium: contextPack,
+  });
+
+  const translated = converter.translate({
+    value: overlays,
+    translation: {
+      alpha: {marker: "translated-a"},
+      beta: {marker: "translated-b"},
+    },
+    source: {_id: "spell-1", name: "Spell"},
+    field: "spellVariants",
+    path: "system.overlays",
+    params: {},
+    contextCompendium: contextPack,
+    runtime,
+  });
+
+  const extracted = converter.extract({
+    value: overlays,
+    source: {_id: "spell-1", name: "Spell"},
+    field: "spellVariants",
+    path: "system.overlays",
+    params: {},
+    contextCompendium: contextPack,
+    runtime,
+  });
+
+  assert.equal(translated.alpha.marker, "alpha:translated-a");
+  assert.equal(translated.beta.marker, "beta:translated-b");
+  assert.deepEqual(extracted, {
+    alpha: {marker: "alpha:original-a"},
+    beta: {marker: "beta:original-b"},
+  });
+});
+
 test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {
   game.babele = new Babel();
   const tableTc = new MappedCompendium({

@@ -275,6 +275,11 @@ export class MappedCompendium {
         try {
             translatedData = mapping.map(data, resolution.entry ?? {}, scope);
             translatedData = this.#mergeReferenceTranslations(data, translatedData, scope);
+            translatedData = this.#applyTranslationHooks(data, translatedData, {
+                hasTranslation,
+                translation: resolution.entry ?? {},
+                runtime: scope,
+            });
         } catch (error) {
             this.#logTranslationFailure(data, error, {phase: "translate"});
             return translationsOnly ? {} : data;
@@ -355,6 +360,36 @@ export class MappedCompendium {
         }
 
         return null;
+    }
+
+    #applyTranslationHooks(data, translatedData, context = {}) {
+        if (!context.hasTranslation) {
+            return translatedData;
+        }
+
+        const hookContext = {
+            pack: this,
+            metadata: this.metadata,
+            source: data,
+            translated: translatedData,
+            translation: context.translation ?? {},
+            runtime: context.runtime ?? null,
+        };
+
+        try {
+            Hooks.callAll("babele.translateDocumentData", hookContext);
+        } catch (error) {
+            const pack = this.metadata?.id ?? this.metadata?.name ?? "unknown";
+            console.error(`Babele | translateDocumentData hook failed for '${pack}'`, {
+                pack,
+                documentId: data?._id ?? null,
+                documentName: data?.name ?? null,
+                error: error?.message ?? String(error),
+            });
+            return translatedData;
+        }
+
+        return hookContext.translated ?? translatedData;
     }
 
     #hasTranslatedData(translatedData) {

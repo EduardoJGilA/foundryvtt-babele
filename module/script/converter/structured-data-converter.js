@@ -25,15 +25,19 @@ export class StructuredDataConverter {
     translate(context) {
         const configured = this._context(context);
         const descriptor = this._descriptor(configured);
-        const values = this._values(configured.value, descriptor.cardinality);
-        const translations = this._translations(configured.translation, descriptor, values);
-        const translated = values.map((value, index) => this._translateValue(
-            value,
-            translations[index],
-            descriptor,
-            configured,
-            configured.runtime,
-        ));
+        const entries = this._entries(configured.value, descriptor);
+        const translations = this._translations(configured.translation, descriptor, entries);
+        const translated = entries.map((entry, index) => ({
+            ...entry,
+            value: this._translateValue(
+                entry.value,
+                translations[index],
+                descriptor,
+                configured,
+                configured.runtime,
+                entry.sourceKey,
+            ),
+        }));
 
         return this._output(translated, descriptor);
     }
@@ -41,10 +45,16 @@ export class StructuredDataConverter {
     extract(context) {
         const configured = this._context(context);
         const descriptor = this._descriptor(configured);
-        const values = this._values(configured.value, descriptor.cardinality);
-        const extracted = values.map((value) => this._extractValue(value, descriptor, configured, configured.runtime));
+        const entries = this._entries(configured.value, descriptor);
+        const extracted = entries.map((entry) => this._extractValue(
+            entry.value,
+            descriptor,
+            configured,
+            configured.runtime,
+            entry.sourceKey,
+        ));
 
-        return this._extractedOutput(extracted, values, descriptor);
+        return this._extractedOutput(extracted, entries, descriptor);
     }
 
     _context(context) {
@@ -66,6 +76,7 @@ export class StructuredDataConverter {
     _descriptor(context) {
         return {
             cardinality: context.params?.cardinality ?? "many",
+            container: context.params?.container === "keyed" ? "keyed" : "array",
             mapping: context.params?.mapping ?? {},
             key: context.params?.key ?? null,
             compact: context.params?.compact === true,
@@ -78,11 +89,29 @@ export class StructuredDataConverter {
         return Object.entries(mapping ?? {}).map(([field, value]) => new FieldMapping(field, value, converterRegistry));
     }
 
-    _values(value, cardinality = "many") {
-        if (cardinality === "one") {
-            return (typeof value === "undefined" || value === null) ? [] : [value];
+    _entries(value, descriptor = {}) {
+        if (descriptor.cardinality === "one") {
+            return (typeof value === "undefined" || value === null) ? [] : [{sourceKey: null, value}];
         }
 
+        if (!value) {
+            return [];
+        }
+
+        if (descriptor.container === "keyed") {
+            return Object.entries(value).map(([sourceKey, entryValue]) => ({
+                sourceKey,
+                value: entryValue,
+            }));
+        }
+
+        return this._arrayValues(value).map((entryValue, index) => ({
+            sourceKey: String(index),
+            value: entryValue,
+        }));
+    }
+
+    _arrayValues(value) {
         if (!value) {
             return [];
         }
@@ -94,44 +123,61 @@ export class StructuredDataConverter {
         return value.contents ?? Array.from(value);
     }
 
-    _translations(translation, descriptor, values) {
+    _translations(translation, descriptor, entries) {
         if (!translation) {
-            return values.map(() => undefined);
+            return entries.map(() => undefined);
         }
 
         if (descriptor.cardinality === "one") {
             return [translation];
         }
 
+        if (descriptor.container === "keyed") {
+            return entries.map((entry) => translation[entry.sourceKey]);
+        }
+
         if (Array.isArray(translation)) {
-            return values.map((_, index) => translation[index]);
+            return entries.map((_, index) => translation[index]);
         }
 
         if (descriptor.key) {
-            return values.map((value) => translation[value?.[descriptor.key]]);
+            return entries.map((entry) => translation[entry.value?.[descriptor.key]]);
         }
 
-        return values.map(() => undefined);
+        return entries.map(() => undefined);
     }
 
-    _translateValue(value, translation, descriptor, context = {}, runtime = {}) {
+    _fieldRuntime(runtime = {}, sourceKey = null) {
+        if (sourceKey === null || typeof sourceKey === "undefined") {
+            return runtime;
+        }
+
+        return {
+            runtime,
+            sourceKey,
+        };
+    }
+
+    _translateValue(value, translation, descriptor, context = {}, runtime = {}, sourceKey = null) {
         if (!translation || !value) {
             return value;
         }
 
         const fields = this._fields(descriptor.mapping, context);
+        const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
         const mapped = fields.reduce((out, field) => {
-            field.prepare(value, translation, runtime);
-            return foundry.utils.mergeObject(out, field.map(value, translation, runtime));
+            field.prepare(value, translation, fieldRuntime);
+            return foundry.utils.mergeObject(out, field.map(value, translation, fieldRuntime));
         }, {});
 
         return foundry.utils.mergeObject(value, mapped, {inplace: false});
     }
 
-    _extractValue(value, descriptor, context = {}, runtime = {}) {
+    _extractValue(value, descriptor, context = {}, runtime = {}, sourceKey = null) {
         const fields = this._fields(descriptor.mapping, context);
+        const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
         return fields.reduce((out, field) => {
-            const extracted = field.extract(value, runtime);
+            const extracted = field.extract(value, fieldRuntime);
             if (typeof extracted === "undefined") {
                 return out;
             }
@@ -148,22 +194,41 @@ export class StructuredDataConverter {
         }, {});
     }
 
-    _output(values, descriptor) {
+    _output(entries, descriptor) {
         if (descriptor.cardinality === "one") {
-            return values[0] ?? null;
+            return entries[0]?.value ?? null;
         }
 
-        return values;
+        if (descriptor.container === "keyed") {
+            return entries.reduce((out, entry) => {
+                out[entry.sourceKey] = entry.value;
+                return out;
+            }, {});
+        }
+
+        return entries.map((entry) => entry.value);
     }
 
-    _extractedOutput(extracted, values, descriptor) {
+    _extractedOutput(extracted, entries, descriptor) {
         if (descriptor.cardinality === "one") {
             return extracted[0];
         }
 
+        if (descriptor.container === "keyed") {
+            return entries.reduce((out, entry, index) => {
+                const value = extracted[index] ?? {};
+                if (descriptor.compact && Object.keys(value).length === 0) {
+                    return out;
+                }
+
+                out[entry.sourceKey] = value;
+                return out;
+            }, {});
+        }
+
         if (descriptor.key) {
-            return values.reduce((out, value, index) => {
-                const key = value?.[descriptor.key];
+            return entries.reduce((out, entry, index) => {
+                const key = entry.value?.[descriptor.key];
                 if (key) {
                     out[key] = extracted[index];
                 }

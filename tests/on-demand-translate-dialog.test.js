@@ -6,39 +6,6 @@ installFoundryStubs();
 
 const {OnDemandTranslateDialog} = await import("../module/script/ui/on-demand-translate-dialog.js");
 
-test("OnDemandTranslateDialog only selects translated packs for the requested document type", () => {
-  const actorPack = {
-    translated: true,
-    metadata: {
-      type: "Actor",
-    },
-    hasTranslation(data, documentType) {
-      return documentType === this.metadata.type && data._id === "shared-id";
-    },
-  };
-
-  const itemPack = {
-    translated: true,
-    metadata: {
-      type: "Item",
-    },
-    hasTranslation(data, documentType) {
-      return documentType === this.metadata.type && data._id === "shared-id";
-    },
-  };
-
-  const pack = OnDemandTranslateDialog.translatedPackFor(
-    "Item",
-    {
-      _id: "shared-id",
-      name: "Shared Name",
-    },
-    [actorPack, itemPack],
-  );
-
-  assert.equal(pack, itemPack);
-});
-
 test("OnDemandTranslateDialog renders through DialogV2 with the expected translate action", () => {
   const actor = {
     items: {
@@ -95,11 +62,9 @@ test("OnDemandTranslateDialog translates matching actor items and updates embedd
     },
   };
 
-  game.babele.mappedCompendiums = {
-    matching(predicate) {
-      return predicate(translatedPack) ? [translatedPack] : [];
-    },
-  };
+  game.babele.mappedCompendiums = new foundry.utils.Collection([
+    ["test.items", translatedPack],
+  ]);
 
   const dialog = new OnDemandTranslateDialog(actor);
   const rendered = dialog.render();

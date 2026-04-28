@@ -21,6 +21,7 @@ import {ConverterRegistry} from "./converter/converter-registry.js";
 import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
 import {PackFolderTranslationRegistry} from "./translation/pack-folder-translation-registry.js";
 import {TranslationRegistry} from "./translation/translation-registry.js";
+import {ActorTranslation} from "./actor/actor-translation.js";
 
 /****************
  * HOOKS
@@ -81,6 +82,7 @@ class Babel {
     #folderTranslations
     #translationRegistry
     #catalog
+    #actorTranslation
 
     /**
      * Compatibility view of the currently published default mappings.
@@ -135,6 +137,7 @@ class Babel {
         });
         this.#translationRegistry = new TranslationRegistry();
         this.#translationRegistry.registerConfiguredDirectory();
+        this.#actorTranslation = new ActorTranslation(this);
         this.registerDefaultConverters();
     }
 
@@ -819,6 +822,28 @@ class Babel {
     translateActor(actor) {
         let d = new OnDemandTranslateDialog(actor);
         d.render(true);
+    }
+
+    /**
+     * Build an on-demand Actor translation proposal without applying changes.
+     *
+     * @param {Actor|object} actor
+     * @param {object} [options]
+     * @returns {ActorTranslationProposal}
+     */
+    proposeActorTranslation(actor, options = {}) {
+        return this.#actorTranslation.proposal(actor, options);
+    }
+
+    /**
+     * Apply a previously computed on-demand Actor translation proposal.
+     *
+     * @param {ActorTranslationProposal} proposal
+     * @param {object} [options]
+     * @returns {Promise<Array<object>>}
+     */
+    async applyActorTranslation(proposal, options = {}) {
+        return this.#actorTranslation.apply(proposal, options);
     }
 
     /**

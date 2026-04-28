@@ -1325,6 +1325,53 @@ test("Babel exposes source diagnostics and configurable source priority", async 
   assert.equal(diagnostics.language, "en");
 });
 
+test("Babel exposes on-demand actor translation proposal and apply API", async () => {
+  const babele = new Babel();
+  let applied = null;
+  const actor = {
+    items: {
+      contents: [{
+        id: "item-1",
+        toObject() {
+          return {_id: "item-1", name: "Sword"};
+        },
+      }],
+    },
+    async updateEmbeddedDocuments(documentType, updates) {
+      applied = {documentType, updates};
+    },
+  };
+  const translatedPack = {
+    translated: true,
+    hasTranslation(data, documentType) {
+      return documentType === "Item" && data._id === "item-1";
+    },
+    translate(data) {
+      return {...data, name: "Spada"};
+    },
+  };
+
+  babele.mappedCompendiums = [translatedPack];
+
+  const proposal = babele.proposeActorTranslation(actor);
+  const updates = await babele.applyActorTranslation(proposal);
+
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    translated: 1,
+    untranslated: 0,
+  });
+  assert.deepEqual(updates, [
+    {_id: "item-1", name: "Spada"},
+  ]);
+  assert.deepEqual(applied, {
+    documentType: "Item",
+    updates: [
+      {_id: "item-1", name: "Spada"},
+    ],
+  });
+});
+
 test.after(() => {
   console.log = originalLog;
   console.warn = originalWarn;

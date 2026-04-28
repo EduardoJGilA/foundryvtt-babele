@@ -1,16 +1,12 @@
+import {ActorTranslation} from "../actor/actor-translation.js";
+
 /**
  *
  */
 export class OnDemandTranslateDialog {
-
-    static translatedPackFor(documentType, data, translatedPacks) {
-        return game.babele.translatedPackFor(documentType, data, {
-            registry: translatedPacks,
-        });
-    }
-
-    constructor(actor) {
+    constructor(actor, actorTranslation = new ActorTranslation(game.babele)) {
         this.actor = actor;
+        this.actorTranslation = actorTranslation;
     }
 
     render(force = true) {
@@ -51,37 +47,32 @@ export class OnDemandTranslateDialog {
             return;
         }
 
+        const proposal = this.#proposal();
         area.textContent += "start...\n";
-        const items = this.actor.items.contents.length;
-        let translated = 0;
-        let untranslated = 0;
 
-        const translatedPacks = game.babele.mappedCompendiums?.matching?.((pack) => pack.translated)
-            ?? [];
-        const updates = [];
-
-        for (let idx = 0; idx < items; idx++) {
-            const item = this.actor.items.contents[idx];
-            const data = item.toObject();
-            const pack = OnDemandTranslateDialog.translatedPackFor("Item", data, translatedPacks);
-
-            if (pack) {
-                const translatedData = pack.translate(data, true);
-                updates.push(foundry.utils.mergeObject(translatedData, {_id: item.id}));
-                area.textContent += `${data.name.padEnd(68, ".")}ok\n`;
-                translated++;
+        for (const entry of proposal.entries) {
+            if (entry.translated) {
+                area.textContent += `${entry.name().padEnd(68, ".")}ok\n`;
             } else {
-                area.textContent += `${data.name.padEnd(61, ".")}not found\n`;
-                untranslated++;
+                area.textContent += `${entry.name().padEnd(61, ".")}not found\n`;
             }
         }
 
-        if (updates.length) {
+        if (proposal.updates().length) {
             area.textContent += "Updating...\n";
-            await this.actor.updateEmbeddedDocuments("Item", updates);
+            await this.#apply(proposal);
         }
 
-        area.textContent += `\nDone. tot items: ${items}, tot translated: ${translated}, tot untranslated: ${untranslated}\n`;
+        const summary = proposal.summary();
+        area.textContent += `\nDone. tot items: ${summary.total}, tot translated: ${summary.translated}, tot untranslated: ${summary.untranslated}\n`;
         area.scrollTop = area.scrollHeight;
+    }
+
+    #proposal() {
+        return game.babele?.proposeActorTranslation?.(this.actor) ?? this.actorTranslation.proposal(this.actor);
+    }
+
+    async #apply(proposal) {
+        return game.babele?.applyActorTranslation?.(proposal) ?? this.actorTranslation.apply(proposal);
     }
 }

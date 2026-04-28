@@ -1294,6 +1294,37 @@ test("Babel exposes cache diagnostics and explicit cache invalidation", async ()
   assert.equal(after.mappedCompendiums.indexTranslationEntries, 0);
 });
 
+test("Babel exposes source diagnostics and configurable source priority", async () => {
+  const babele = new Babel();
+  let storedPriority = {};
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "sourcePriority") {
+      return storedPriority;
+    }
+    return "";
+  };
+  game.settings.set = async (_namespace, key, value) => {
+    if (key === "sourcePriority") {
+      storedPriority = value;
+    }
+  };
+
+  await babele.setSourcePriority("test.items", ["module:two:en", "module:one:en"], {refresh: false});
+
+  assert.deepEqual(babele.sourcePriority(), {
+    global: [],
+    collections: {
+      "test.items": ["module:two:en", "module:one:en"],
+    },
+  });
+
+  const diagnostics = await babele.sourceDiagnostics("en");
+  assert.equal(diagnostics.language, "en");
+});
+
 test.after(() => {
   console.log = originalLog;
   console.warn = originalWarn;

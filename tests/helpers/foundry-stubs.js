@@ -122,6 +122,13 @@ export function installFoundryStubs() {
     }
   }
 
+  class ApplicationV2 {
+    render(options = {}) {
+      this.renderOptions = options;
+      return this;
+    }
+  }
+
   globalThis.foundry = {
     utils: {
       mergeObject,
@@ -144,6 +151,7 @@ export function installFoundryStubs() {
         },
       },
       api: {
+        ApplicationV2,
         DialogV2,
       },
       ux: {

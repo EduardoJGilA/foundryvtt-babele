@@ -359,6 +359,47 @@ class Babel {
     }
 
     /**
+     * Return translation-source diagnostics, including overlapping sources and
+     * effective merge order for each translated collection.
+     *
+     * @param {string} [language]
+     * @returns {Promise<object>}
+     */
+    async sourceDiagnostics(language = undefined) {
+        return this.#translationRegistry.diagnostics(language);
+    }
+
+    /**
+     * Return the configured source priority.
+     *
+     * @returns {{global: string[], collections: Record<string, string[]>}}
+     */
+    sourcePriority() {
+        return this.#translationRegistry.sourcePriority();
+    }
+
+    /**
+     * Persist source priority for one collection and refresh runtime state.
+     *
+     * The provided array is merge order: listed sources are applied after
+     * unlisted sources, and later listed sources override earlier listed
+     * sources.
+     *
+     * @param {string} collection
+     * @param {string[]} sources
+     * @param {{refresh?: boolean}} [options]
+     * @returns {Promise<boolean>}
+     */
+    async setSourcePriority(collection, sources = [], {refresh = true} = {}) {
+        await this.#translationRegistry.setSourcePriority(collection, sources);
+        if (!refresh) {
+            return true;
+        }
+
+        return this.refreshTranslationSources();
+    }
+
+    /**
      * Declare the system-level translations directory.
      *
      * The directory is resolved relative to `systems/<system-id>` and acts as

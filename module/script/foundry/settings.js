@@ -1,4 +1,11 @@
 
+import {SourcePrioritySettings} from "../ui/source-priority-settings.js";
+
+function localizeWithFallback(key, fallback) {
+    const localized = game.i18n.localize(key);
+    return localized === key ? fallback : localized;
+}
+
 export function registerModuleSettings() {
 
     game.settings.register('babele', 'directory', {
@@ -66,6 +73,29 @@ export function registerModuleSettings() {
         default: [],
         scope: 'world',
         config: false
+    });
+
+    game.settings.register('babele', 'sourcePriority', {
+        type: Object,
+        default: {},
+        scope: 'world',
+        config: false,
+        onChange: () => {
+            if (!game.user.isGM) {
+                return;
+            }
+
+            void game.babele?.refreshTranslationSources?.();
+        },
+    });
+
+    game.settings.registerMenu?.('babele', 'sourcePriorityMenu', {
+        name: localizeWithFallback("BABELE.SourcePriorityTitle", "Translation Source Priority"),
+        label: localizeWithFallback("BABELE.SourcePriorityOpen", "Configure Source Priority"),
+        hint: localizeWithFallback("BABELE.SourcePriorityHint", "Choose the merge order when more than one translation source contributes to the same compendium."),
+        icon: "fas fa-layer-group",
+        type: SourcePrioritySettings,
+        restricted: true,
     });
 
     game.settings.register('babele', 'sourcesRevision', {

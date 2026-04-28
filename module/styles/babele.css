@@ -304,3 +304,113 @@
     min-width: 0;
     overflow-wrap: anywhere;
 }
+
+.babele-source-priority-dialog {
+    width: min(100%, 44rem);
+    max-height: min(72vh, 42rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.2rem;
+}
+
+.babele-source-priority-header .hint,
+.babele-source-priority-empty {
+    margin: 0;
+}
+
+.babele-source-priority-collections {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-top: 0.7rem;
+}
+
+.babele-source-priority-collection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--color-border-light-tertiary, rgba(255, 255, 255, 0.16)) 80%, transparent 20%);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.babele-source-priority-collection__header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+}
+
+.babele-source-priority-collection__title {
+    font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.babele-source-priority-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.babele-source-priority-table__head,
+.babele-source-priority-row {
+    display: grid;
+    grid-template-columns: 4.4rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.babele-source-priority-table__head {
+    font-size: 0.78rem;
+    font-weight: 600;
+    opacity: 0.78;
+}
+
+.babele-source-priority-row {
+    padding: 0.35rem 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--color-border-light-tertiary, rgba(255, 255, 255, 0.12)) 70%, transparent 30%);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.babele-source-priority-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.babele-source-priority-button {
+    width: 1.85rem;
+    height: 2rem;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--color-border-highlight-alt, rgba(255, 180, 120, 0.5)) 65%, transparent 35%);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.04);
+    color: inherit;
+}
+
+.babele-source-priority-button:hover:not(:disabled),
+.babele-source-priority-button:focus-visible:not(:disabled) {
+    border-color: var(--color-border-highlight-alt, #f0a85a);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-highlight-alt, #f0a85a) 35%, transparent 65%);
+}
+
+.babele-source-priority-button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.babele-source-priority-source {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}

@@ -243,8 +243,42 @@ export class TranslationRegistry {
      * @returns {Promise<TranslationSourceFile[]>}
      */
     async sourcesFor(collection, language = this.#language()) {
-        return (await this.translationSources(language))
-            .filter((source) => source.baseName === encodeURI(`${collection}.json`));
+        return this.#orderedSourcesFor(collection, (await this.translationSources(language))
+            .filter((source) => source.baseName === encodeURI(`${collection}.json`)));
+    }
+
+    /**
+     * Return the configured source-priority settings.
+     *
+     * @returns {{global: string[], collections: Record<string, string[]>}}
+     */
+    sourcePriority() {
+        return this.#sourcePriorityConfig();
+    }
+
+    /**
+     * Persist source priority for one collection.
+     *
+     * The provided array is interpreted as merge order for matching sources:
+     * listed sources are applied after unlisted sources, and later listed
+     * sources override earlier listed sources.
+     *
+     * @param {string} collection
+     * @param {string[]} sources
+     * @returns {Promise<void>}
+     */
+    async setSourcePriority(collection, sources = []) {
+        const config = this.#sourcePriorityConfig();
+        const normalized = [...new Set((sources ?? []).filter(Boolean).map(String))];
+
+        if (normalized.length === 0) {
+            delete config.collections[collection];
+        } else {
+            config.collections[collection] = normalized;
+        }
+
+        await game.settings.set("babele", "sourcePriority", config);
+        this.invalidate("source-priority-change");
     }
 
     /**
@@ -266,7 +300,9 @@ export class TranslationRegistry {
             return translations;
         }
 
-        for (const [collection, files] of this.#translationFilesByCollection(translationSources).entries()) {
+        for (const [collection, sources] of this.#translationSourcesByCollection(translationSources).entries()) {
+            const orderedSources = this.#orderedSourcesFor(collection, sources);
+            const files = orderedSources.map((source) => source.file);
             const payload = (
                 await Promise.all(
                     files.map((file) => this.loadJsonFile(file, {
@@ -335,6 +371,7 @@ export class TranslationRegistry {
             translation: {
                 ...this._translationDiagnostics,
                 packs: this.#packDiagnostics(this._translationSources),
+                overlaps: this.#overlapDiagnostics(this._translationSources),
             },
             mapping: this._mappingDiagnostics,
         };
@@ -438,25 +475,97 @@ export class TranslationRegistry {
         return [this._publishedSource];
     }
 
-    #translationFilesByCollection(sources) {
+    #translationSourcesByCollection(sources) {
         const byCollection = new Map();
 
         for (const source of sources) {
             const collection = source.baseName.replace(/\.json$/u, "");
-            const files = byCollection.get(collection) ?? [];
-            files.push(source.file);
-            byCollection.set(collection, files);
+            const collectionSources = byCollection.get(collection) ?? [];
+            collectionSources.push(source);
+            byCollection.set(collection, collectionSources);
         }
 
         return byCollection;
     }
 
     #packDiagnostics(sources = []) {
-        return [...this.#translationFilesByCollection(sources).entries()].map(([collection, files]) => ({
-            collection,
-            sourceCount: files.length,
-            files,
-        }));
+        return [...this.#translationSourcesByCollection(sources).entries()].map(([collection, collectionSources]) => {
+            const orderedSources = this.#orderedSourcesFor(collection, collectionSources);
+            return {
+                collection,
+                sourceCount: orderedSources.length,
+                overlapping: orderedSources.length > 1,
+                customPriority: this.#sourceOrderFor(collection).length > 0,
+                sources: orderedSources.map((source) => source.source),
+                files: orderedSources.map((source) => source.file),
+            };
+        });
+    }
+
+    #overlapDiagnostics(sources = []) {
+        return this.#packDiagnostics(sources).filter((pack) => pack.overlapping);
+    }
+
+    #orderedSourcesFor(collection, sources = []) {
+        const order = this.#sourceOrderFor(collection);
+        if (order.length === 0 || sources.length < 2) {
+            return [...sources];
+        }
+
+        const orderRank = new Map(order.map((source, index) => [source, index]));
+        return sources
+            .map((source, index) => ({source, index}))
+            .sort((left, right) => {
+                const leftRanked = orderRank.has(left.source.source);
+                const rightRanked = orderRank.has(right.source.source);
+
+                if (!leftRanked && !rightRanked) {
+                    return left.index - right.index;
+                }
+
+                if (leftRanked !== rightRanked) {
+                    return leftRanked ? 1 : -1;
+                }
+
+                return orderRank.get(left.source.source) - orderRank.get(right.source.source);
+            })
+            .map((entry) => entry.source);
+    }
+
+    #sourceOrderFor(collection) {
+        const config = this.#sourcePriorityConfig();
+        return config.collections[collection] ?? config.global ?? [];
+    }
+
+    #sourcePriorityConfig() {
+        const raw = game.settings.get("babele", "sourcePriority");
+        if (Array.isArray(raw)) {
+            return {
+                global: [...new Set(raw.filter(Boolean).map(String))],
+                collections: {},
+            };
+        }
+
+        if (!raw || typeof raw !== "object") {
+            return {
+                global: [],
+                collections: {},
+            };
+        }
+
+        const collections = Object.fromEntries(
+            Object.entries(raw.collections ?? {})
+                .filter(([, value]) => Array.isArray(value))
+                .map(([collection, value]) => [
+                    collection,
+                    [...new Set(value.filter(Boolean).map(String))],
+                ]),
+        );
+
+        return {
+            global: Array.isArray(raw.global) ? [...new Set(raw.global.filter(Boolean).map(String))] : [],
+            collections,
+        };
     }
 
     #buildDiagnostics(kind, rawSources, uniqueSources) {

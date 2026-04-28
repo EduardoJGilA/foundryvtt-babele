@@ -31,6 +31,10 @@ function createRegistry(overrides = {}) {
       return overrides.storedMappingFiles ?? [];
     }
 
+    if (key === "sourcePriority") {
+      return overrides.sourcePriority ?? {};
+    }
+
     return "";
   };
   game.user.isGM = overrides.isGM ?? true;
@@ -291,6 +295,97 @@ test("TranslationRegistry exposes and invalidates source discovery caches", asyn
   assert.equal(registry.cacheDiagnostics().mappingSourcesCached, false);
   assert.equal(debugCalls.some((call) => String(call[0]).includes("invalidated translation registry discovery cache")), true);
   delete globalThis.CONFIG;
+});
+
+test("TranslationRegistry detects overlapping translation sources and applies configured collection priority", async () => {
+  const loaded = [];
+  const registry = createRegistry({
+    sourcePriority: {
+      collections: {
+        "test.items": [
+          "module:module-two:it",
+          "module:module-one:it",
+        ],
+      },
+    },
+    modules: [
+      {module: "module-one", dir: "translations", lang: "it"},
+      {module: "module-two", dir: "translations", lang: "it"},
+    ],
+    browse: async (_source, dir) => {
+      if (dir === "modules/module-one/translations") {
+        return {
+          files: ["modules/module-one/translations/test.items.json"],
+        };
+      }
+
+      if (dir === "modules/module-two/translations") {
+        return {
+          files: ["modules/module-two/translations/test.items.json"],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+  registry._jsonLoader = async (file) => {
+    loaded.push(file);
+    return {
+      entries: {
+        item: {
+          name: file.includes("module-one") ? "Module One" : "Module Two",
+        },
+      },
+    };
+  };
+
+  const sources = await registry.sourcesFor("test.items");
+  const diagnostics = await registry.diagnostics();
+  const translations = await registry.loadTranslations();
+
+  assert.deepEqual(sources.map((source) => source.source), [
+    "module:module-two:it",
+    "module:module-one:it",
+  ]);
+  assert.deepEqual(diagnostics.translation.overlaps[0].sources, [
+    "module:module-two:it",
+    "module:module-one:it",
+  ]);
+  assert.equal(diagnostics.translation.overlaps[0].customPriority, true);
+  assert.deepEqual(loaded, [
+    "modules/module-two/translations/test.items.json",
+    "modules/module-one/translations/test.items.json",
+  ]);
+  assert.deepEqual(translations.for("test.items").entries.item, {
+    name: "Module One",
+  });
+});
+
+test("TranslationRegistry persists source priority settings", async () => {
+  let storedPriority = {};
+  const registry = createRegistry({
+    sourcePriority: storedPriority,
+  });
+  game.settings.get = (_namespace, key) => key === "sourcePriority" ? storedPriority : "";
+  game.settings.set = async (_namespace, key, value) => {
+    if (key === "sourcePriority") {
+      storedPriority = value;
+    }
+  };
+
+  await registry.setSourcePriority("test.items", ["module:two", "module:one"]);
+  assert.deepEqual(storedPriority, {
+    global: [],
+    collections: {
+      "test.items": ["module:two", "module:one"],
+    },
+  });
+
+  await registry.setSourcePriority("test.items", []);
+  assert.deepEqual(storedPriority, {
+    global: [],
+    collections: {},
+  });
 });
 
 test.after(() => {

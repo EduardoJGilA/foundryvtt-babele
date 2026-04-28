@@ -47,12 +47,26 @@ class FakeElement {
   }
 
   appendChild(child) {
+    if (child.parentNode) {
+      const index = child.parentNode.children.indexOf(child);
+      if (index >= 0) {
+        child.parentNode.children.splice(index, 1);
+      }
+    }
+
     child.parentNode = this;
     this.children.push(child);
     return child;
   }
 
   insertBefore(child, reference) {
+    if (child.parentNode) {
+      const existingIndex = child.parentNode.children.indexOf(child);
+      if (existingIndex >= 0) {
+        child.parentNode.children.splice(existingIndex, 1);
+      }
+    }
+
     child.parentNode = this;
 
     if (!reference) {
@@ -135,11 +149,18 @@ class FakeElement {
       return this.classList.contains(selector.slice(1));
     }
 
-    const attrMatch = selector.match(/^\[data-([a-z-]+)(?:="([^"]+)")?\]$/);
-    if (attrMatch) {
-      const [, name, expected] = attrMatch;
+    const dataAttrMatch = selector.match(/^\[data-([a-z-]+)(?:="([^"]+)")?\]$/);
+    if (dataAttrMatch) {
+      const [, name, expected] = dataAttrMatch;
       const key = name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
       const actual = this.dataset[key];
+      return typeof expected === "undefined" ? typeof actual !== "undefined" : actual === expected;
+    }
+
+    const attrMatch = selector.match(/^\[([a-z-]+)(?:="([^"]+)")?\]$/);
+    if (attrMatch) {
+      const [, name, expected] = attrMatch;
+      const actual = this.getAttribute(name);
       return typeof expected === "undefined" ? typeof actual !== "undefined" : actual === expected;
     }
 

@@ -312,6 +312,17 @@ class Babel {
     }
 
     /**
+     * Return a diagnostic view of the effective mapping for one document type.
+     *
+     * @param {string} documentType
+     * @param {{data?: object, customMapping?: object|null}} [options]
+     * @returns {object}
+     */
+    inspectMapping(documentType, options = {}) {
+        return this.documentMappings.inspect(documentType, options);
+    }
+
+    /**
      * Declare the system-level translations directory.
      *
      * The directory is resolved relative to `systems/<system-id>` and acts as

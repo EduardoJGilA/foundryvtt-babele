@@ -81,6 +81,63 @@ export class DocumentMappings {
     }
 
     /**
+     * Return the ordered mapping layers that compose the effective mapping
+     * state.
+     *
+     * @returns {{kind: string, label: string, precedence: number, mapping: object}[]}
+     */
+    layers() {
+        return this.#layers().map((layer) => ({
+            ...layer,
+            mapping: this.#clone(layer.mapping),
+        }));
+    }
+
+    /**
+     * Return a diagnostic view of the effective mapping for one document type
+     * and optional document instance.
+     *
+     * The report reflects the actual hierarchy semantics: base document-type
+     * layers are merged first, subtype layers overlay the effective base, and
+     * compendium-local mappings overlay their matching branch.
+     *
+     * @param {string} documentType
+     * @param {object} [options]
+     * @param {object} [options.data]
+     * @param {object|null} [options.customMapping]
+     * @returns {object}
+     */
+    inspect(documentType, {
+        data = {},
+        customMapping = null,
+    } = {}) {
+        const subtype = data?.type ?? null;
+        const hierarchy = this.hierarchyFor(documentType, customMapping);
+        const mapping = hierarchy.mappingFor(data);
+
+        return {
+            documentType,
+            subtype,
+            keys: {
+                base: documentType,
+                subtype: subtype ? `${documentType}.${subtype}` : null,
+            },
+            precedence: [
+                "built-in",
+                "registered",
+                "loaded",
+                "compendium-local",
+                "subtype",
+            ],
+            layers: this.#contributions(documentType, subtype, customMapping),
+            effective: {
+                mapping: this.#clone(mapping.mapping),
+                identity: this.#clone(mapping.identityDefinition),
+            },
+        };
+    }
+
+    /**
      * Determine whether the effective mapping layers define one exact
      * document-type mapping.
      *
@@ -122,6 +179,112 @@ export class DocumentMappings {
         return DocumentMappings.DEFAULT_MAPPINGS;
     }
 
+    #layers() {
+        return [
+            {
+                kind: "built-in",
+                label: "built-in defaults",
+                precedence: 0,
+                mapping: this.builtInMappings,
+            },
+            ...this.registeredMappings.map((mapping, index) => ({
+                kind: "registered",
+                label: `registered mapping ${index + 1}`,
+                precedence: 10 + index,
+                mapping,
+            })),
+            ...this.loadedMappings.map((mapping, index) => ({
+                kind: "loaded",
+                label: `loaded mapping ${index + 1}`,
+                precedence: 20 + index,
+                mapping,
+            })),
+        ];
+    }
+
+    #contributions(documentType, subtype = null, customMapping = null) {
+        const contributions = this.#layers().flatMap((layer) => this.#layerContributions(layer, documentType, subtype));
+
+        if (customMapping) {
+            contributions.push(...this.#customContributions(documentType, subtype, customMapping));
+        }
+
+        return contributions;
+    }
+
+    #layerContributions(layer, documentType, subtype = null) {
+        return [
+            this.#contribution(layer, "base", documentType),
+            subtype ? this.#contribution(layer, "subtype", `${documentType}.${subtype}`) : null,
+        ].filter(Boolean);
+    }
+
+    #contribution(layer, branch, key) {
+        const definition = layer.mapping?.[key];
+        if (!definition) {
+            return null;
+        }
+
+        return {
+            kind: layer.kind,
+            label: layer.label,
+            precedence: layer.precedence,
+            branch,
+            key,
+            definition: this.#definitionSnapshot(definition),
+        };
+    }
+
+    #customContributions(documentType, subtype = null, customMapping = {}) {
+        const base = {};
+        const subtypeDefinitions = {};
+        const subtypePrefix = `${documentType}.`;
+
+        for (const [key, value] of Object.entries(customMapping)) {
+            if (key.startsWith(subtypePrefix)) {
+                const customSubtype = key.slice(subtypePrefix.length);
+                subtypeDefinitions[customSubtype] = value;
+                continue;
+            }
+
+            base[key] = value;
+        }
+
+        const contributions = [];
+        if (Object.keys(base).length > 0) {
+            contributions.push({
+                kind: "compendium-local",
+                label: "compendium-local mapping",
+                precedence: 30,
+                branch: "base",
+                key: documentType,
+                definition: this.#definitionSnapshot(base),
+            });
+        }
+
+        if (subtype && subtypeDefinitions[subtype]) {
+            contributions.push({
+                kind: "compendium-local",
+                label: "compendium-local subtype mapping",
+                precedence: 31,
+                branch: "subtype",
+                key: `${documentType}.${subtype}`,
+                definition: this.#definitionSnapshot(subtypeDefinitions[subtype]),
+            });
+        }
+
+        return contributions;
+    }
+
+    #definitionSnapshot(definition = {}) {
+        const normalized = this.#normalizedDefinition(definition);
+
+        return {
+            mapping: this.#clone(normalized.mapping),
+            identity: this.#clone(normalized.identity),
+        };
+    }
+
     #rebuild() {
         const effective = this.#clone(this.builtInMappings);
 
@@ -144,6 +307,21 @@ export class DocumentMappings {
                 target[key] = this.#clone(value);
             }
         }
+    }
+
+    #normalizedDefinition(definition = {}) {
+        if (definition?.mapping || definition?.identity) {
+            return {
+                mapping: {...(definition.mapping ?? {})},
+                identity: {...(definition.identity ?? {})},
+            };
+        }
+
+        const mapping = {...(definition ?? {})};
+        const identity = mapping._identity ?? {};
+        delete mapping._identity;
+
+        return {mapping, identity};
     }
 
     #clone(value) {

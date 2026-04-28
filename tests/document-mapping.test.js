@@ -324,3 +324,99 @@ test("DocumentMappings materializes document mappings from effective loaded laye
     },
   }), "common");
 });
+
+test("DocumentMappings exposes inspectable effective mapping precedence", () => {
+  const mappings = new DocumentMappings({
+    Item: {
+      description: "system.description.value",
+    },
+    "Item.weapon": {
+      damage: "system.damage.value",
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const layered = mappings
+    .withRegistered({
+      Item: {
+        source: "system.source",
+      },
+    })
+    .withLoaded([{
+      Item: {
+        description: "system.loadedDescription.value",
+      },
+      "Item.weapon": {
+        damage: "system.loadedDamage.value",
+      },
+    }]);
+
+  const report = layered.inspect("Item", {
+    data: {type: "weapon"},
+    customMapping: {
+      rarity: "system.rarity",
+      "Item.weapon": {
+        critical: "system.critical",
+      },
+    },
+  });
+
+  assert.equal(report.documentType, "Item");
+  assert.equal(report.subtype, "weapon");
+  assert.deepEqual(report.keys, {
+    base: "Item",
+    subtype: "Item.weapon",
+  });
+  assert.deepEqual(
+    report.layers.map((layer) => `${layer.kind}:${layer.branch}:${layer.key}`),
+    [
+      "built-in:base:Item",
+      "built-in:subtype:Item.weapon",
+      "registered:base:Item",
+      "loaded:base:Item",
+      "loaded:subtype:Item.weapon",
+      "compendium-local:base:Item",
+      "compendium-local:subtype:Item.weapon",
+    ],
+  );
+  assert.deepEqual(report.effective.mapping, {
+    description: "system.loadedDescription.value",
+    source: "system.source",
+    rarity: "system.rarity",
+    damage: "system.loadedDamage.value",
+    critical: "system.critical",
+  });
+});
+
+test("DocumentMappings diagnostic layers are detached from runtime state", () => {
+  const mappings = new DocumentMappings({
+    Item: {
+      name: "name",
+    },
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const [builtIn] = mappings.layers();
+  builtIn.mapping.Item.name = "mutated";
+
+  assert.equal(mappings.current().Item.name, "name");
+});
+
+test("Babel exposes effective mapping inspection through the public facade", () => {
+  const babele = new Babel();
+  babele.registerMapping({
+    Item: {
+      source: "system.source",
+    },
+  });
+
+  const report = babele.inspectMapping("Item");
+
+  assert.equal(report.documentType, "Item");
+  assert.equal(report.layers.some((layer) => layer.kind === "registered"), true);
+  assert.equal(report.effective.mapping.source, "system.source");
+});

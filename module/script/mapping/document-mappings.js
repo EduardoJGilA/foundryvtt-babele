@@ -138,6 +138,22 @@ export class DocumentMappings {
     }
 
     /**
+     * Return a snapshot of mapping cache boundaries.
+     *
+     * @returns {object}
+     */
+    cacheDiagnostics() {
+        return {
+            boundary: "document-mappings",
+            strategy: "immutable-rebuild",
+            builtInLayerCount: 1,
+            registeredLayerCount: this.registeredMappings.length,
+            loadedLayerCount: this.loadedMappings.length,
+            effectiveDocumentTypes: Object.keys(this.effectiveMappings).length,
+        };
+    }
+
+    /**
      * Determine whether the effective mapping layers define one exact
      * document-type mapping.
      *

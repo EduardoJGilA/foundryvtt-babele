@@ -85,6 +85,38 @@ test("MappedCompendium caches translated index rows across equivalent index payl
   assert.equal(resolutionCalls, 1);
 });
 
+test("MappedCompendium exposes and invalidates translated index cache state", () => {
+  const compendium = mappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "item-1": {
+        name: "Spada",
+      },
+    },
+  });
+
+  let resolutionCalls = 0;
+  const originalMatchFor = compendium.translationEntries.matchFor.bind(compendium.translationEntries);
+  compendium.translationEntries.matchFor = (...args) => {
+    resolutionCalls += 1;
+    return originalMatchFor(...args);
+  };
+
+  compendium.translateIndex([{_id: "item-1", name: "Sword"}]);
+  compendium.translateIndex([{_id: "item-1", name: "Sword"}]);
+  assert.equal(resolutionCalls, 1);
+  assert.equal(compendium.cacheDiagnostics().indexTranslationEntries, 1);
+
+  compendium.invalidateCaches("test");
+  assert.equal(compendium.cacheDiagnostics().indexTranslationEntries, 0);
+
+  compendium.translateIndex([{_id: "item-1", name: "Sword"}]);
+  assert.equal(resolutionCalls, 2);
+});
+
 test("MappedCompendium clears cached index translations when strategies change", () => {
   const metadata = {
     id: "test.items",

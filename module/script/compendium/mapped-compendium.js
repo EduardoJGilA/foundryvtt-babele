@@ -85,6 +85,35 @@ export class MappedCompendium {
     }
 
     /**
+     * Clear runtime caches owned by this mapped compendium.
+     *
+     * @param {string} [reason]
+     * @returns {void}
+     */
+    invalidateCaches(reason = "manual") {
+        this.#indexTranslationCache.clear();
+        this.#debug("invalidated mapped compendium cache", {
+            reason,
+            collection: this.metadata?.id ?? this.metadata?.name ?? null,
+        });
+    }
+
+    /**
+     * Return a snapshot of cache boundaries owned by this mapped compendium.
+     *
+     * @returns {object}
+     */
+    cacheDiagnostics() {
+        return {
+            boundary: "mapped-compendium",
+            collection: this.metadata?.id ?? this.metadata?.name ?? null,
+            documentType: this.metadata?.type ?? null,
+            translated: this.translated,
+            indexTranslationEntries: this.#indexTranslationCache.size,
+        };
+    }
+
+    /**
      * Return the folder-translation payload owned by this compendium.
      *
      * Normal compendiums expose folder translations through the `folders`
@@ -466,6 +495,11 @@ export class MappedCompendium {
 
         const cacheKey = this.#indexCacheKey(entry);
         if (cacheKey && this.#indexTranslationCache.has(cacheKey)) {
+            this.#debug("using cached translated index entry", {
+                collection: this.metadata?.id ?? this.metadata?.name ?? null,
+                documentId: entry?._id ?? entry?.id ?? null,
+                documentName: entry?.name ?? null,
+            });
             const cached = this.#indexTranslationCache.get(cacheKey);
             return cached ? foundry.utils.mergeObject({}, cached, {inplace: false}) : entry;
         }
@@ -494,6 +528,14 @@ export class MappedCompendium {
             sourceId,
             candidates,
         ]);
+    }
+
+    #debug(message, data = {}) {
+        if (!globalThis.CONFIG?.debug?.babele) {
+            return;
+        }
+
+        console.debug(`Babele | ${message}`, data);
     }
 
     #activeRuntime(runtime = {}) {

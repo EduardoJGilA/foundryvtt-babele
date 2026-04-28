@@ -1213,6 +1213,87 @@ test("Babel.reinitialize restores translated indexes and clears cached closed co
   assert.equal(initializeTreeCalls >= 2, true);
 });
 
+test("Babel exposes cache diagnostics and explicit cache invalidation", async () => {
+  const babele = new Babel();
+  babele.register({module: "module-one", dir: "translations", lang: "en"});
+
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  foundry.applications.apps.FilePicker.browse = async (_source, dir) => {
+    if (dir === "modules/module-one/translations") {
+      return {
+        files: ["modules/module-one/translations/module-one.items.json"],
+      };
+    }
+
+    return {files: []};
+  };
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("module-one.items.json")) {
+      return {
+        async json() {
+          return {
+            entries: {
+              "item-1": {
+                name: "Spada",
+              },
+            },
+          };
+        },
+      };
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  game.data.packs = [{
+    type: "Item",
+    packageName: "module-one",
+    packageType: "module",
+    name: "items",
+  }];
+  game.packs = new foundry.utils.Collection([[
+    "module-one.items",
+    {
+      collection: "module-one.items",
+      metadata: {id: "module-one.items", label: "Items"},
+      index: [{_id: "item-1", name: "Sword"}],
+      folders: new foundry.utils.Collection(),
+      initializeTree() {},
+      clear() {},
+    },
+  ]]);
+  game.data.folders = [];
+  game.collections.set("Folder", []);
+
+  await babele.init();
+  await babele.applyRuntimeTranslations();
+  game.packs.get("module-one.items").index[0].name = "Sword";
+  delete game.packs.get("module-one.items").index[0].translated;
+  babele.translateIndex(game.packs.get("module-one.items").index, "module-one.items");
+  babele.translateIndex([{_id: "item-1", name: "Sword"}], "module-one.items");
+
+  const before = babele.cacheDiagnostics();
+  assert.equal(before.translationRegistry.translationSourcesCached, true);
+  assert.equal(before.translationRegistry.mappingSourcesCached, true);
+  assert.equal(before.mappedCompendiums.indexTranslationEntries, 1);
+  assert.equal(before.documentMappings.strategy, "immutable-rebuild");
+
+  babele.invalidateCaches("test");
+
+  const after = babele.cacheDiagnostics();
+  assert.equal(after.translationRegistry.translationSourcesCached, false);
+  assert.equal(after.translationRegistry.mappingSourcesCached, false);
+  assert.equal(after.mappedCompendiums.indexTranslationEntries, 0);
+});
+
 test.after(() => {
   console.log = originalLog;
   console.warn = originalWarn;

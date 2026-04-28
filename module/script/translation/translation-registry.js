@@ -146,6 +146,41 @@ export class TranslationRegistry {
         this._mappingDiagnostics = null;
     }
 
+    /**
+     * Explicitly invalidate cached source-discovery results.
+     *
+     * This does not unload already materialized translation state. Callers that
+     * need the live runtime to change should follow with a full Babele
+     * reinitialization.
+     *
+     * @param {string} [reason]
+     * @returns {void}
+     */
+    invalidate(reason = "manual") {
+        this.#invalidateDiscovery();
+        this.#debug("invalidated translation registry discovery cache", {reason});
+    }
+
+    /**
+     * Return a snapshot of source-discovery cache boundaries.
+     *
+     * @returns {object}
+     */
+    cacheDiagnostics() {
+        return {
+            boundary: "translation-registry",
+            language: this._language,
+            translationSourcesCached: this._translationSources !== null,
+            mappingSourcesCached: this._mappingSources !== null,
+            translationDiagnosticsCached: this._translationDiagnostics !== null,
+            mappingDiagnosticsCached: this._mappingDiagnostics !== null,
+            registeredSources: this._sources.map((source) => ({
+                name: source?.name ?? null,
+                weight: source?.weight?.() ?? null,
+            })),
+        };
+    }
+
     async discover(language = this.#language()) {
         await Promise.all([this.translationSources(language), this.mappingSources(language)]);
     }
@@ -161,6 +196,7 @@ export class TranslationRegistry {
         this.#prepare(language);
 
         if (this._translationSources) {
+            this.#debug("using cached translation source discovery", {language});
             return this._translationSources;
         }
 
@@ -186,6 +222,7 @@ export class TranslationRegistry {
         this.#prepare(language);
 
         if (this._mappingSources) {
+            this.#debug("using cached mapping source discovery", {language});
             return this._mappingSources;
         }
 
@@ -365,7 +402,19 @@ export class TranslationRegistry {
         }
 
         this.#invalidateDiscovery();
+        this.#debug("invalidated translation registry discovery cache for language switch", {
+            previousLanguage: this._language,
+            language,
+        });
         this._language = language;
+    }
+
+    #debug(message, data = {}) {
+        if (!globalThis.CONFIG?.debug?.babele) {
+            return;
+        }
+
+        console.debug(`Babele | ${message}`, data);
     }
 
     async #discoverFromActiveSources(kind, language) {

@@ -130,6 +130,35 @@ export class MappedCompendiums {
         return [...this.values()].filter(predicate);
     }
 
+    /**
+     * Clear runtime caches owned by all mapped compendiums.
+     *
+     * @param {string} [reason]
+     * @returns {void}
+     */
+    invalidateCaches(reason = "manual") {
+        for (const compendium of this.values()) {
+            compendium.invalidateCaches?.(reason);
+        }
+    }
+
+    /**
+     * Return cache diagnostics for all managed compendiums.
+     *
+     * @returns {object}
+     */
+    cacheDiagnostics() {
+        const packs = [...this.values()].map((compendium) => compendium.cacheDiagnostics?.() ?? null).filter(Boolean);
+
+        return {
+            boundary: "mapped-compendiums",
+            packCount: packs.length,
+            translatedPackCount: packs.filter((pack) => pack.translated).length,
+            indexTranslationEntries: packs.reduce((total, pack) => total + (pack.indexTranslationEntries ?? 0), 0),
+            packs,
+        };
+    }
+
     #materialize() {
         this.packs = new foundry.utils.Collection();
 

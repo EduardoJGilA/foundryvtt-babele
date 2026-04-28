@@ -5,8 +5,11 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 installFoundryStubs();
 
 const warnings = [];
+const debugCalls = [];
 const originalWarn = console.warn;
+const originalDebug = console.debug;
 console.warn = (...args) => warnings.push(args);
+console.debug = (...args) => debugCalls.push(args);
 
 const {TranslationRegistry} = await import("../module/script/translation/translation-registry.js");
 
@@ -250,6 +253,48 @@ test("TranslationRegistry falls back to stored file lists when indexing is unava
   assert.equal(diagnostics.mapping.fromSettings, true);
 });
 
+test("TranslationRegistry exposes and invalidates source discovery caches", async () => {
+  debugCalls.length = 0;
+  globalThis.CONFIG = {debug: {babele: true}};
+  let browseCalls = 0;
+  const registry = createRegistry({
+    modules: [
+      {module: "module-one", dir: "translations", lang: "it"},
+    ],
+    browse: async (_source, dir) => {
+      browseCalls += 1;
+      if (dir === "modules/module-one/translations") {
+        return {
+          files: [
+            "modules/module-one/translations/test.items.json",
+            "modules/module-one/translations/mappings.json",
+          ],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+
+  assert.equal(registry.cacheDiagnostics().translationSourcesCached, false);
+
+  await registry.translationSources();
+  await registry.translationSources();
+  await registry.mappingSources();
+  assert.equal(browseCalls, 2);
+  assert.equal(registry.cacheDiagnostics().translationSourcesCached, true);
+  assert.equal(registry.cacheDiagnostics().mappingSourcesCached, true);
+  assert.equal(debugCalls.some((call) => String(call[0]).includes("using cached translation source discovery")), true);
+
+  registry.invalidate("test");
+  assert.equal(registry.cacheDiagnostics().translationSourcesCached, false);
+  assert.equal(registry.cacheDiagnostics().mappingSourcesCached, false);
+  assert.equal(debugCalls.some((call) => String(call[0]).includes("invalidated translation registry discovery cache")), true);
+  delete globalThis.CONFIG;
+});
+
 test.after(() => {
   console.warn = originalWarn;
+  console.debug = originalDebug;
+  delete globalThis.CONFIG;
 });

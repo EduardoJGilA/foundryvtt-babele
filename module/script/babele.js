@@ -323,6 +323,42 @@ class Babel {
     }
 
     /**
+     * Explicitly clear runtime/discovery caches owned by the current Babele
+     * state.
+     *
+     * This does not rebuild the live translation state. Use `reinitialize()`
+     * or `refreshTranslationSources()` when source configuration changes.
+     *
+     * @param {string} [reason]
+     * @returns {void}
+     */
+    invalidateCaches(reason = "manual") {
+        this.#translationRegistry.invalidate(reason);
+        this.mappedCompendiums?.invalidateCaches?.(reason);
+    }
+
+    /**
+     * Return a diagnostic snapshot of Babele cache boundaries.
+     *
+     * @returns {object}
+     */
+    cacheDiagnostics() {
+        return {
+            initialized: this.#initialized !== null,
+            dataLoaded: this.#dataLoaded,
+            translationRegistry: this.#translationRegistry.cacheDiagnostics(),
+            documentMappings: this.documentMappings.cacheDiagnostics(),
+            mappedCompendiums: this.mappedCompendiums?.cacheDiagnostics?.() ?? {
+                boundary: "mapped-compendiums",
+                packCount: 0,
+                translatedPackCount: 0,
+                indexTranslationEntries: 0,
+                packs: [],
+            },
+        };
+    }
+
+    /**
      * Declare the system-level translations directory.
      *
      * The directory is resolved relative to `systems/<system-id>` and acts as

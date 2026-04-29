@@ -31,19 +31,19 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
         this.proposal = null;
         this.#selectedEntryIds = new Set();
         this.#selectionInitialized = false;
-        this.#activeFilter = "all";
+        this.#activeFilters = new Set(["all"]);
     }
 
     #selectedEntryIds
     #selectionInitialized
-    #activeFilter
+    #activeFilters
 
     render(force = true) {
         return super.render({force});
     }
 
     async _prepareContext(_options) {
-        const proposal = this.#proposal();
+        const proposal = await this.#proposal();
         const summary = proposal.summary();
         const texts = this.#texts();
 
@@ -57,13 +57,14 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
             entries,
             hasEntries: entries.length > 0,
             hasTranslated: summary.translated > 0,
-            hasReady: summary.ready > 0,
+            hasReady: proposal.translatedEntries().length > 0,
             selectedCount: this.#selectedEntries().length,
             filters: [
-                this.#filterContext("all", texts.all, summary.total),
-                this.#filterContext("ready", texts.ready, summary.ready),
-                this.#filterContext("translated", texts.translated, summary.translated),
-                this.#filterContext("missing", texts.missing, summary.untranslated),
+                this.#filterContext("all", texts.all, summary.total, texts.allHint),
+                this.#filterContext("ready", texts.ready, summary.ready, texts.readyHint),
+                this.#filterContext("modified", texts.modified, summary.modified, texts.modifiedHint),
+                this.#filterContext("translated", texts.translated, summary.translated, texts.translatedHint),
+                this.#filterContext("missing", texts.missing, summary.untranslated, texts.missingHint),
             ],
             texts,
         };
@@ -141,11 +142,11 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
         });
 
         this.#refreshActions(root);
-        this.#applyFilter(root, this.#activeFilter);
+        this.#refreshFilters(root);
     }
 
-    #proposal() {
-        this.proposal ??= game.babele?.proposeActorTranslation?.(this.actor) ?? this.actorTranslation.proposal(this.actor);
+    async #proposal() {
+        this.proposal ??= await (game.babele?.proposeActorTranslation?.(this.actor) ?? this.actorTranslation.proposal(this.actor));
         return this.proposal;
     }
 
@@ -167,18 +168,22 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
         }
 
         for (const entry of proposal.translatedEntries()) {
+            if (entry.userChanged) {
+                continue;
+            }
+
             this.#selectedEntryIds.add(entry.id());
         }
         this.#selectionInitialized = true;
     }
 
     #selectedEntries() {
-        return this.#proposal().translatedEntries()
+        return this.proposal.translatedEntries()
             .filter((entry) => this.#selectedEntryIds.has(entry.id()));
     }
 
     #selectAll(root) {
-        for (const entry of this.#proposal().translatedEntries()) {
+        for (const entry of this.proposal.translatedEntries()) {
             this.#selectedEntryIds.add(entry.id());
         }
 
@@ -200,7 +205,7 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
     }
 
     #selectCandidate(entryId, candidateId) {
-        const entry = this.#proposal().entries.find((candidate) => candidate.id() === entryId);
+        const entry = this.proposal.entries.find((candidate) => candidate.id() === entryId);
         if (!entry?.selectCandidate(candidateId)) {
             return null;
         }
@@ -226,7 +231,7 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
 
         row.className = `babele-actor-translation__entry ${context.cssClass}`;
         row.dataset.entryFilter = context.filter;
-        row.hidden = this.#activeFilter !== "all" && this.#activeFilter !== context.filter;
+        row.hidden = !this.#entryMatchesFilters(context.filter);
 
         const proposedName = row.querySelector("[data-proposed-name]");
         if (proposedName) {
@@ -252,14 +257,14 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
 
         this.#refreshSummary(root);
         this.#refreshActions(root);
-        this.#applyFilter(root, this.#activeFilter);
+        this.#refreshFilters(root);
     }
 
     #entryContext(entry, texts) {
         const translated = entry.hasTranslation();
         const applicable = entry.applicable();
         const unchanged = entry.translated && !entry.changed;
-        const filter = applicable ? "ready" : translated ? "translated" : "missing";
+        const filter = entry.userChanged ? "modified" : applicable ? "ready" : translated ? "translated" : "missing";
         const id = entry.id();
         const originalName = entry.name();
         const currentName = entry.currentName();
@@ -281,12 +286,13 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
             itemType: entry.type(),
             translated,
             alreadyTranslated: entry.alreadyTranslated,
+            userChanged: entry.userChanged,
             applicable,
             selected: applicable && this.#selectedEntryIds.has(id),
             unchanged,
             filter,
-            cssClass: entry.alreadyTranslated ? "is-already" : unchanged ? "is-unchanged" : translated ? "is-translated" : "is-missing",
-            status: entry.alreadyTranslated ? texts.already : unchanged ? texts.unchanged : translated ? texts.ready : texts.missing,
+            cssClass: entry.userChanged ? "is-modified" : entry.alreadyTranslated ? "is-already" : unchanged ? "is-unchanged" : translated ? "is-translated" : "is-missing",
+            status: entry.userChanged ? texts.modified : entry.alreadyTranslated ? texts.already : unchanged ? texts.unchanged : translated ? texts.ready : texts.missing,
             packLabel: entry.packLabel(),
             candidates,
             hasCandidates,
@@ -307,15 +313,14 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
             selectedCountElement.textContent = String(selectedCount);
         }
 
-        const summary = this.#proposal().summary();
         for (const button of root.querySelectorAll('[data-action="select-all"], [data-action="select-none"]')) {
-            button.disabled = summary.ready === 0;
+            button.disabled = this.proposal.translatedEntries().length === 0;
         }
     }
 
     #refreshSummary(root) {
-        const summary = this.#proposal().summary();
-        for (const key of ["total", "ready", "translated", "untranslated"]) {
+        const summary = this.proposal.summary();
+        for (const key of ["total", "ready", "modified", "translated", "untranslated"]) {
             const element = root.querySelector(`[data-summary-${key}]`);
             if (element) {
                 element.textContent = String(summary[key]);
@@ -325,6 +330,7 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
         const filterCounts = {
             all: summary.total,
             ready: summary.ready,
+            modified: summary.modified,
             translated: summary.translated,
             missing: summary.untranslated,
         };
@@ -337,27 +343,54 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
         }
     }
 
-    #filterContext(filter, label, count) {
+    #filterContext(filter, label, count, hint) {
         return {
             filter,
             label,
             count,
-            active: this.#activeFilter === filter,
+            hint,
+            active: this.#activeFilters.has(filter),
         };
     }
 
     #applyFilter(root, filter) {
-        this.#activeFilter = ["all", "ready", "translated", "missing"].includes(filter) ? filter : "all";
+        if (filter === "all" || !["ready", "modified", "translated", "missing"].includes(filter)) {
+            this.#activeFilters = new Set(["all"]);
+            this.#refreshFilters(root);
+            return;
+        }
 
+        if (this.#activeFilters.has("all")) {
+            this.#activeFilters.clear();
+        }
+
+        if (this.#activeFilters.has(filter)) {
+            this.#activeFilters.delete(filter);
+        } else {
+            this.#activeFilters.add(filter);
+        }
+
+        if (this.#activeFilters.size === 0) {
+            this.#activeFilters.add("all");
+        }
+
+        this.#refreshFilters(root);
+    }
+
+    #refreshFilters(root) {
         for (const entry of root.querySelectorAll("[data-entry-filter]")) {
-            entry.hidden = this.#activeFilter !== "all" && entry.dataset.entryFilter !== this.#activeFilter;
+            entry.hidden = !this.#entryMatchesFilters(entry.dataset.entryFilter);
         }
 
         for (const button of root.querySelectorAll("[data-filter]")) {
-            const active = button.dataset.filter === this.#activeFilter;
+            const active = this.#activeFilters.has(button.dataset.filter);
             button.setAttribute("aria-pressed", String(active));
             button.dataset.active = active ? "true" : "false";
         }
+    }
+
+    #entryMatchesFilters(filter) {
+        return this.#activeFilters.has("all") || this.#activeFilters.has(filter);
     }
 
     #texts() {
@@ -369,11 +402,18 @@ export class OnDemandTranslateDialog extends foundry.applications.api.Applicatio
             translated: localizeWithFallback("BABELE.ActorTranslationTranslated", "Translated"),
             missing: localizeWithFallback("BABELE.ActorTranslationMissing", "Missing"),
             already: localizeWithFallback("BABELE.ActorTranslationAlready", "Translated"),
+            modified: localizeWithFallback("BABELE.ActorTranslationModified", "Modified"),
             unchanged: localizeWithFallback("BABELE.ActorTranslationUnchanged", "No changes"),
             selected: localizeWithFallback("BABELE.ActorTranslationSelected", "Selected"),
             all: localizeWithFallback("BABELE.ActorTranslationAll", "All"),
             total: localizeWithFallback("BABELE.ActorTranslationTotal", "Total"),
             ready: localizeWithFallback("BABELE.ActorTranslationReady", "Ready"),
+            allHint: localizeWithFallback("BABELE.ActorTranslationAllHint", "Show every embedded Item in this review."),
+            totalHint: localizeWithFallback("BABELE.ActorTranslationTotalHint", "Total embedded Items reviewed for this Actor."),
+            readyHint: localizeWithFallback("BABELE.ActorTranslationReadyHint", "Items with an available translation and no detected local changes. These are selected by default."),
+            modifiedHint: localizeWithFallback("BABELE.ActorTranslationModifiedHint", "Items with an available translation, but whose mapped values appear to have been changed locally. They can still be selected manually."),
+            translatedHint: localizeWithFallback("BABELE.ActorTranslationTranslatedHint", "Items already marked as translated by Babele. They are not selected for re-translation by default."),
+            missingHint: localizeWithFallback("BABELE.ActorTranslationMissingHint", "Items for which Babele did not find a translation candidate."),
             original: localizeWithFallback("BABELE.ActorTranslationOriginal", "Original"),
             proposed: localizeWithFallback("BABELE.ActorTranslationProposed", "Proposed"),
             current: localizeWithFallback("BABELE.ActorTranslationCurrent", "Current"),

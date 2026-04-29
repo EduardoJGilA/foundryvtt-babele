@@ -7,19 +7,23 @@
         </div>
 
         <div class="babele-actor-translation__stats" aria-label="{{texts.total}}">
-            <span class="babele-actor-translation__stat is-total">
+            <span class="babele-actor-translation__stat is-total" title="{{texts.totalHint}}" aria-label="{{texts.total}}: {{texts.totalHint}}">
                 <strong data-summary-total>{{summary.total}}</strong>
                 <small>{{texts.total}}</small>
             </span>
-            <span class="babele-actor-translation__stat is-ready">
+            <span class="babele-actor-translation__stat is-ready" title="{{texts.readyHint}}" aria-label="{{texts.ready}}: {{texts.readyHint}}">
                 <strong data-summary-ready>{{summary.ready}}</strong>
                 <small>{{texts.ready}}</small>
             </span>
-            <span class="babele-actor-translation__stat is-translated">
+            <span class="babele-actor-translation__stat is-modified" title="{{texts.modifiedHint}}" aria-label="{{texts.modified}}: {{texts.modifiedHint}}">
+                <strong data-summary-modified>{{summary.modified}}</strong>
+                <small>{{texts.modified}}</small>
+            </span>
+            <span class="babele-actor-translation__stat is-translated" title="{{texts.translatedHint}}" aria-label="{{texts.translated}}: {{texts.translatedHint}}">
                 <strong data-summary-translated>{{summary.translated}}</strong>
                 <small>{{texts.translated}}</small>
             </span>
-            <span class="babele-actor-translation__stat is-missing">
+            <span class="babele-actor-translation__stat is-missing" title="{{texts.missingHint}}" aria-label="{{texts.missing}}: {{texts.missingHint}}">
                 <strong data-summary-untranslated>{{summary.untranslated}}</strong>
                 <small>{{texts.missing}}</small>
             </span>
@@ -51,6 +55,8 @@
             data-filter="{{filter}}"
             data-active="{{#if active}}true{{else}}false{{/if}}"
             aria-pressed="{{#if active}}true{{else}}false{{/if}}"
+            title="{{hint}}"
+            aria-label="{{label}}: {{hint}}"
         >
             <span>{{label}}</span>
             <strong data-filter-count="{{filter}}">{{count}}</strong>

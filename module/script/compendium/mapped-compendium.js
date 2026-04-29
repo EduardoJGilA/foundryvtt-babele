@@ -218,6 +218,21 @@ export class MappedCompendium {
     }
 
     /**
+     * Return the already extracted original translation payload for a source
+     * document.
+     *
+     * @param data
+     * @returns {object|null}
+     */
+    sourcePayload(data) {
+        if (data == null) {
+            return null;
+        }
+
+        return this.#sourcePayload(data);
+    }
+
+    /**
      * Extract a single mapped field from a document.
      *
      * @param {string} field
@@ -325,6 +340,16 @@ export class MappedCompendium {
             return data;
         }
 
+        const babeleFlags = {
+            translated,
+            hasTranslation,
+            originalName: data.name,
+        };
+        const originalPayload = this.#sourcePayload(data);
+        if (originalPayload) {
+            babeleFlags.originalPayload = originalPayload;
+        }
+
         return foundry.utils.mergeObject(
             translatedDocument,
             {
@@ -332,11 +357,7 @@ export class MappedCompendium {
                 hasTranslation,
                 originalName: data.name,
                 flags: {
-                    babele: {
-                        translated,
-                        hasTranslation,
-                        originalName: data.name,
-                    },
+                    babele: babeleFlags,
                 },
             },
             {inplace: false},
@@ -425,12 +446,20 @@ export class MappedCompendium {
         return !!translatedData && Object.keys(translatedData).length > 0;
     }
 
-    #documentChanged(originalData, translatedData) {
+    #documentChanged(sourcePayload, translatedData) {
         if (!this.#hasTranslatedData(translatedData)) {
             return false;
         }
 
-        return !this.#sameValue(originalData, translatedData);
+        return !this.#sameValue(sourcePayload, translatedData);
+    }
+
+    #sourcePayload(data) {
+        try {
+            return this.extract(data) ?? null;
+        } catch (_error) {
+            return null;
+        }
     }
 
     #sameValue(left, right) {
@@ -562,6 +591,14 @@ export class MappedCompendium {
     #clone(value) {
         if (typeof value === "undefined" || value === null) {
             return value ?? null;
+        }
+
+        if (Array.isArray(value)) {
+            return value.map((entry) => this.#clone(entry));
+        }
+
+        if (typeof value !== "object") {
+            return value;
         }
 
         return foundry.utils.deepClone?.(value)

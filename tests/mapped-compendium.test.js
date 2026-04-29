@@ -295,6 +295,40 @@ test("MappedCompendium marks hasTranslation without marking translated when the 
   assert.equal(translated.flags.babele.translated, false);
 });
 
+test("MappedCompendium stores original mapped source payload in Babele flags", () => {
+  const compendium = mappedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "item-1": {
+        name: "Spada",
+        description: "Descrizione originale",
+      },
+    },
+  });
+  const translated = compendium.translate({
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    system: {
+      description: {
+        value: "Original description",
+      },
+      quantity: 4,
+    },
+  });
+
+  assert.deepEqual(translated.flags.babele.originalPayload, {
+    name: "Sword",
+    description: "Original description",
+  });
+});
+
 test("MappedCompendium exposes translated pack labels through metadata", () => {
   const compendium = mappedCompendium({
     id: "test.items",

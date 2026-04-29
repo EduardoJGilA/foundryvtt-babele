@@ -829,10 +829,35 @@ class Babel {
      *
      * @param {Actor|object} actor
      * @param {object} [options]
-     * @returns {ActorTranslationProposal}
+     * @returns {Promise<ActorTranslationProposal>}
      */
-    proposeActorTranslation(actor, options = {}) {
+    async proposeActorTranslation(actor, options = {}) {
         return this.#actorTranslation.proposal(actor, options);
+    }
+
+    /**
+     * Load source data for a compendium UUID. If Foundry returns a runtime
+     * translated document, only Babele's saved originalPayload snapshot is
+     * considered reliable.
+     *
+     * @param {string} uuid
+     * @param {object} [options]
+     * @param {CompendiumCollection|object} [options.pack] Explicit pack to read when it is not available from game.packs.
+     * @returns {Promise<object|null>}
+     */
+    async sourceDataForUuid(uuid, options = {}) {
+        const source = this.#compendiumSourceFromUuid(uuid);
+        if (!source) {
+            return null;
+        }
+
+        const pack = options.pack ?? game.packs?.get?.(source.collection);
+        if (!pack) {
+            return null;
+        }
+
+        const document = await pack.getDocument?.(source.id);
+        return this.#sourceData(document?.toObject?.() ?? document ?? null);
     }
 
     /**
@@ -865,6 +890,46 @@ class Babel {
      */
     translateImportedCompendiumFolder(folder) {
         this.#folderTranslations.translateImportedCompendiumFolder(folder);
+    }
+
+    #sourceData(data) {
+        if (!data) {
+            return null;
+        }
+
+        const originalPayload = data?.flags?.babele?.originalPayload;
+        if (originalPayload) {
+            return foundry.utils.mergeObject(originalPayload, {
+                flags: {
+                    babele: {
+                        originalPayload,
+                    },
+                },
+            }, {inplace: false});
+        }
+
+        return this.#runtimeTranslatedData(data) ? null : data;
+    }
+
+    #runtimeTranslatedData(data) {
+        return !!(
+            data?.originalName
+            || data?.translated
+            || data?.hasTranslation
+            || data?.flags?.babele
+        );
+    }
+
+    #compendiumSourceFromUuid(uuid) {
+        const match = String(uuid ?? "").match(/^Compendium\.([^.]+\.[^.]+)\.(?:[^.]+\.)?([^.]+)$/);
+        if (!match) {
+            return null;
+        }
+
+        return {
+            collection: match[1],
+            id: match[2],
+        };
     }
 
     /**

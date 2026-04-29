@@ -14,15 +14,16 @@ export class ActorTranslation {
      * @param {Actor|object} actor
      * @param {object} [options]
      * @param {string} [options.documentType="Item"]
-     * @returns {ActorTranslationProposal}
+     * @returns {Promise<ActorTranslationProposal>}
      */
-    proposal(actor, options = {}) {
+    async proposal(actor, options = {}) {
         const documentType = options.documentType ?? "Item";
-        const entries = [...actor.items?.contents ?? []].map((item) => {
+        const entries = await Promise.all([...actor.items?.contents ?? []].map(async (item) => {
             const source = item.toObject();
-            const lookupSource = this.#lookupSource(source);
             const alreadyTranslated = this.#alreadyTranslated(item, source);
-            const candidates = this.#translationCandidates(documentType, item, source, lookupSource);
+            const sourceDocument = alreadyTranslated ? null : await this.#sourceDocumentData(source);
+            const lookupSource = this.#lookupSource(source, sourceDocument);
+            const candidates = this.#translationCandidates(documentType, item, source, lookupSource, sourceDocument);
             const candidate = candidates[0];
 
             if (!candidate) {
@@ -58,7 +59,7 @@ export class ActorTranslation {
                 changed: candidate.changed,
                 candidates,
             });
-        });
+        }));
 
         return new ActorTranslationProposal(actor, {documentType, entries});
     }
@@ -74,8 +75,11 @@ export class ActorTranslation {
         return proposal.apply(options);
     }
 
-    #lookupSource(source) {
-        const originalName = source?.flags?.babele?.originalName ?? source?.originalName;
+    #lookupSource(source, sourceDocument = null) {
+        const originalName = source?.flags?.babele?.originalName
+            ?? source?.originalName
+            ?? sourceDocument?.name;
+
         if (!originalName || source?.name === originalName) {
             return source;
         }
@@ -97,27 +101,131 @@ export class ActorTranslation {
         return hasTranslation === true || translated === true;
     }
 
-    #updateFor(item, source, translatedData, {changed}) {
+    #updateFor(item, source, translatedData, {changed, originalPayload = null}) {
+        const babeleFlags = {
+            originalName: source.name,
+            hasTranslation: true,
+            translated: changed,
+        };
+        if (originalPayload) {
+            babeleFlags.originalPayload = originalPayload;
+        }
+
         return foundry.utils.mergeObject(translatedData, {
             _id: item.id ?? source._id,
             originalName: source.name,
             hasTranslation: true,
             translated: changed,
             flags: {
-                babele: {
-                    originalName: source.name,
-                    hasTranslation: true,
-                    translated: changed,
-                },
+                babele: babeleFlags,
             },
         });
     }
 
-    #documentChanged(originalData, translatedData) {
-        return JSON.stringify(originalData) !== JSON.stringify(translatedData);
+    #documentChanged(sourcePayload, translatedData) {
+        return JSON.stringify(sourcePayload) !== JSON.stringify(translatedData);
     }
 
-    #translationCandidates(documentType, item, source, lookupSource) {
+    #userChanged(source, sourceDocument, pack = null) {
+        if (!sourceDocument) {
+            return false;
+        }
+
+        const current = this.#currentPayload(pack, source);
+        const original = this.#sourcePayload(pack, sourceDocument);
+        if (!current || !original) {
+            return false;
+        }
+
+        return this.#sharedPayloadChanged(current, original);
+    }
+
+    async #sourceDocumentData(source) {
+        const uuid = source?.flags?.core?.sourceId ?? source?._stats?.compendiumSource;
+        if (!uuid) {
+            return null;
+        }
+
+        const sourceData = await this.babele?.sourceDataForUuid?.(uuid, {data: source});
+        return sourceData ? this.#sourceLikeData(sourceData) : null;
+    }
+
+    #sourceLikeData(data) {
+        const originalName = data?.flags?.babele?.originalName ?? data?.originalName;
+        if (!originalName || data?.name === originalName) {
+            return data;
+        }
+
+        return {
+            ...data,
+            name: originalName,
+        };
+    }
+
+    #currentPayload(pack, data) {
+        try {
+            const extracted = pack?.extract?.(data);
+            return typeof extracted === "undefined" ? null : extracted;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    #sourcePayload(pack, data) {
+        try {
+            const originalPayload = data?.flags?.babele?.originalPayload;
+            if (originalPayload) {
+                return originalPayload;
+            }
+
+            const extracted = pack?.extract?.(data);
+            return typeof extracted === "undefined" ? null : extracted;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    #sharedPayloadChanged(current, original) {
+        if (this.#isPlainObject(current) && this.#isPlainObject(original)) {
+            for (const [key, value] of Object.entries(current)) {
+                if (!Object.prototype.hasOwnProperty.call(original, key)) {
+                    continue;
+                }
+
+                if (this.#sharedPayloadChanged(value, original[key])) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (Array.isArray(current) && Array.isArray(original)) {
+            const length = Math.min(current.length, original.length);
+            for (let index = 0; index < length; index += 1) {
+                if (
+                    !Object.prototype.hasOwnProperty.call(current, index)
+                    || !Object.prototype.hasOwnProperty.call(original, index)
+                ) {
+                    continue;
+                }
+
+                if (this.#sharedPayloadChanged(current[index], original[index])) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return JSON.stringify(current) !== JSON.stringify(original);
+    }
+
+    #isPlainObject(value) {
+        return Object.prototype.toString.call(value) === "[object Object]";
+    }
+
+    #translationCandidates(documentType, item, source, lookupSource, sourceDocument) {
         const packs = this.#translatedPacks(documentType, lookupSource)
             .filter((pack) => pack.hasTranslation?.(lookupSource, documentType) === true);
 
@@ -129,11 +237,11 @@ export class ActorTranslation {
         }
 
         return packs
-            .map((pack, index) => this.#candidateFor(pack, index, {item, source, lookupSource}))
+            .map((pack, index) => this.#candidateFor(pack, index, {item, source, lookupSource, sourceDocument}))
             .filter(Boolean);
     }
 
-    #candidateFor(pack, index, {item, source, lookupSource}) {
+    #candidateFor(pack, index, {item, source, lookupSource, sourceDocument}) {
         if (typeof pack?.translate !== "function") {
             return null;
         }
@@ -141,7 +249,9 @@ export class ActorTranslation {
         const translatedData = pack.translate(lookupSource, true);
         const translatedDocument = foundry.utils.mergeObject(source, translatedData, {inplace: false});
         const changed = this.#documentChanged(source, translatedDocument);
-        const update = this.#updateFor(item, lookupSource, translatedData, {changed});
+        const originalPayload = this.#originalPayload(pack, sourceDocument ?? lookupSource);
+        const update = this.#updateFor(item, lookupSource, translatedData, {changed, originalPayload});
+        const userChanged = changed && this.#userChanged(source, sourceDocument, pack);
 
         return new ActorTranslationCandidate({
             id: this.#candidateId(pack, index),
@@ -149,7 +259,27 @@ export class ActorTranslation {
             translatedData,
             update,
             changed,
+            userChanged,
         });
+    }
+
+    #originalPayload(pack, data) {
+        if (!data) {
+            return null;
+        }
+
+        const originalPayload = data?.flags?.babele?.originalPayload;
+        if (originalPayload) {
+            return originalPayload;
+        }
+
+        try {
+            return pack?.sourcePayload?.(data)
+                ?? pack?.extract?.(data)
+                ?? null;
+        } catch (_error) {
+            return null;
+        }
     }
 
     #candidateId(pack, index) {
@@ -201,12 +331,13 @@ export class ActorTranslation {
  * One possible translated payload for an embedded Actor item.
  */
 export class ActorTranslationCandidate {
-    constructor({id, pack, translatedData, update, changed = false}) {
+    constructor({id, pack, translatedData, update, changed = false, userChanged = false}) {
         this.id = id;
         this.pack = pack;
         this.translatedData = translatedData;
         this.update = update;
         this.changed = changed;
+        this.userChanged = userChanged;
     }
 
     proposedName(fallback = "") {
@@ -232,16 +363,18 @@ export class ActorTranslationProposal {
     }
 
     /**
-     * @returns {{total: number, ready: number, translated: number, untranslated: number}}
+     * @returns {{total: number, ready: number, modified: number, translated: number, untranslated: number}}
      */
     summary() {
-        const ready = this.translatedEntries().length;
+        const modified = this.entries.filter((entry) => entry.applicable() && entry.userChanged).length;
+        const ready = this.translatedEntries().length - modified;
         const translated = this.entries.filter((entry) => entry.hasTranslation() && !entry.applicable()).length;
         return {
             total: this.entries.length,
             ready,
+            modified,
             translated,
-            untranslated: this.entries.length - ready - translated,
+            untranslated: this.entries.length - ready - modified - translated,
         };
     }
 
@@ -298,6 +431,7 @@ export class ActorTranslationEntry {
         update,
         alreadyTranslated = false,
         changed = true,
+        userChanged = false,
         candidates = [],
     }) {
         return new ActorTranslationEntry({
@@ -310,6 +444,7 @@ export class ActorTranslationEntry {
             translated: true,
             alreadyTranslated,
             changed,
+            userChanged,
             candidates,
         });
     }
@@ -345,6 +480,7 @@ export class ActorTranslationEntry {
         translated = false,
         alreadyTranslated = false,
         changed = false,
+        userChanged = false,
         candidates = [],
     }) {
         this.documentType = documentType;
@@ -356,12 +492,14 @@ export class ActorTranslationEntry {
         this.translated = translated;
         this.alreadyTranslated = alreadyTranslated;
         this.#fallbackChanged = changed;
+        this.#fallbackUserChanged = userChanged;
         this.candidates = candidates;
         this.selectedCandidateId = candidates[0]?.id ?? null;
     }
 
     #fallbackUpdate
     #fallbackChanged
+    #fallbackUserChanged
 
     get update() {
         return this.selectedCandidate()?.update ?? this.#fallbackUpdate;
@@ -369,6 +507,10 @@ export class ActorTranslationEntry {
 
     get changed() {
         return this.selectedCandidate()?.changed ?? this.#fallbackChanged;
+    }
+
+    get userChanged() {
+        return this.selectedCandidate()?.userChanged ?? this.#fallbackUserChanged;
     }
 
     /**

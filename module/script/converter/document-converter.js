@@ -287,6 +287,18 @@ export class DocumentConverter {
                 return data;
             }
 
+            const sourcePack = currentCompendium ?? fallbackPack;
+            const sourceData = sourcePack === fallbackPack ? fallbackData : data;
+            const babeleFlags = {
+                translated,
+                hasTranslation,
+                originalName: data.name,
+            };
+            const originalPayload = this._sourcePayload(sourcePack, sourceData);
+            if (originalPayload) {
+                babeleFlags.originalPayload = originalPayload;
+            }
+
             return foundry.utils.mergeObject(
                 translatedDocument,
                 {
@@ -294,11 +306,7 @@ export class DocumentConverter {
                     hasTranslation,
                     originalName: data.name,
                     flags: {
-                        babele: {
-                            translated,
-                            hasTranslation,
-                            originalName: data.name,
-                        },
+                        babele: babeleFlags,
                     },
                 },
                 {inplace: false},
@@ -460,23 +468,23 @@ export class DocumentConverter {
 
     /**
      * Remove entries from a local translated payload that are identical to the
-     * original source data.
+     * source payload.
      *
      * This keeps local derived fields from reapplying untranslated source
      * values on top of a real fallback translation.
      *
      * @param {*} payload
-     * @param {*} originalData
+     * @param {*} sourcePayload
      * @returns {*}
      */
-    _pruneUnchangedPayload(payload, originalData) {
+    _pruneUnchangedPayload(payload, sourcePayload) {
         if (!this._isPlainObject(payload)) {
-            return this._sameValue(payload, originalData) ? undefined : payload;
+            return this._sameValue(payload, sourcePayload) ? undefined : payload;
         }
 
         const pruned = {};
         for (const [key, value] of Object.entries(payload)) {
-            const filtered = this._pruneUnchangedPayload(value, originalData?.[key]);
+            const filtered = this._pruneUnchangedPayload(value, sourcePayload?.[key]);
             if (typeof filtered !== "undefined") {
                 pruned[key] = filtered;
             }
@@ -489,16 +497,24 @@ export class DocumentConverter {
      * Whether merging the translated payload would actually change the source
      * document.
      *
-     * @param {*} originalData
+     * @param {*} sourcePayload
      * @param {*} translatedData
      * @returns {boolean}
      */
-    _documentChanged(originalData, translatedData) {
+    _documentChanged(sourcePayload, translatedData) {
         if (!this._hasTranslatedData(translatedData)) {
             return false;
         }
 
-        return !this._sameValue(originalData, translatedData);
+        return !this._sameValue(sourcePayload, translatedData);
+    }
+
+    _sourcePayload(pack, data) {
+        try {
+            return pack?.sourcePayload?.(data) ?? pack?.extract?.(data) ?? null;
+        } catch (_error) {
+            return null;
+        }
     }
 
     /**

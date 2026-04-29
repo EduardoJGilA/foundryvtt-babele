@@ -887,6 +887,142 @@ test("Babel.exportDataFor exports present and missing entries according to selec
   });
 });
 
+test("Babel.exportDataFor source selection uses Babele original payload from translated cached documents", async () => {
+  const babele = new Babel();
+  const pack = {
+    collection: "test.items",
+    metadata: {
+      id: "test.items",
+      label: "Items",
+    },
+    folders: new foundry.utils.Collection(),
+    async getIndex() {
+      return [{_id: "item-1"}];
+    },
+    async getDocument() {
+      return {
+        _id: "item-1",
+        name: "Spada",
+        type: "weapon",
+        system: {
+          description: {
+            value: "Descrizione tradotta",
+          },
+        },
+        originalName: "Sword",
+        hasTranslation: true,
+        translated: true,
+        flags: {
+          babele: {
+            originalName: "Sword",
+            hasTranslation: true,
+            translated: true,
+            originalPayload: {
+              name: "Sword",
+              description: "Original description",
+            },
+          },
+        },
+      };
+    },
+  };
+
+  babele.extract = (_pack, data) => ({
+    name: data.name,
+    description: data.system?.description?.value,
+  });
+
+  assignMappedCompendiums(babele, [[
+    "test.items",
+    {
+      translated: true,
+      hasTranslation() {
+        return true;
+      },
+      translate(data) {
+        return data;
+      },
+    },
+  ]]);
+
+  const sourceOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "source"});
+
+  assert.deepEqual(sourceOnly.entries, {
+    Sword: {
+      name: "Sword",
+      description: "Original description",
+    },
+  });
+});
+
+test("Babel.exportDataFor source selection skips translated cached documents without original payload", async () => {
+  const babele = new Babel();
+  const pack = {
+    collection: "test.items",
+    metadata: {
+      id: "test.items",
+      label: "Items",
+    },
+    folders: new foundry.utils.Collection(),
+    async getIndex() {
+      return [{
+        _id: "item-1",
+        name: "Sword",
+        type: "weapon",
+        system: {
+          description: {
+            value: "Original description",
+          },
+        },
+      }];
+    },
+    async getDocument() {
+      return {
+        _id: "item-1",
+        name: "Spada",
+        type: "weapon",
+        system: {
+          description: {
+            value: "Descrizione tradotta",
+          },
+        },
+        originalName: "Sword",
+        hasTranslation: true,
+        translated: true,
+        flags: {
+          babele: {
+            originalName: "Sword",
+            hasTranslation: true,
+            translated: true,
+          },
+        },
+      };
+    },
+  };
+
+  babele.extract = (_pack, data) => ({
+    name: data.name,
+    description: data.system?.description?.value,
+  });
+
+  assignMappedCompendiums(babele, [[
+    "test.items",
+    {
+      translated: true,
+      hasTranslation() {
+        return true;
+      },
+      translate(data) {
+        return data;
+      },
+    },
+  ]]);
+
+  const sourceOnly = await babele.exportDataFor(pack, {format: "compatible", selection: "source"});
+
+  assert.deepEqual(sourceOnly.entries, {});
+});
+
 test("Babel.exportDataFor falls back to built-in extractor when a custom converter overrides translate only", async () => {
   const babele = new Babel();
   const pack = {
@@ -1353,12 +1489,13 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
 
   babele.mappedCompendiums = [translatedPack];
 
-  const proposal = babele.proposeActorTranslation(actor);
+  const proposal = await babele.proposeActorTranslation(actor);
   const updates = await babele.applyActorTranslation(proposal);
 
   assert.deepEqual(proposal.summary(), {
     total: 1,
     ready: 1,
+    modified: 0,
     translated: 0,
     untranslated: 0,
   });
@@ -1397,6 +1534,135 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
       },
     ],
   });
+});
+
+test("Babel.sourceDataForUuid loads source data from the document and ignores partial index data", async () => {
+  const babele = new Babel();
+  let indexCalled = false;
+  game.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      collection: "test.items",
+      async getIndex() {
+        indexCalled = true;
+        return [{
+          _id: "item-1",
+          name: "Sword",
+          type: "weapon",
+          flags: {
+            babele: {
+              originalPayload: {
+                name: "Sword",
+              },
+            },
+          },
+        }];
+      },
+      async getDocument(id) {
+        assert.equal(id, "item-1");
+        return {
+          toObject() {
+            return {
+              _id: "item-1",
+              name: "Sword",
+              type: "weapon",
+              system: {
+                description: {value: "Original description"},
+              },
+            };
+          },
+        };
+      },
+    },
+  ]]);
+
+  const source = await babele.sourceDataForUuid("Compendium.test.items.Item.item-1");
+
+  assert.equal(indexCalled, false);
+  assert.deepEqual(source, {
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    system: {
+      description: {value: "Original description"},
+    },
+  });
+});
+
+test("Babel.sourceDataForUuid loads document data without consulting the index", async () => {
+  const babele = new Babel();
+  game.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      collection: "test.items",
+      async getIndex() {
+        throw new Error("sourceDataForUuid must not read source data from the index");
+      },
+      async getDocument(id) {
+        assert.equal(id, "item-1");
+        return {
+          toObject() {
+            return {
+              _id: "item-1",
+              name: "Sword",
+              type: "weapon",
+              system: {
+                description: {value: "Original description"},
+              },
+            };
+          },
+        };
+      },
+    },
+  ]]);
+
+  const source = await babele.sourceDataForUuid("Compendium.test.items.Item.item-1");
+
+  assert.deepEqual(source, {
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    system: {
+      description: {value: "Original description"},
+    },
+  });
+});
+
+test("Babel.sourceDataForUuid rejects translated cached documents without original payload", async () => {
+  const babele = new Babel();
+  game.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      collection: "test.items",
+      async getIndex() {
+        throw new Error("sourceDataForUuid must not read source data from the index");
+      },
+      async getDocument() {
+        return {
+          toObject() {
+            return {
+              _id: "item-1",
+              name: "Spada",
+              originalName: "Sword",
+              hasTranslation: true,
+              translated: true,
+              flags: {
+                babele: {
+                  originalName: "Sword",
+                  hasTranslation: true,
+                  translated: true,
+                },
+              },
+            };
+          },
+        };
+      },
+    },
+  ]]);
+
+  const source = await babele.sourceDataForUuid("Compendium.test.items.Item.item-1");
+
+  assert.equal(source, null);
 });
 
 test.after(() => {

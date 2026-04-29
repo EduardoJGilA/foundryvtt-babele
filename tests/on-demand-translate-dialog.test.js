@@ -79,6 +79,7 @@ test("OnDemandTranslateDialog prepares translated and untranslated review entrie
   assert.deepEqual(context.summary, {
     total: 3,
     ready: 2,
+    modified: 0,
     translated: 0,
     untranslated: 1,
   });
@@ -135,6 +136,7 @@ test("OnDemandTranslateDialog prepares translated and untranslated review entrie
   })), [
     {filter: "all", count: 3, active: true},
     {filter: "ready", count: 2, active: false},
+    {filter: "modified", count: 0, active: false},
     {filter: "translated", count: 0, active: false},
     {filter: "missing", count: 1, active: false},
   ]);
@@ -185,6 +187,7 @@ test("OnDemandTranslateDialog marks already translated entries without selecting
   assert.deepEqual(context.summary, {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -246,6 +249,7 @@ test("OnDemandTranslateDialog shows already translated inline items without a pr
   assert.deepEqual(context.summary, {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -270,6 +274,92 @@ test("OnDemandTranslateDialog shows already translated inline items without a pr
     filter: "translated",
     status: "Translated",
   }]);
+});
+
+test("OnDemandTranslateDialog marks user-changed imported items as modified", async () => {
+  const previousSourceDataForUuid = game.babele.sourceDataForUuid;
+
+  try {
+    game.babele.sourceDataForUuid = async () => ({
+      _id: "weapon-focus",
+      name: "Weapon Focus",
+      type: "feat",
+      system: {
+        description: {value: "Original description"},
+      },
+    });
+    game.babele.mappedCompendiums = new foundry.utils.Collection([
+      ["test.feats", {
+        translated: true,
+        metadata: {
+          type: "Item",
+          label: "Translated Feats",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.feats.Item.weapon-focus";
+        },
+        translate() {
+          return {
+            name: "Arma Focalizzata",
+            system: {
+              description: {value: "Descrizione tradotta"},
+            },
+          };
+        },
+        extract(data) {
+          return {
+            name: data.name,
+            description: data.system?.description?.value,
+          };
+        },
+      }],
+    ]);
+
+    const dialog = new OnDemandTranslateDialog(actorWithOneItem({
+      _id: "embedded-feat",
+      name: "Weapon Focus (Longsword)",
+      type: "feat",
+      system: {
+        description: {value: "Original description"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.weapon-focus",
+        },
+      },
+    }));
+    const context = await dialog._prepareContext({});
+
+    assert.equal(context.selectedCount, 0);
+    assert.deepEqual(context.summary, {
+      total: 1,
+      ready: 0,
+      modified: 1,
+      translated: 0,
+      untranslated: 0,
+    });
+    assert.deepEqual(context.entries.map((entry) => ({
+      originalName: entry.originalName,
+      proposedName: entry.proposedName,
+      userChanged: entry.userChanged,
+      applicable: entry.applicable,
+      selected: entry.selected,
+      cssClass: entry.cssClass,
+      status: entry.status,
+      candidateChoiceEnabled: entry.candidateChoiceEnabled,
+    })), [{
+      originalName: "Weapon Focus (Longsword)",
+      proposedName: "Arma Focalizzata",
+      userChanged: true,
+      applicable: true,
+      selected: false,
+      cssClass: "is-modified",
+      status: "Modified",
+      candidateChoiceEnabled: false,
+    }]);
+  } finally {
+    game.babele.sourceDataForUuid = previousSourceDataForUuid;
+  }
 });
 
 test("OnDemandTranslateDialog marks no-op translations as unchanged", async () => {
@@ -306,6 +396,7 @@ test("OnDemandTranslateDialog marks no-op translations as unchanged", async () =
   assert.deepEqual(context.summary, {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -559,10 +650,11 @@ test("OnDemandTranslateDialog filters entries by review state", async () => {
     ["test.items", translatedPack()],
   ]);
   const dialog = new OnDemandTranslateDialog(actorFixture());
-  const root = actorTranslationRoot(["item-1", "item-2", "item-3"], {
+  const root = actorTranslationRoot(["item-1", "item-2", "item-3", "item-4"], {
     "item-1": "ready",
     "item-2": "translated",
     "item-3": "missing",
+    "item-4": "modified",
   });
 
   await dialog._prepareContext({});
@@ -577,7 +669,20 @@ test("OnDemandTranslateDialog filters entries by review state", async () => {
   assert.equal(entryFor(root, "item-1").hidden, true);
   assert.equal(entryFor(root, "item-2").hidden, true);
   assert.equal(entryFor(root, "item-3").hidden, false);
+  assert.equal(entryFor(root, "item-4").hidden, true);
   assert.equal(filterButton(root, "missing").getAttribute("aria-pressed"), "true");
+
+  await root.listeners.get("click")({
+    target: filterButton(root, "modified"),
+    preventDefault() {},
+  });
+
+  assert.equal(entryFor(root, "item-1").hidden, true);
+  assert.equal(entryFor(root, "item-2").hidden, true);
+  assert.equal(entryFor(root, "item-3").hidden, false);
+  assert.equal(entryFor(root, "item-4").hidden, false);
+  assert.equal(filterButton(root, "missing").getAttribute("aria-pressed"), "true");
+  assert.equal(filterButton(root, "modified").getAttribute("aria-pressed"), "true");
 
   await root.listeners.get("click")({
     target: filterButton(root, "all"),
@@ -587,6 +692,7 @@ test("OnDemandTranslateDialog filters entries by review state", async () => {
   assert.equal(entryFor(root, "item-1").hidden, false);
   assert.equal(entryFor(root, "item-2").hidden, false);
   assert.equal(entryFor(root, "item-3").hidden, false);
+  assert.equal(entryFor(root, "item-4").hidden, false);
   assert.equal(filterButton(root, "all").getAttribute("aria-pressed"), "true");
 });
 
@@ -605,7 +711,7 @@ function actorTranslationRoot(entryIds, filtersById = {}, candidateIdsByEntryId 
     root.appendChild(button);
   }
 
-  for (const filter of ["all", "ready", "translated", "missing"]) {
+  for (const filter of ["all", "ready", "modified", "translated", "missing"]) {
     const button = new FakeElement("button");
     button.dataset.action = "filter";
     button.dataset.filter = filter;
@@ -614,7 +720,7 @@ function actorTranslationRoot(entryIds, filtersById = {}, candidateIdsByEntryId 
     root.appendChild(button);
   }
 
-  for (const summary of ["total", "ready", "translated", "untranslated"]) {
+  for (const summary of ["total", "ready", "modified", "translated", "untranslated"]) {
     const count = new FakeElement("strong");
     count.dataset[`summary${summary[0].toUpperCase()}${summary.slice(1)}`] = "";
     count.setAttribute(`data-summary-${summary}`, "");

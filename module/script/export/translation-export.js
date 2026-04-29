@@ -66,14 +66,19 @@ export class TranslationExport {
         const skippedDynamicFields = [];
 
         for (const {entity, sourceData, hasTranslation} of exportEntries) {
-            const exportedData = this.#payloadData(sourceData, hasTranslation, mappedCompendium, selection);
+            const exportedData = await this.#payloadData(sourceData, hasTranslation, mappedCompendium, selection);
+            if (!exportedData) {
+                continue;
+            }
+
             const name = this.#entryName(entity, exportedData, sourceData);
 
             if (!this.#shouldInclude(selection, hasTranslation)) {
                 continue;
             }
 
-            const extracted = this.pruneData(this.babele.extract(this.pack.collection, exportedData, {
+            const alreadyExtracted = selection === "source" ? this.#originalPayload(exportedData) : null;
+            const extracted = this.pruneData(alreadyExtracted ?? this.babele.extract(this.pack.collection, exportedData, {
                 format,
                 onSkippedDynamicField: info => skippedDynamicFields.push({
                     entry: name,
@@ -280,9 +285,12 @@ export class TranslationExport {
         return true;
     }
 
-    #payloadData(sourceData, hasTranslation, mappedCompendium, selection) {
+    async #payloadData(sourceData, hasTranslation, mappedCompendium, selection) {
         if (selection === "source") {
-            return sourceData;
+            const originalPayload = this.#originalPayload(sourceData);
+            return (originalPayload ? this.#sourcePayloadData(originalPayload) : null)
+                ?? (this.#runtimeTranslatedData(sourceData) ? await this.#sourceDataFor(sourceData) : null)
+                ?? (this.#runtimeTranslatedData(sourceData) ? null : sourceData);
         }
 
         if (!hasTranslation) {
@@ -290,6 +298,41 @@ export class TranslationExport {
         }
 
         return mappedCompendium?.translate?.(sourceData) ?? sourceData;
+    }
+
+    #originalPayload(data) {
+        return data?.flags?.babele?.originalPayload ?? null;
+    }
+
+    #sourcePayloadData(originalPayload) {
+        return foundry.utils.mergeObject(originalPayload, {
+            flags: {
+                babele: {
+                    originalPayload,
+                },
+            },
+        }, {inplace: false});
+    }
+
+    async #sourceDataFor(data) {
+        const id = data?._id ?? data?.id;
+        if (!id) {
+            return null;
+        }
+
+        return this.babele.sourceDataForUuid?.(`Compendium.${this.pack.collection}.${id}`, {
+            data,
+            pack: this.pack,
+        }) ?? null;
+    }
+
+    #runtimeTranslatedData(data) {
+        return !!(
+            data?.originalName
+            || data?.translated
+            || data?.hasTranslation
+            || data?.flags?.babele
+        );
     }
 
     #entryName(...candidates) {

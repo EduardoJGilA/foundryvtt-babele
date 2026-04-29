@@ -461,7 +461,7 @@
 
 .babele-actor-translation__stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(3.8rem, 1fr));
+    grid-template-columns: repeat(5, minmax(3.8rem, 1fr));
     gap: 0.35rem;
     align-self: stretch;
 }
@@ -493,6 +493,10 @@
 
 .babele-actor-translation__stat.is-ready strong {
     color: var(--babele-actor-accent);
+}
+
+.babele-actor-translation__stat.is-modified strong {
+    color: #d9b24f;
 }
 
 .babele-actor-translation__stat.is-missing strong {
@@ -576,6 +580,10 @@
 
 .babele-actor-translation__entry.is-unchanged {
     border-color: rgba(255, 255, 255, 0.16);
+}
+
+.babele-actor-translation__entry.is-modified {
+    border-color: color-mix(in srgb, #d9b24f 38%, transparent 62%);
 }
 
 .babele-actor-translation__entry.is-missing {

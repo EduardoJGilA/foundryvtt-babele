@@ -23,7 +23,7 @@ function actorWithItems(items, onUpdate = async () => {}) {
   };
 }
 
-test("ActorTranslation builds a proposal without applying actor updates", () => {
+test("ActorTranslation builds a proposal without applying actor updates", async () => {
   let updateCalled = false;
   const actor = actorWithItems([
     {_id: "item-1", name: "Sword", type: "weapon"},
@@ -52,12 +52,13 @@ test("ActorTranslation builds a proposal without applying actor updates", () => 
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
 
   assert.equal(updateCalled, false);
   assert.deepEqual(proposal.summary(), {
     total: 2,
     ready: 1,
+    modified: 0,
     translated: 0,
     untranslated: 1,
   });
@@ -108,7 +109,7 @@ test("ActorTranslation applies only translated proposal entries", async () => {
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const updates = await actorTranslation.apply(proposal);
 
   assert.deepEqual(updates, [
@@ -165,7 +166,7 @@ test("ActorTranslation preserves multiple translation candidates for ambiguous a
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const [entry] = proposal.entries;
 
   assert.deepEqual(entry.candidates.map((candidate) => ({
@@ -204,7 +205,7 @@ test("ActorTranslation preserves multiple translation candidates for ambiguous a
   });
 });
 
-test("ActorTranslation does not apply no-op translations", () => {
+test("ActorTranslation does not apply no-op translations", async () => {
   const actor = actorWithItems([
     {_id: "item-1", name: "Rations", type: "consumable"},
   ]);
@@ -226,12 +227,13 @@ test("ActorTranslation does not apply no-op translations", () => {
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const [entry] = proposal.entries;
 
   assert.deepEqual(proposal.summary(), {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -239,6 +241,596 @@ test("ActorTranslation does not apply no-op translations", () => {
   assert.equal(entry.changed, false);
   assert.equal(entry.applicable(), false);
   assert.deepEqual(proposal.updates(), []);
+});
+
+test("ActorTranslation skips imported items changed by the user", async () => {
+    const actor = actorWithItems([
+      {
+        _id: "embedded-feat",
+        name: "Weapon Focus (Longsword)",
+        type: "feat",
+        system: {
+          description: {value: "Original description"},
+        },
+        flags: {
+          core: {
+            sourceId: "Compendium.test.feats.Item.weapon-focus",
+          },
+        },
+      },
+    ]);
+
+    const actorTranslation = new ActorTranslation({
+      async sourceDataForUuid() {
+        return {
+          _id: "weapon-focus",
+          name: "Weapon Focus",
+          type: "feat",
+          system: {
+            description: {value: "Original description"},
+          },
+        };
+      },
+      mappedCompendiums: [{
+        translated: true,
+        metadata: {
+          type: "Item",
+          label: "Translated Feats",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.name === "Weapon Focus";
+        },
+        translate() {
+          return {
+            name: "Arma Focalizzata",
+            system: {
+              description: {value: "Descrizione tradotta"},
+            },
+          };
+        },
+        extract(data) {
+          return {
+            name: data.name,
+            description: data.system?.description?.value,
+          };
+        },
+      }],
+    });
+
+    const proposal = await actorTranslation.proposal(actor);
+    const [entry] = proposal.entries;
+
+    assert.deepEqual(proposal.summary(), {
+      total: 1,
+      ready: 0,
+      modified: 1,
+      translated: 0,
+      untranslated: 0,
+    });
+    assert.equal(entry.hasTranslation(), true);
+    assert.equal(entry.userChanged, true);
+    assert.equal(entry.applicable(), true);
+    assert.equal(entry.proposedName(), "Arma Focalizzata");
+    assert.deepEqual(proposal.updates(), [{
+      _id: "embedded-feat",
+      name: "Arma Focalizzata",
+      system: {
+        description: {value: "Descrizione tradotta"},
+      },
+      originalName: "Weapon Focus",
+      hasTranslation: true,
+      translated: true,
+      flags: {
+        babele: {
+          originalName: "Weapon Focus",
+          hasTranslation: true,
+          translated: true,
+          originalPayload: {
+            name: "Weapon Focus",
+            description: "Original description",
+          },
+        },
+      },
+    }]);
+});
+
+test("ActorTranslation marks mapped description changes as modified", async () => {
+    const actor = actorWithItems([
+      {
+        _id: "embedded-feat",
+        name: "Weapon Focus",
+        type: "feat",
+        system: {
+          description: {value: "Custom actor description"},
+        },
+        flags: {
+          core: {
+            sourceId: "Compendium.test.feats.Item.weapon-focus",
+          },
+        },
+      },
+    ]);
+
+    const actorTranslation = new ActorTranslation({
+      async sourceDataForUuid() {
+        return {
+          _id: "weapon-focus",
+          name: "Weapon Focus",
+          type: "feat",
+          system: {
+            description: {value: "Original description"},
+          },
+        };
+      },
+      mappedCompendiums: [{
+        translated: true,
+        metadata: {
+          type: "Item",
+          label: "Translated Feats",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.feats.Item.weapon-focus";
+        },
+        translate() {
+          return {
+            name: "Arma Focalizzata",
+            system: {
+              description: {value: "Descrizione tradotta"},
+            },
+          };
+        },
+        extract(data) {
+          return {
+            name: data.name,
+            description: data.system?.description?.value,
+          };
+        },
+      }],
+    });
+
+    const proposal = await actorTranslation.proposal(actor);
+    const [entry] = proposal.entries;
+
+    assert.equal(entry.userChanged, true);
+    assert.deepEqual(proposal.summary(), {
+      total: 1,
+      ready: 0,
+      modified: 1,
+      translated: 0,
+      untranslated: 0,
+    });
+});
+
+test("ActorTranslation detects mapped changes against cached translated source data with original flags", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-feat",
+      name: "Weapon Focus",
+      type: "feat",
+      system: {
+        description: {value: "Custom actor description"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.weapon-focus",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid(uuid) {
+      assert.equal(uuid, "Compendium.test.feats.Item.weapon-focus");
+      return {
+        name: "Weapon Focus",
+        description: "Original description",
+        flags: {
+          babele: {
+            originalPayload: {
+              name: "Weapon Focus",
+              description: "Original description",
+            },
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        label: "Translated Feats",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Weapon Focus";
+      },
+      translate() {
+        return {
+          name: "Arma Focalizzata",
+          system: {
+            description: {value: "Descrizione tradotta"},
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, true);
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 1,
+    translated: 0,
+    untranslated: 0,
+  });
+});
+
+test("ActorTranslation ignores current originalPayload flags when checking user changes", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-feat",
+      name: "Weapon Focus",
+      type: "feat",
+      system: {
+        description: {value: "Custom actor description"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.weapon-focus",
+        },
+        babele: {
+          originalPayload: {
+            name: "Weapon Focus",
+            description: "Original description",
+          },
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        name: "Weapon Focus",
+        description: "Original description",
+        flags: {
+          babele: {
+            originalPayload: {
+              name: "Weapon Focus",
+              description: "Original description",
+            },
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        label: "Translated Feats",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Weapon Focus";
+      },
+      translate() {
+        return {
+          name: "Arma Focalizzata",
+          system: {
+            description: {value: "Descrizione tradotta"},
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, true);
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 1,
+    translated: 0,
+    untranslated: 0,
+  });
+});
+
+test("ActorTranslation ignores source-only payload paths when checking user changes", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-feat",
+      name: "Weapon Focus",
+      type: "feat",
+      system: {
+        description: {value: "Original description"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.weapon-focus",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        name: "Weapon Focus",
+        description: "Original description",
+        flags: {
+          babele: {
+            originalPayload: {
+              name: "Weapon Focus",
+              description: "Original description",
+              traits: {
+                value: ["fighter"],
+              },
+            },
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        label: "Translated Feats",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Weapon Focus";
+      },
+      translate() {
+        return {
+          name: "Arma Focalizzata",
+          system: {
+            description: {value: "Descrizione tradotta"},
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, false);
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 1,
+    modified: 0,
+    translated: 0,
+    untranslated: 0,
+  });
+});
+
+test("ActorTranslation detects common payload value changes across different shapes", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-feat",
+      name: "Weapon Focus",
+      type: "feat",
+      system: {
+        description: {value: "Custom actor description"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.weapon-focus",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        name: "Weapon Focus",
+        description: "Original description",
+        flags: {
+          babele: {
+            originalPayload: {
+              name: "Weapon Focus",
+              description: "Original description",
+              traits: {
+                value: ["fighter"],
+              },
+            },
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        label: "Translated Feats",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Weapon Focus";
+      },
+      translate() {
+        return {
+          name: "Arma Focalizzata",
+          system: {
+            description: {value: "Descrizione tradotta"},
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, true);
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 1,
+    translated: 0,
+    untranslated: 0,
+  });
+});
+
+test("ActorTranslation does not mark imported items as changed for unrelated system differences", async () => {
+    const actor = actorWithItems([
+      {
+        _id: "embedded-rations",
+        name: "Rations",
+        type: "consumable",
+        system: {
+          description: {value: "Original description"},
+          quantity: 4,
+          equipped: false,
+        },
+        flags: {
+          core: {
+            sourceId: "Compendium.test.gear.Item.rations",
+          },
+        },
+      },
+    ]);
+
+    const actorTranslation = new ActorTranslation({
+      async sourceDataForUuid() {
+        return {
+          _id: "rations",
+          name: "Rations",
+          type: "consumable",
+          system: {
+            description: {value: "Original description"},
+            quantity: 1,
+          },
+        };
+      },
+      mappedCompendiums: [{
+        translated: true,
+        metadata: {
+          type: "Item",
+          label: "Translated Gear",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.gear.Item.rations";
+        },
+        translate() {
+          return {
+            name: "Razioni",
+            system: {
+              description: {value: "Descrizione tradotta"},
+            },
+          };
+        },
+      }],
+    });
+
+    const proposal = await actorTranslation.proposal(actor);
+    const [entry] = proposal.entries;
+
+    assert.deepEqual(proposal.summary(), {
+      total: 1,
+      ready: 1,
+      modified: 0,
+      translated: 0,
+      untranslated: 0,
+    });
+    assert.equal(entry.userChanged, false);
+    assert.equal(entry.applicable(), true);
+    assert.equal(entry.proposedName(), "Razioni");
+    assert.deepEqual(proposal.updates(), [{
+      _id: "embedded-rations",
+      name: "Razioni",
+      system: {
+        description: {value: "Descrizione tradotta"},
+      },
+      originalName: "Rations",
+      hasTranslation: true,
+      translated: true,
+      flags: {
+        babele: {
+          originalName: "Rations",
+          hasTranslation: true,
+          translated: true,
+        },
+      },
+    }]);
+});
+
+test("ActorTranslation does not treat Babele-translated source lookup as a user rename", async () => {
+    const actor = actorWithItems([
+      {
+        _id: "embedded-sword",
+        name: "Sword",
+        type: "weapon",
+        flags: {
+          core: {
+            sourceId: "Compendium.test.weapons.Item.sword",
+          },
+        },
+      },
+    ]);
+
+    const actorTranslation = new ActorTranslation({
+      async sourceDataForUuid() {
+        return {
+          _id: "sword",
+          name: "Sword",
+          type: "weapon",
+        };
+      },
+      mappedCompendiums: [{
+        translated: true,
+        metadata: {
+          type: "Item",
+          label: "Translated Weapons",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.weapons.Item.sword";
+        },
+        translate() {
+          return {name: "Spada"};
+        },
+      }],
+    });
+
+    const proposal = await actorTranslation.proposal(actor);
+    const [entry] = proposal.entries;
+
+    assert.deepEqual(proposal.summary(), {
+      total: 1,
+      ready: 1,
+      modified: 0,
+      translated: 0,
+      untranslated: 0,
+    });
+    assert.equal(entry.userChanged, false);
+    assert.equal(entry.applicable(), true);
+    assert.equal(entry.proposedName(), "Spada");
 });
 
 function translatedCandidatePack(collection, label, translatedName) {
@@ -258,7 +850,7 @@ function translatedCandidatePack(collection, label, translatedName) {
   };
 }
 
-test("ActorTranslation recognizes already translated items through Babele flags", () => {
+test("ActorTranslation recognizes already translated items through Babele flags", async () => {
   let lookupName = null;
   const actor = actorWithItems([
     {
@@ -293,13 +885,14 @@ test("ActorTranslation recognizes already translated items through Babele flags"
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const [entry] = proposal.entries;
 
   assert.equal(lookupName, "Sword");
   assert.deepEqual(proposal.summary(), {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -311,7 +904,7 @@ test("ActorTranslation recognizes already translated items through Babele flags"
   assert.deepEqual(proposal.updates(), []);
 });
 
-test("ActorTranslation recognizes legacy on-demand translated items without Babele flags", () => {
+test("ActorTranslation recognizes legacy on-demand translated items without Babele flags", async () => {
   const actor = actorWithItems([
     {_id: "embedded-item-1", name: "Spada", type: "weapon"},
   ]);
@@ -335,12 +928,13 @@ test("ActorTranslation recognizes legacy on-demand translated items without Babe
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const [entry] = proposal.entries;
 
   assert.deepEqual(proposal.summary(), {
     total: 1,
     ready: 0,
+    modified: 0,
     translated: 1,
     untranslated: 0,
   });
@@ -368,7 +962,7 @@ test("ActorTranslation apply is a no-op when no proposal entry is translated", a
     },
   });
 
-  const proposal = actorTranslation.proposal(actor);
+  const proposal = await actorTranslation.proposal(actor);
   const updates = await actorTranslation.apply(proposal);
 
   assert.deepEqual(updates, []);

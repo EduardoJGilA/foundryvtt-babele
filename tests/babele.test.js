@@ -1358,16 +1358,43 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
 
   assert.deepEqual(proposal.summary(), {
     total: 1,
-    translated: 1,
+    ready: 1,
+    translated: 0,
     untranslated: 0,
   });
   assert.deepEqual(updates, [
-    {_id: "item-1", name: "Spada"},
+    {
+      _id: "item-1",
+      name: "Spada",
+      originalName: "Sword",
+      hasTranslation: true,
+      translated: true,
+      flags: {
+        babele: {
+          originalName: "Sword",
+          hasTranslation: true,
+          translated: true,
+        },
+      },
+    },
   ]);
   assert.deepEqual(applied, {
     documentType: "Item",
     updates: [
-      {_id: "item-1", name: "Spada"},
+      {
+        _id: "item-1",
+        name: "Spada",
+        originalName: "Sword",
+        hasTranslation: true,
+        translated: true,
+        flags: {
+          babele: {
+            originalName: "Sword",
+            hasTranslation: true,
+            translated: true,
+          },
+        },
+      },
     ],
   });
 });

@@ -1,0 +1,128 @@
+<section class="babele-actor-translation">
+    <header class="babele-actor-translation__hero">
+        <div>
+            <p class="babele-actor-translation__eyebrow">{{texts.actor}}</p>
+            <h2>{{actorName}}</h2>
+            <p class="hint">{{texts.intro}}</p>
+        </div>
+
+        <div class="babele-actor-translation__stats" aria-label="{{texts.total}}">
+            <span class="babele-actor-translation__stat is-total">
+                <strong data-summary-total>{{summary.total}}</strong>
+                <small>{{texts.total}}</small>
+            </span>
+            <span class="babele-actor-translation__stat is-ready">
+                <strong data-summary-ready>{{summary.ready}}</strong>
+                <small>{{texts.ready}}</small>
+            </span>
+            <span class="babele-actor-translation__stat is-translated">
+                <strong data-summary-translated>{{summary.translated}}</strong>
+                <small>{{texts.translated}}</small>
+            </span>
+            <span class="babele-actor-translation__stat is-missing">
+                <strong data-summary-untranslated>{{summary.untranslated}}</strong>
+                <small>{{texts.missing}}</small>
+            </span>
+        </div>
+    </header>
+
+    {{#if hasEntries}}
+    <div class="babele-actor-translation__toolbar">
+        <span class="babele-actor-translation__selected">
+            <strong data-selected-count>{{selectedCount}}</strong>
+            <span>{{texts.selected}}</span>
+        </span>
+
+        <div class="babele-actor-translation__toolbar-actions">
+            <button type="button" data-action="select-all" {{#unless hasReady}}disabled{{/unless}}>
+                {{texts.selectAll}}
+            </button>
+            <button type="button" data-action="select-none" {{#unless hasReady}}disabled{{/unless}}>
+                {{texts.selectNone}}
+            </button>
+        </div>
+    </div>
+
+    <nav class="babele-actor-translation__filters" aria-label="{{texts.total}}">
+        {{#each filters}}
+        <button
+            type="button"
+            data-action="filter"
+            data-filter="{{filter}}"
+            data-active="{{#if active}}true{{else}}false{{/if}}"
+            aria-pressed="{{#if active}}true{{else}}false{{/if}}"
+        >
+            <span>{{label}}</span>
+            <strong data-filter-count="{{filter}}">{{count}}</strong>
+        </button>
+        {{/each}}
+    </nav>
+
+    <ol class="babele-actor-translation__list">
+        {{#each entries}}
+        <li class="babele-actor-translation__entry {{cssClass}}" data-entry-id="{{id}}" data-entry-filter="{{filter}}">
+            <label class="babele-actor-translation__entry-label">
+                <input
+                    type="checkbox"
+                    data-entry-selector
+                    data-entry-id="{{id}}"
+                    {{#if selected}}checked{{/if}}
+                    {{#unless applicable}}disabled{{/unless}}
+                >
+
+                <span class="babele-actor-translation__entry-body">
+                    <span class="babele-actor-translation__entry-state" data-entry-status>{{status}}</span>
+
+                    <span class="babele-actor-translation__comparison">
+                        <span>
+                            <small>
+                                {{../texts.original}}
+                                {{#if itemType}} · {{../texts.type}}: {{itemType}}{{/if}}
+                            </small>
+                            <strong>{{originalName}}</strong>
+                            {{#if hasCurrentTranslation}}
+                            <em class="babele-actor-translation__current-name">
+                                <span>{{../texts.current}}:</span>
+                                <strong data-current-name>{{currentName}}</strong>
+                            </em>
+                            {{/if}}
+                        </span>
+                        <i class="fas fa-arrow-right-long" aria-hidden="true"></i>
+                        <span>
+                            <small>{{../texts.proposed}}</small>
+                            <strong data-proposed-name class="{{#if proposedMissing}}is-missing{{/if}}">{{proposedName}}</strong>
+                            {{#if hasCandidates}}
+                            <em class="babele-actor-translation__candidate-line">
+                                <span>{{../texts.from}}:</span>
+                                <select
+                                    data-candidate-selector
+                                    data-entry-id="{{id}}"
+                                    {{#unless candidateChoiceEnabled}}disabled{{/unless}}
+                                >
+                                    {{#each candidates}}
+                                    <option value="{{id}}" {{#if selected}}selected{{/if}}>
+                                        {{label}}
+                                    </option>
+                                    {{/each}}
+                                </select>
+                            </em>
+                            {{/if}}
+                        </span>
+                    </span>
+                </span>
+            </label>
+        </li>
+        {{/each}}
+    </ol>
+    {{else}}
+    <p class="hint babele-actor-translation__empty">{{texts.empty}}</p>
+    {{/if}}
+
+    <footer class="babele-actor-translation__footer">
+        <button type="button" data-action="cancel">{{texts.cancel}}</button>
+        <button type="button" data-action="apply-selected" {{#unless hasReady}}disabled{{/unless}}>
+            <i class="fas fa-check" aria-hidden="true"></i>
+            <span>{{texts.apply}}</span>
+        </button>
+    </footer>
+</section>

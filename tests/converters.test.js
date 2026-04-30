@@ -825,6 +825,165 @@ test("structured data converter falls back to source keys when keyed property ma
   });
 });
 
+test("structured data converter matches and exports using multiple internal keys in order", () => {
+  const converter = new StructuredDataConverter({
+    path: "activities",
+    cardinality: "many",
+    container: "keyed",
+    keys: ["_id", "name"],
+    mapping: {
+      name: "name",
+      range: "range.special",
+    },
+  });
+
+  const activities = {
+    activitySourceKey: {
+      _id: "activity-id",
+      name: "Activity Name",
+      range: {special: "30 feet"},
+    },
+    duplicateSourceKey: {
+      _id: "activity-id",
+      name: "Duplicate Name",
+      range: {special: "60 feet"},
+    },
+    nameOnlyTranslationSourceKey: {
+      _id: "missing-activity-id",
+      name: "Name Only Translation",
+      range: {special: "75 feet"},
+    },
+    unnamedSourceKey: {
+      range: {special: "90 feet"},
+    },
+  };
+
+  const translated = converter.translate({
+    value: activities,
+    translation: {
+      "activity-id": {
+        name: "Attività da id",
+        range: "9 metri",
+      },
+      "Duplicate Name": {
+        name: "Attività da nome",
+      },
+      "Name Only Translation": {
+        name: "Attività da nome fallback",
+        range: "22,5 metri",
+      },
+      unnamedSourceKey: {
+        range: "27 metri",
+      },
+    },
+    source: {_id: "item-1", name: "Item"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: activities,
+    source: {_id: "item-1", name: "Item"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated.activitySourceKey.name, "Attività da id");
+  assert.equal(translated.activitySourceKey.range.special, "9 metri");
+  assert.equal(translated.duplicateSourceKey.name, "Attività da id");
+  assert.equal(translated.duplicateSourceKey.range.special, "9 metri");
+  assert.equal(translated.nameOnlyTranslationSourceKey.name, "Attività da nome fallback");
+  assert.equal(translated.nameOnlyTranslationSourceKey.range.special, "22,5 metri");
+  assert.equal(translated.unnamedSourceKey.range.special, "27 metri");
+  assert.deepEqual(extracted, {
+    "activity-id": {
+      name: "Activity Name",
+      range: "30 feet",
+    },
+    "Duplicate Name": {
+      name: "Duplicate Name",
+      range: "60 feet",
+    },
+    "missing-activity-id": {
+      name: "Name Only Translation",
+      range: "75 feet",
+    },
+    unnamedSourceKey: {
+      range: "90 feet",
+    },
+  });
+});
+
+test("structured data converter supports multiple keys for array containers", () => {
+  const converter = new StructuredDataConverter({
+    path: "advancement",
+    cardinality: "many",
+    container: "array",
+    keys: ["_id", "title"],
+    mapping: {
+      title: "title",
+      hint: "hint",
+    },
+  });
+
+  const advancement = [
+    {
+      _id: "level-1",
+      title: "Level 1",
+      hint: "Original hint",
+    },
+    {
+      title: "Level 2",
+      hint: "Second hint",
+    },
+  ];
+
+  const translated = converter.translate({
+    value: advancement,
+    translation: {
+      "level-1": {
+        title: "Livello 1",
+      },
+      "Level 2": {
+        hint: "Secondo suggerimento",
+      },
+    },
+    source: {_id: "class-1", name: "Class"},
+    field: "advancement",
+    path: "system.advancement",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: advancement,
+    source: {_id: "class-1", name: "Class"},
+    field: "advancement",
+    path: "system.advancement",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated[0].title, "Livello 1");
+  assert.equal(translated[0].hint, "Original hint");
+  assert.equal(translated[1].title, "Level 2");
+  assert.equal(translated[1].hint, "Secondo suggerimento");
+  assert.deepEqual(extracted, {
+    "level-1": {
+      title: "Level 1",
+      hint: "Original hint",
+    },
+    "Level 2": {
+      title: "Level 2",
+      hint: "Second hint",
+    },
+  });
+});
+
 test("structured data converter exposes sourceKey to nested converters for keyed containers", () => {
   const babele = new Babel();
   babele.registerConverter("sourceKeyEcho", {

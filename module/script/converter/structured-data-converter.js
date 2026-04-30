@@ -78,7 +78,7 @@ export class StructuredDataConverter {
             cardinality: context.params?.cardinality ?? "many",
             container: context.params?.container === "keyed" ? "keyed" : "array",
             mapping: context.params?.mapping ?? {},
-            key: context.params?.key ?? null,
+            keys: this._identityKeys(context.params),
             valuePath: context.params?.valuePath ?? null,
             compact: context.params?.compact === true,
         };
@@ -135,9 +135,10 @@ export class StructuredDataConverter {
 
         if (descriptor.container === "keyed") {
             return entries.map((entry) => {
-                const key = this._translationLookupKey(entry, descriptor);
-                if (key !== null && typeof translation[key] !== "undefined") {
-                    return translation[key];
+                for (const key of this._translationLookupKeys(entry, descriptor)) {
+                    if (typeof translation[key] !== "undefined") {
+                        return translation[key];
+                    }
                 }
 
                 return translation[entry.sourceKey];
@@ -148,8 +149,8 @@ export class StructuredDataConverter {
             return entries.map((_, index) => translation[index]);
         }
 
-        if (descriptor.key) {
-            return entries.map((entry) => translation[entry.value?.[descriptor.key]]);
+        if (descriptor.keys.length) {
+            return entries.map((entry) => this._translationForKeys(translation, entry, descriptor));
         }
 
         return entries.map(() => undefined);
@@ -242,9 +243,9 @@ export class StructuredDataConverter {
             }, {});
         }
 
-        if (descriptor.key) {
+        if (descriptor.keys.length) {
             return entries.reduce((out, entry, index) => {
-                const key = entry.value?.[descriptor.key];
+                const key = this._translationLookupKey(entry, descriptor);
                 if (key) {
                     out[key] = extracted[index];
                 }
@@ -258,38 +259,39 @@ export class StructuredDataConverter {
     /**
      * Resolve the translator-facing lookup key for one entry.
      *
-     * Keyed containers default to `sourceKey`, but when `key` is configured
-     * they can match by a property inside each value object instead.
+     * Keyed containers default to `sourceKey`, but when `key` or `keys` is
+     * configured they can match by properties inside each value object instead.
      *
      * @param {{sourceKey: string|null, value: *}} entry
-     * @param {{key: string|null}} descriptor
+     * @param {{keys: string[]}} descriptor
      * @returns {string|null}
      */
     _translationLookupKey(entry, descriptor) {
-        if (!descriptor.key) {
+        if (!descriptor.keys.length) {
             return entry.sourceKey;
         }
 
-        return this._normalizedEntryKey(entry.value, descriptor.key);
+        return this._translationLookupKeys(entry, descriptor)[0] ?? null;
     }
 
     /**
      * Resolve the extracted output key for one keyed entry.
      *
-     * When `key` is configured Babele exports keyed collections using that
+     * When `key` or `keys` is configured Babele exports keyed collections using that
      * property so the extracted payload matches the expected translation
      * template. If the property is missing or collides with an existing key,
      * extraction falls back to the original `sourceKey`.
      *
      * @param {{sourceKey: string|null, value: *}} entry
-     * @param {{key: string|null}} descriptor
+     * @param {{keys: string[]}} descriptor
      * @param {object} output
      * @returns {string}
      */
     _extractedEntryKey(entry, descriptor, output = {}) {
-        const preferred = this._translationLookupKey(entry, descriptor);
-        if (preferred !== null && !Object.hasOwn(output, preferred)) {
-            return preferred;
+        for (const preferred of this._translationLookupKeys(entry, descriptor)) {
+            if (!Object.hasOwn(output, preferred)) {
+                return preferred;
+            }
         }
 
         return entry.sourceKey;
@@ -309,6 +311,30 @@ export class StructuredDataConverter {
         }
 
         return String(key);
+    }
+
+    _identityKeys(params = {}) {
+        if (Array.isArray(params?.keys)) {
+            return [...new Set(params.keys.filter((key) => typeof key === "string" && key.length))];
+        }
+
+        return typeof params?.key === "string" && params.key.length ? [params.key] : [];
+    }
+
+    _translationForKeys(translation, entry, descriptor) {
+        for (const key of this._translationLookupKeys(entry, descriptor)) {
+            if (typeof translation[key] !== "undefined") {
+                return translation[key];
+            }
+        }
+
+        return undefined;
+    }
+
+    _translationLookupKeys(entry, descriptor) {
+        return descriptor.keys
+            .map((key) => this._normalizedEntryKey(entry.value, key))
+            .filter((key, index, keys) => key !== null && keys.indexOf(key) === index);
     }
 
     _translateScalarValue(value, translation, valuePath) {

@@ -3,6 +3,7 @@ import {CompendiumRuntime} from "../compendium/compendium-runtime.js";
 import {DocumentTranslationScope} from "../compendium/document-translation-scope.js";
 import {converterContext} from "./converter-context.js";
 import {ExportKeys} from "../identity/export-key-allocator.js";
+import {DocumentTranslation} from "../translation/document-translation.js";
 
 /**
  * Built-in OO converter for document-valued fields.
@@ -278,43 +279,18 @@ export class DocumentConverter {
                 ? (fallbackPack.translate(fallbackData, true, activeRuntime) ?? {})
                 : {};
 
-            const translatedData = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
-            if (!this._hasTranslatedData(translatedData)) {
-                return data;
-            }
-
-            const translatedDocument = foundry.utils.mergeObject(data, translatedData, {inplace: false});
+            const payload = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
             const hasTranslation = hasCurrentTranslation || hasFallbackTranslation;
-            const translated = this._documentChanged(data, translatedDocument);
-
-            if (!hasTranslation && !translated) {
-                return data;
-            }
-
             const sourcePack = currentCompendium ?? fallbackPack;
             const sourceData = sourcePack === fallbackPack ? fallbackData : data;
-            const babeleFlags = {
-                translated,
-                hasTranslation,
-                originalName: data.name,
-            };
-            const originalPayload = this._sourcePayload(sourcePack, sourceData);
-            if (originalPayload) {
-                babeleFlags.originalPayload = originalPayload;
-            }
 
-            return foundry.utils.mergeObject(
-                translatedDocument,
-                {
-                    translated,
-                    hasTranslation,
-                    originalName: data.name,
-                    flags: {
-                        babele: babeleFlags,
-                    },
-                },
-                {inplace: false},
-            );
+            return new DocumentTranslation({
+                source: data,
+                payload,
+                hasTranslation,
+                originalPayload: this._sourcePayload(sourcePack, sourceData),
+                requiresPayload: true,
+            }).apply();
         });
     }
 
@@ -461,16 +437,6 @@ export class DocumentConverter {
     }
 
     /**
-     * Whether a translated payload contains at least one field to merge.
-     *
-     * @param {object|undefined|null} translatedData
-     * @returns {boolean}
-     */
-    _hasTranslatedData(translatedData) {
-        return !!translatedData && Object.keys(translatedData).length > 0;
-    }
-
-    /**
      * Remove entries from a local translated payload that are identical to the
      * source payload.
      *
@@ -495,22 +461,6 @@ export class DocumentConverter {
         }
 
         return Object.keys(pruned).length > 0 ? pruned : undefined;
-    }
-
-    /**
-     * Whether merging the translated payload would actually change the source
-     * document.
-     *
-     * @param {*} sourcePayload
-     * @param {*} translatedData
-     * @returns {boolean}
-     */
-    _documentChanged(sourcePayload, translatedData) {
-        if (!this._hasTranslatedData(translatedData)) {
-            return false;
-        }
-
-        return !this._sameValue(sourcePayload, translatedData);
     }
 
     _sourcePayload(pack, data) {

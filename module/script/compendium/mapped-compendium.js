@@ -1,4 +1,5 @@
 import {TranslationEntries} from "../translation/translation-entries.js";
+import {DocumentTranslation} from "../translation/document-translation.js";
 import {CompendiumRuntime} from "./compendium-runtime.js";
 import {DocumentTranslationScope} from "./document-translation-scope.js";
 
@@ -333,35 +334,12 @@ export class MappedCompendium {
             return translatedData;
         }
 
-        const translatedDocument = foundry.utils.mergeObject(data, translatedData, {inplace: false});
-        const translated = this.#documentChanged(data, translatedDocument);
-
-        if (!hasTranslation && !translated) {
-            return data;
-        }
-
-        const babeleFlags = {
-            translated,
+        return new DocumentTranslation({
+            source: data,
+            payload: translatedData,
             hasTranslation,
-            originalName: data.name,
-        };
-        const originalPayload = this.#sourcePayload(data);
-        if (originalPayload) {
-            babeleFlags.originalPayload = originalPayload;
-        }
-
-        return foundry.utils.mergeObject(
-            translatedDocument,
-            {
-                translated,
-                hasTranslation,
-                originalName: data.name,
-                flags: {
-                    babele: babeleFlags,
-                },
-            },
-            {inplace: false},
-        );
+            originalPayload: this.#sourcePayload(data),
+        }).apply();
     }
 
     #mergeReferenceTranslations(data, translatedData, runtime = {}) {
@@ -442,55 +420,12 @@ export class MappedCompendium {
         return hookContext.translated ?? translatedData;
     }
 
-    #hasTranslatedData(translatedData) {
-        return !!translatedData && Object.keys(translatedData).length > 0;
-    }
-
-    #documentChanged(sourcePayload, translatedData) {
-        if (!this.#hasTranslatedData(translatedData)) {
-            return false;
-        }
-
-        return !this.#sameValue(sourcePayload, translatedData);
-    }
-
     #sourcePayload(data) {
         try {
             return this.extract(data) ?? null;
         } catch (_error) {
             return null;
         }
-    }
-
-    #sameValue(left, right) {
-        if (left === right) {
-            return true;
-        }
-
-        if (Array.isArray(left) || Array.isArray(right)) {
-            if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-                return false;
-            }
-
-            return left.every((value, index) => this.#sameValue(value, right[index]));
-        }
-
-        if (!this.#isPlainObject(left) || !this.#isPlainObject(right)) {
-            return false;
-        }
-
-        const leftKeys = Object.keys(left);
-        const rightKeys = Object.keys(right);
-
-        if (leftKeys.length !== rightKeys.length) {
-            return false;
-        }
-
-        return leftKeys.every((key) => Object.hasOwn(right, key) && this.#sameValue(left[key], right[key]));
-    }
-
-    #isPlainObject(value) {
-        return value !== null && typeof value === "object" && !Array.isArray(value);
     }
 
     #normalizeRuntime(runtime = {}) {

@@ -66,6 +66,12 @@ export const defaultMappings = {
             "documentType": "Item",
             "cardinality": "many"
         },
+        "effects": {
+            "path": "effects",
+            "converter": "document",
+            "documentType": "ActiveEffect",
+            "cardinality": "many"
+        },
         "tokenName": {
             "path": "prototypeToken.name",
             "converter": "name"
@@ -114,7 +120,13 @@ export const defaultMappings = {
     "Folder": {},
     "Item": {
         "name": "name",
-        "description": "system.description.value"
+        "description": "system.description.value",
+        "effects": {
+            "path": "effects",
+            "converter": "document",
+            "documentType": "ActiveEffect",
+            "cardinality": "many"
+        }
     },
     "JournalEntry": {
         "name": "name",

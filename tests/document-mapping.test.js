@@ -122,18 +122,19 @@ test("DocumentMappings provides a conservative default mapping for ActiveEffect"
       value: 10,
       units: "rounds",
     },
-    system: {
-      changes: [{
-        key: "system.bonuses.mwak.attack",
-        type: "add",
-        value: "1d4",
-      }],
-    },
+    changes: [{
+      key: "system.bonuses.mwak.attack",
+      type: "add",
+      value: "1d4",
+    }],
   };
 
   assert.deepEqual(mapping.extract(document), {
     name: "Blessed",
     description: "<p>Add 1d4 to attack rolls and saving throws.</p>",
+    changes: {
+      "system.bonuses.mwak.attack": "1d4",
+    },
   });
 });
 

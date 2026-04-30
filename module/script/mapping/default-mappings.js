@@ -79,7 +79,15 @@ export const defaultMappings = {
     },
     "ActiveEffect": {
         "name": "name",
-        "description": "description"
+        "description": "description",
+        "changes": {
+            "path": "changes",
+            "converter": "structured",
+            "cardinality": "many",
+            "container": "array",
+            "key": "key",
+            "valuePath": "value"
+        }
     },
     "Cards": {
         "name": "name",

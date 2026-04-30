@@ -897,6 +897,109 @@ test("structured data converter exposes sourceKey to nested converters for keyed
   });
 });
 
+test("structured data converter maps scalar translations to valuePath for keyed array entries", () => {
+  const converter = new StructuredDataConverter({
+    path: "changes",
+    cardinality: "many",
+    container: "array",
+    key: "key",
+    valuePath: "value",
+  });
+
+  const changes = [
+    {
+      key: "system.description.value",
+      mode: "override",
+      value: "Original description",
+    },
+    {
+      key: "name",
+      mode: "add",
+      value: "Original name suffix",
+    },
+    {
+      key: "system.range.value",
+      mode: "add",
+      value: "30",
+    },
+  ];
+
+  const translated = converter.translate({
+    value: changes,
+    translation: {
+      "system.description.value": "Description traduite",
+      name: "",
+      "system.range.value": 0,
+    },
+    source: {_id: "effect-1", name: "Effect"},
+    field: "changes",
+    path: "changes",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: changes,
+    source: {_id: "effect-1", name: "Effect"},
+    field: "changes",
+    path: "changes",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated[0].value, "Description traduite");
+  assert.equal(translated[1].value, "");
+  assert.equal(translated[2].value, 0);
+  assert.equal(translated[0].mode, "override");
+  assert.deepEqual(extracted, {
+    "system.description.value": "Original description",
+    name: "Original name suffix",
+    "system.range.value": "30",
+  });
+});
+
+test("structured data converter maps scalar translations to valuePath for one structured value", () => {
+  const converter = new StructuredDataConverter({
+    path: "label",
+    cardinality: "one",
+    valuePath: "text.value",
+  });
+
+  const label = {
+    text: {
+      value: "Original label",
+    },
+    color: "red",
+  };
+
+  const translated = converter.translate({
+    value: label,
+    translation: "Etichetta tradotta",
+    source: {_id: "entry-1", name: "Entry"},
+    field: "label",
+    path: "label",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: label,
+    source: {_id: "entry-1", name: "Entry"},
+    field: "label",
+    path: "label",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.deepEqual(translated, {
+    text: {
+      value: "Etichetta tradotta",
+    },
+    color: "red",
+  });
+  assert.equal(extracted, "Original label");
+});
+
 test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {
   game.babele = new Babel();
   const tableTc = new MappedCompendium({

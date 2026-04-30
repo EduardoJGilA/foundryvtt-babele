@@ -93,6 +93,10 @@ export class DocumentConverter {
         const prepared = this.prepare(configuredContext);
         const scope = DocumentTranslationScope.from(configuredContext.runtime);
         const values = this._documentValues(configuredContext.value, descriptor.cardinality);
+        if (values.length === 0) {
+            return undefined;
+        }
+
         const extracted = this._extractEmbeddedCollection(values, prepared.contextPack, scope.runtime());
 
         if (descriptor.cardinality === "one") {

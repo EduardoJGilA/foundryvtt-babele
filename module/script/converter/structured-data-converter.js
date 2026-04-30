@@ -79,6 +79,7 @@ export class StructuredDataConverter {
             container: context.params?.container === "keyed" ? "keyed" : "array",
             mapping: context.params?.mapping ?? {},
             key: context.params?.key ?? null,
+            valuePath: context.params?.valuePath ?? null,
             compact: context.params?.compact === true,
         };
     }
@@ -166,8 +167,12 @@ export class StructuredDataConverter {
     }
 
     _translateValue(value, translation, descriptor, context = {}, runtime = {}, sourceKey = null) {
-        if (!translation || !value) {
+        if (typeof translation === "undefined" || translation === null || !value) {
             return value;
+        }
+
+        if (descriptor.valuePath && !this._isPlainObject(translation)) {
+            return this._translateScalarValue(value, translation, descriptor.valuePath);
         }
 
         const fields = this._fields(descriptor.mapping, context);
@@ -181,6 +186,10 @@ export class StructuredDataConverter {
     }
 
     _extractValue(value, descriptor, context = {}, runtime = {}, sourceKey = null) {
+        if (descriptor.valuePath) {
+            return foundry.utils.getProperty(value, descriptor.valuePath);
+        }
+
         const fields = this._fields(descriptor.mapping, context);
         const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
         return fields.reduce((out, field) => {
@@ -300,5 +309,22 @@ export class StructuredDataConverter {
         }
 
         return String(key);
+    }
+
+    _translateScalarValue(value, translation, valuePath) {
+        return foundry.utils.mergeObject(value, this._objectAtPath(valuePath, translation), {inplace: false});
+    }
+
+    _objectAtPath(path, value) {
+        const keys = String(path ?? "").split(".").filter((key) => key.length);
+        if (!keys.length) {
+            return value;
+        }
+
+        return keys.reduceRight((out, key) => ({[key]: out}), value);
+    }
+
+    _isPlainObject(value) {
+        return !!value && typeof value === "object" && !Array.isArray(value);
     }
 }

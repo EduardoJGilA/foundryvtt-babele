@@ -4,6 +4,7 @@ import {DocumentTranslationScope} from "../compendium/document-translation-scope
 import {converterContext} from "./converter-context.js";
 import {ExportKeys} from "../identity/export-key-allocator.js";
 import {DocumentTranslation} from "../translation/document-translation.js";
+import {DocumentCollectionSort} from "./document-collection-sort.js";
 
 /**
  * Built-in OO converter for document-valued fields.
@@ -77,8 +78,11 @@ export class DocumentConverter {
         const scope = DocumentTranslationScope.from(configuredContext.runtime);
         const values = this._documentValues(configuredContext.value, descriptor.cardinality);
         const translated = this._fromPack(values, prepared.contextPack, scope.runtime());
+        const sorted = DocumentCollectionSort
+            .from(descriptor.sort, this._translationSortPolicy(configuredContext))
+            .apply(translated);
 
-        return this._documentOutput(translated, descriptor.cardinality);
+        return this._documentOutput(sorted, descriptor.cardinality);
     }
 
     /**
@@ -139,17 +143,29 @@ export class DocumentConverter {
      * mapping object shape used by root compendium definitions.
      *
      * @param {object} context
-     * @returns {{documentType: string, cardinality: string, expose: boolean, mapping: object|null}}
+     * @returns {{documentType: string, cardinality: string, expose: boolean, mapping: object|null, sort: object|string|boolean|null}}
      */
     _descriptor(context) {
         return {
             documentType: context.params?.documentType,
             cardinality: context.params?.cardinality ?? "many",
             expose: context.params?.expose === true,
+            sort: context.params?.sort ?? null,
             mapping: context.params?.mapping
                 ?? context.contextCompendium?.customMapping?.[context.params?.path]
                 ?? null,
         };
+    }
+
+    /**
+     * Read the optional per-entry collection sort directive from the
+     * translation payload.
+     *
+     * @param {object} context
+     * @returns {object|string|boolean|null}
+     */
+    _translationSortPolicy(context) {
+        return context.translation?.$sort ?? null;
     }
 
     /**

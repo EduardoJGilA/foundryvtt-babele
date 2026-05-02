@@ -170,6 +170,7 @@ class FunctionalConverterFactory {
                 cardinality: context.params?.cardinality ?? "many",
                 mapping: context.params?.mapping ?? null,
                 expose: context.params?.expose,
+                sort: context.params?.sort,
             })),
             name: this.mappedField("name"),
             nameCollection: this.fieldCollection("name"),

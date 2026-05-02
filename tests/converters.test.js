@@ -441,6 +441,90 @@ test("document converter translates embedded-only document fields without extern
   assert.equal(translated[0].video.height, 600);
 });
 
+test("document converter applies per-entry collection sort directives after translation", () => {
+  const converter = new DocumentConverter();
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Bestiary"});
+  const translated = converter.translate({
+    value: [
+      {_id: "dragon", name: "Dragon", sort: 1000},
+      {_id: "intro", name: "Overview", sort: 2000},
+      {_id: "aboleth", name: "Aboleth", sort: 3000},
+      {_id: "behir", name: "Behir", sort: 4000},
+    ],
+    translation: {
+      $sort: {
+        by: "name",
+        locale: "fr",
+        first: ["intro"],
+        ignoreLeadingWords: ["le", "la", "les"],
+        ignoreLeadingPrefixes: ["l'"],
+        ignoreWords: ["de"],
+      },
+      intro: {name: "Le sommaire"},
+      dragon: {name: "Le dragon"},
+      aboleth: {name: "L'aboleth"},
+      behir: {name: "Béhir"},
+    },
+    source: {_id: "journal-1", name: "Bestiary"},
+    field: "pages",
+    path: "pages",
+    params: {
+      path: "pages",
+      converter: "document",
+      documentType: "JournalEntryPage",
+      cardinality: "many",
+    },
+    allTranslations: {},
+    contextCompendium: journalContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: journalContext,
+    }),
+  });
+
+  assert.deepEqual(translated.map((page) => page._id), ["intro", "aboleth", "behir", "dragon"]);
+  assert.deepEqual(translated.map((page) => page.sort), [1000, 2000, 3000, 4000]);
+});
+
+test("document converter applies grouped collection sort directives", () => {
+  const converter = new DocumentConverter();
+  const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
+  const translated = converter.translate({
+    value: [
+      {_id: "parent", name: "Parent", sort: 1000},
+      {_id: "zeta", name: "Zeta", sort: 2000},
+      {_id: "beta", name: "Beta", sort: 3000},
+      {_id: "alpha", name: "Alpha", sort: 4000},
+    ],
+    translation: {
+      $sort: {
+        by: "name",
+        groups: [
+          {
+            parent: "parent",
+            ids: ["beta", "alpha"],
+          },
+        ],
+      },
+    },
+    source: {_id: "journal-1", name: "Rules"},
+    field: "pages",
+    path: "pages",
+    params: {
+      path: "pages",
+      converter: "document",
+      documentType: "JournalEntryPage",
+      cardinality: "many",
+    },
+    allTranslations: {},
+    contextCompendium: journalContext,
+    runtime: new CompendiumRuntime({
+      currentCompendium: journalContext,
+    }),
+  });
+
+  assert.deepEqual(translated.map((page) => page._id), ["parent", "alpha", "beta", "zeta"]);
+});
+
 test("pages.extract exports journal pages through the JournalEntryPage mapping", () => {
   const journalContext = runtimeCompendium("JournalEntry", {id: "journal-1", name: "Rules"});
   const extracted = Converters.pages().extract([

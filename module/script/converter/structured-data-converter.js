@@ -1,4 +1,4 @@
-import {FieldMapping} from "../mapping/field-mapping.js";
+import {MappingBlock} from "../mapping/mapping-block.js";
 import {ConverterRegistry} from "./converter-registry.js";
 
 /**
@@ -84,10 +84,13 @@ export class StructuredDataConverter {
         };
     }
 
-    _fields(mapping, context = {}) {
+    _mappingBlock(mapping, context = {}) {
         const converterRegistry = context.contextCompendium?.documentMappings?.converterRegistry
             ?? new ConverterRegistry();
-        return Object.entries(mapping ?? {}).map(([field, value]) => new FieldMapping(field, value, converterRegistry));
+        return new MappingBlock(mapping ?? {}, {
+            converterRegistry,
+            owner: context.field ?? context.path ?? "structured",
+        });
     }
 
     _entries(value, descriptor = {}) {
@@ -176,12 +179,10 @@ export class StructuredDataConverter {
             return this._translateScalarValue(value, translation, descriptor.valuePath);
         }
 
-        const fields = this._fields(descriptor.mapping, context);
         const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
-        const mapped = fields.reduce((out, field) => {
-            field.prepare(value, translation, fieldRuntime);
-            return foundry.utils.mergeObject(out, field.map(value, translation, fieldRuntime));
-        }, {});
+        const block = this._mappingBlock(descriptor.mapping, context);
+        block.prepare(value, translation, fieldRuntime);
+        const mapped = block.map(value, translation, fieldRuntime);
 
         return foundry.utils.mergeObject(value, mapped, {inplace: false});
     }
@@ -191,24 +192,8 @@ export class StructuredDataConverter {
             return foundry.utils.getProperty(value, descriptor.valuePath);
         }
 
-        const fields = this._fields(descriptor.mapping, context);
         const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
-        return fields.reduce((out, field) => {
-            const extracted = field.extract(value, fieldRuntime);
-            if (typeof extracted === "undefined") {
-                return out;
-            }
-
-            const filtered = Object.fromEntries(
-                Object.entries(extracted).filter(([, extractedValue]) => typeof extractedValue !== "undefined"),
-            );
-
-            if (Object.keys(filtered).length === 0) {
-                return out;
-            }
-
-            return foundry.utils.mergeObject(out, filtered);
-        }, {});
+        return this._mappingBlock(descriptor.mapping, context).extract(value, fieldRuntime);
     }
 
     _output(entries, descriptor) {

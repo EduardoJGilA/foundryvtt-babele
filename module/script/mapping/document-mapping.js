@@ -1,4 +1,4 @@
-import {FieldMapping} from "./field-mapping.js";
+import {MappingBlock} from "./mapping-block.js";
 import {DocumentIdentity} from "../identity/document-identity.js";
 
 /**
@@ -25,7 +25,11 @@ export class DocumentMapping {
         const normalized = this._normalizedDefinition(definition);
         this.identityDefinition = normalized.identity;
         this.mapping = normalized.mapping;
-        this.fields = Object.keys(this.mapping).map((key) => new FieldMapping(key, this.mapping[key], this._converterRegistry));
+        this._block = new MappingBlock(this.mapping, {
+            converterRegistry: this._converterRegistry,
+            owner: this.documentType,
+        });
+        this.fields = this._block.fields;
         this._identity = new DocumentIdentity(this.identityDefinition, this._identityExtractors);
     }
 
@@ -67,10 +71,7 @@ export class DocumentMapping {
      * @returns {object}
      */
     map(data, translations, runtime = {}) {
-        return this.fields.reduce(
-            (mapped, field) => foundry.utils.mergeObject(mapped, field.map(data, translations, runtime)),
-            {},
-        );
+        return this._block.map(data, translations, runtime);
     }
 
     /**
@@ -81,9 +82,7 @@ export class DocumentMapping {
      * @param {import("../compendium/document-translation-scope.js").DocumentTranslationScope|import("../compendium/compendium-runtime.js").CompendiumRuntime|object} [runtime]
      */
     prepare(data, translations, runtime = {}) {
-        for (const field of this.fields) {
-            field.prepare(data, translations, runtime);
-        }
+        this._block.prepare(data, translations, runtime);
     }
 
     /**
@@ -96,7 +95,7 @@ export class DocumentMapping {
      * @returns {*}
      */
     translateField(field, data, translations, runtime = {}) {
-        return this.fields.find((mappedField) => mappedField.field === field)?.translate(data, translations, runtime);
+        return this._block.translateField(field, data, translations, runtime);
     }
 
     /**
@@ -108,7 +107,7 @@ export class DocumentMapping {
      * @returns {*}
      */
     extractField(field, data, runtime = {}) {
-        return this.fields.find((mappedField) => mappedField.field === field)?.extract(data, runtime)?.[field];
+        return this._block.extractField(field, data, runtime);
     }
 
     /**
@@ -119,23 +118,7 @@ export class DocumentMapping {
      * @returns {object}
      */
     extract(data, runtime = {}) {
-        return this.fields.reduce((mapped, field) => {
-            const extracted = field.extract(data, runtime);
-
-            if (typeof extracted === "undefined") {
-                return mapped;
-            }
-
-            const filtered = Object.fromEntries(
-                Object.entries(extracted).filter(([, value]) => typeof value !== "undefined"),
-            );
-
-            if (Object.keys(filtered).length === 0) {
-                return mapped;
-            }
-
-            return foundry.utils.mergeObject(mapped, filtered);
-        }, {});
+        return this._block.extract(data, runtime);
     }
 
     /**
@@ -145,7 +128,7 @@ export class DocumentMapping {
      * @returns {boolean}
      */
     usesConverters() {
-        return this.fields.some((field) => field.usesConverter());
+        return this._block.usesConverters();
     }
 
     _normalizedDefinition(definition = {}) {

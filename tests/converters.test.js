@@ -768,6 +768,83 @@ test("structured data converter translates keyed objects by source key and extra
   });
 });
 
+test("structured data converter applies conditional mapping variants per entry", () => {
+  const converter = new StructuredDataConverter({
+    path: "activities",
+    cardinality: "many",
+    container: "keyed",
+    keys: ["_id", "name"],
+    mapping: {
+      name: "name",
+      _variants: [{
+        _when: {path: "type", in: ["attack"]},
+        range: "range.special",
+      }],
+    },
+  });
+
+  const activities = {
+    attack: {
+      _id: "attack",
+      type: "attack",
+      name: "Bite",
+      range: {
+        special: "within reach",
+      },
+    },
+    utility: {
+      _id: "utility",
+      type: "utility",
+      name: "Roar",
+      range: {
+        special: "audible distance",
+      },
+    },
+  };
+
+  const translated = converter.translate({
+    value: activities,
+    translation: {
+      attack: {
+        name: "Morso",
+        range: "entro portata",
+      },
+      utility: {
+        name: "Ruggito",
+        range: "distanza udibile",
+      },
+    },
+    source: {_id: "item-1", name: "Creature Action"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  const extracted = converter.extract({
+    value: activities,
+    source: {_id: "item-1", name: "Creature Action"},
+    field: "activities",
+    path: "system.activities",
+    params: {},
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated.attack.name, "Morso");
+  assert.equal(translated.attack.range.special, "entro portata");
+  assert.equal(translated.utility.name, "Ruggito");
+  assert.equal(translated.utility.range.special, "audible distance");
+  assert.deepEqual(extracted, {
+    attack: {
+      name: "Bite",
+      range: "within reach",
+    },
+    utility: {
+      name: "Roar",
+    },
+  });
+});
+
 test("structured data converter matches keyed objects by an internal property and exports the same template shape", () => {
   const converter = new StructuredDataConverter({
     path: "activities",

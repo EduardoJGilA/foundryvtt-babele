@@ -1,5 +1,6 @@
 import {defaultMappings} from "./default-mappings.js";
-import {DocumentMappingHierarchy} from "./document-mapping-hierarchy.js";
+import {DocumentMapping} from "./document-mapping.js";
+import {mergeIdentityDefinition} from "../identity/document-identity.js";
 
 /**
  * Aggregate of effective document-mapping layers.
@@ -9,9 +10,8 @@ import {DocumentMappingHierarchy} from "./document-mapping-hierarchy.js";
  * 2. mappings registered through the public API
  * 3. mappings loaded from discovered mapping files
  *
- * The aggregate owns precedence and materializes `DocumentMappingHierarchy`
- * instances on demand for a specific document type and optional
- * compendium-local override.
+ * The aggregate owns precedence and materializes `DocumentMapping` instances
+ * on demand for a specific document type and optional compendium-local override.
  */
 export class DocumentMappings {
 
@@ -97,9 +97,8 @@ export class DocumentMappings {
      * Return a diagnostic view of the effective mapping for one document type
      * and optional document instance.
      *
-     * The report reflects the actual hierarchy semantics: base document-type
-     * layers are merged first, subtype layers overlay the effective base, and
-     * compendium-local mappings overlay their matching branch.
+     * Legacy subtype keys are reported as source contributions but normalized
+     * into `_variants` in the effective mapping.
      *
      * @param {string} documentType
      * @param {object} [options]
@@ -112,8 +111,7 @@ export class DocumentMappings {
         customMapping = null,
     } = {}) {
         const subtype = data?.type ?? null;
-        const hierarchy = this.hierarchyFor(documentType, customMapping);
-        const mapping = hierarchy.mappingFor(data);
+        const mapping = this.mappingFor(documentType, customMapping);
 
         return {
             documentType,
@@ -171,15 +169,18 @@ export class DocumentMappings {
     }
 
     /**
-     * Materialize the effective mapping hierarchy for one document type,
+     * Materialize the effective mapping for one document type,
      * optionally enriching it with a compendium-local mapping layer.
      *
      * @param {string} documentType
      * @param {object|null} [customMapping]
-     * @returns {DocumentMappingHierarchy}
+     * @returns {DocumentMapping}
      */
-    hierarchyFor(documentType, customMapping = null) {
-        return new DocumentMappingHierarchy(documentType, customMapping, this.current(), {
+    mappingFor(documentType, customMapping = null) {
+        return new DocumentMapping(documentType, this.#definitionObject(this.#mergedNormalizedDefinition(
+            this.#normalizedDefinition(this.effectiveMappings[documentType] ?? {}),
+            this.#customDefinition(documentType, customMapping),
+        )), {
             identityExtractors: this.identityExtractors,
             converterRegistry: this.converterRegistry,
         });
@@ -302,7 +303,9 @@ export class DocumentMappings {
     }
 
     #rebuild() {
-        const effective = this.#clone(this.builtInMappings);
+        const effective = {};
+
+        this.#mergeLayer(effective, this.builtInMappings);
 
         for (const mapping of this.registeredMappings) {
             this.#mergeLayer(effective, mapping);
@@ -316,13 +319,125 @@ export class DocumentMappings {
     }
 
     #mergeLayer(target, mapping) {
-        for (const [key, value] of Object.entries(mapping ?? {})) {
-            if (target[key]) {
-                target[key] = foundry.utils.mergeObject(target[key], value);
-            } else {
-                target[key] = this.#clone(value);
-            }
+        for (const [key, value] of Object.entries(this.#normalizedLayer(mapping))) {
+            target[key] = this.#mergedDefinition(target[key] ?? {}, value);
         }
+    }
+
+    #normalizedLayer(mapping = {}) {
+        const normalized = {};
+
+        for (const [key, value] of Object.entries(mapping ?? {})) {
+            const subtype = this.#legacySubtypeKey(key);
+            if (subtype) {
+                const current = normalized[subtype.documentType] ?? {};
+                normalized[subtype.documentType] = this.#mergedDefinition(
+                    current,
+                    this.#legacySubtypeDefinition(subtype.subtype, value),
+                );
+                continue;
+            }
+
+            normalized[key] = this.#mergedDefinition(normalized[key] ?? {}, value);
+        }
+
+        return normalized;
+    }
+
+    #legacySubtypeKey(key) {
+        const separator = String(key).indexOf(".");
+        if (separator <= 0 || separator >= String(key).length - 1) {
+            return null;
+        }
+
+        return {
+            documentType: key.slice(0, separator),
+            subtype: key.slice(separator + 1),
+        };
+    }
+
+    #legacySubtypeDefinition(subtype, definition = {}) {
+        const normalized = this.#normalizedDefinition(definition);
+        const {_variants, ...mapping} = normalized.mapping;
+        const subtypeCondition = {path: "type", equals: subtype};
+        const variants = [];
+
+        if (Object.keys(mapping).length) {
+            variants.push({
+                _when: subtypeCondition,
+                ...mapping,
+            });
+        }
+
+        if (Array.isArray(_variants)) {
+            variants.push(..._variants.map((variant) => {
+                const {_when, ...variantMapping} = variant ?? {};
+                return {
+                    _when: _when ? {all: [subtypeCondition, _when]} : subtypeCondition,
+                    ...variantMapping,
+                };
+            }));
+        }
+
+        return variants.length ? {_variants: variants} : {};
+    }
+
+    #mergedDefinition(base = {}, override = {}) {
+        const {_variants: baseVariants, ...baseMapping} = this.#clone(base ?? {});
+        const {_variants: overrideVariants, ...overrideMapping} = this.#clone(override ?? {});
+        const merged = foundry.utils.mergeObject(baseMapping, overrideMapping, {inplace: false});
+        const variants = [
+            ...(Array.isArray(baseVariants) ? baseVariants : []),
+            ...(Array.isArray(overrideVariants) ? overrideVariants : []),
+        ];
+
+        if (variants.length) {
+            merged._variants = variants;
+        }
+
+        return merged;
+    }
+
+    #mergedNormalizedDefinition(base = this.#normalizedDefinition({}), override = this.#normalizedDefinition({})) {
+        const effectiveBase = this.#normalizedDefinition(base);
+        const effectiveOverride = this.#normalizedDefinition(override);
+
+        return {
+            mapping: this.#mergedDefinition(effectiveBase.mapping ?? {}, effectiveOverride.mapping ?? {}),
+            identity: mergeIdentityDefinition(effectiveBase.identity ?? {}, effectiveOverride.identity ?? {}),
+        };
+    }
+
+    #definitionObject(definition = this.#normalizedDefinition({})) {
+        return {
+            ...definition.mapping,
+            _identity: definition.identity,
+        };
+    }
+
+    #customDefinition(documentType, customMapping = null) {
+        const layer = this.#normalizedLayer(this.#customMappingLayer(documentType, customMapping));
+        return this.#normalizedDefinition(layer[documentType] ?? {});
+    }
+
+    #customMappingLayer(documentType, customMapping = null) {
+        if (!customMapping) {
+            return {};
+        }
+
+        const layer = {};
+        const subtypePrefix = `${documentType}.`;
+        for (const [key, value] of Object.entries(customMapping)) {
+            if (key.startsWith(subtypePrefix)) {
+                layer[key] = value;
+                continue;
+            }
+
+            layer[documentType] ??= {};
+            layer[documentType][key] = value;
+        }
+
+        return layer;
     }
 
     #normalizedDefinition(definition = {}) {

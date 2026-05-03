@@ -32,7 +32,7 @@ export class MappedCompendium {
         this.translated = false;
         this.customMapping = this.translation?.mapping ?? null;
         this.documentMappings = this.#documentMappings(documentMappings);
-        this.mappingHierarchy = this.documentMappings.hierarchyFor(metadata.type, this.customMapping);
+        this.documentMapping = this.documentMappings.mappingFor(metadata.type, this.customMapping);
         this.translationEntries = new TranslationEntries(this.translation?.entries, translationStrategies);
 
         if (this.translation) {
@@ -68,7 +68,7 @@ export class MappedCompendium {
      * @returns {import("../mapping/document-mapping.js").DocumentMapping}
      */
     mappingFor(data = {}) {
-        return this.mappingHierarchy.mappingFor(data);
+        return this.documentMapping;
     }
 
     /**
@@ -447,7 +447,8 @@ export class MappedCompendium {
     #resolverContextFor(data, documentType = this.metadata?.type ?? null) {
         return {
             ...this.#resolverContext(documentType),
-            matchCandidates: this.mappingFor(data).matchKeyCandidates(data),
+            matchCandidates: this.
+            mappingFor(data).matchKeyCandidates(data),
         };
     }
 

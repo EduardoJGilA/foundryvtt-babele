@@ -6,7 +6,6 @@ installFoundryStubs();
 
 const {DocumentMapping} = await import("../module/script/mapping/document-mapping.js");
 const {DocumentMappings} = await import("../module/script/mapping/document-mappings.js");
-const {DocumentMappingHierarchy} = await import("../module/script/mapping/document-mapping-hierarchy.js");
 const {IdentityExtractorRegistry} = await import("../module/script/identity/identity-extractor-registry.js");
 const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
 const {default: Babel} = await import("../module/script/babele.js");
@@ -79,7 +78,7 @@ test("DocumentMapping resolves registered identity extractors from the provided 
 test("DocumentMapping uses the default TableResult range identity when Babele registers it", () => {
   game.babele = new Babel();
 
-  const mapping = game.babele.documentMappings.hierarchyFor("TableResult").mappingFor();
+  const mapping = game.babele.documentMappings.mappingFor("TableResult");
   const document = {
     _id: "result-1",
     range: [2, 3],
@@ -99,7 +98,7 @@ test("DocumentMapping resolves TableResult.name through the referenced document 
     return "Заряжающий Колчан";
   };
 
-  const mapping = game.babele.documentMappings.hierarchyFor("TableResult").mappingFor();
+  const mapping = game.babele.documentMappings.mappingFor("TableResult");
   const translated = mapping.translateField("name", {
     _id: "result-1",
     name: "Charging Quiver",
@@ -109,10 +108,157 @@ test("DocumentMapping resolves TableResult.name through the referenced document 
   assert.equal(translated, "Заряжающий Колчан");
 });
 
+test("DocumentMapping applies conditional mapping variants as additional field layers", () => {
+  const mapping = new DocumentMapping("Item", {
+    name: "name",
+    _variants: [{
+      _when: {path: "type", equals: "weapon"},
+      damage: "system.damage",
+    }],
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const weapon = {
+    _id: "weapon-1",
+    type: "weapon",
+    name: "Longsword",
+    system: {
+      damage: "1d8 slashing",
+    },
+  };
+  const spell = {
+    _id: "spell-1",
+    type: "spell",
+    name: "Fire Bolt",
+    system: {
+      damage: "1d10 fire",
+    },
+  };
+
+  assert.deepEqual(mapping.map(weapon, {
+    name: "Spada lunga",
+    damage: "1d8 taglienti",
+  }), {
+    name: "Spada lunga",
+    system: {
+      damage: "1d8 taglienti",
+    },
+  });
+  assert.deepEqual(mapping.map(spell, {
+    name: "Dardo di fuoco",
+    damage: "1d10 fuoco",
+  }), {
+    name: "Dardo di fuoco",
+  });
+  assert.deepEqual(mapping.extract(weapon), {
+    name: "Longsword",
+    damage: "1d8 slashing",
+  });
+  assert.deepEqual(mapping.extract(spell), {
+    name: "Fire Bolt",
+  });
+});
+
+test("DocumentMapping variants can override base field definitions when their condition matches", () => {
+  const mapping = new DocumentMapping("Item", {
+    label: "name",
+    _variants: [{
+      _when: {
+        all: [
+          {path: "type", equals: "spell"},
+          {path: "system.school", in: ["evo", "abj"]},
+        ],
+      },
+      label: "system.localizedName",
+    }],
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const spell = {
+    type: "spell",
+    name: "Fire Bolt",
+    system: {
+      school: "evo",
+      localizedName: "Fire Bolt Display",
+    },
+  };
+  const weapon = {
+    type: "weapon",
+    name: "Longsword",
+    system: {
+      localizedName: "Ignored",
+    },
+  };
+
+  assert.deepEqual(mapping.map(spell, {label: "Dardo di fuoco"}), {
+    system: {
+      localizedName: "Dardo di fuoco",
+    },
+  });
+  assert.deepEqual(mapping.map(weapon, {label: "Spada lunga"}), {
+    name: "Spada lunga",
+  });
+});
+
+test("DocumentMapping variants support any and exists conditions", () => {
+  const mapping = new DocumentMapping("Item", {
+    name: "name",
+    _variants: [{
+      _when: {
+        any: [
+          {path: "system.uses.label", exists: true},
+          {path: "type", equals: "consumable"},
+        ],
+      },
+      uses: "system.uses.label",
+    }],
+  }, {
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
+
+  const limitedUseItem = {
+    type: "feat",
+    name: "Second Wind",
+    system: {
+      uses: {
+        label: "Uses",
+      },
+    },
+  };
+  const passiveItem = {
+    type: "feat",
+    name: "Fighting Style",
+    system: {},
+  };
+
+  assert.deepEqual(mapping.map(limitedUseItem, {
+    name: "Recuperare energie",
+    uses: "Utilizzi",
+  }), {
+    name: "Recuperare energie",
+    system: {
+      uses: {
+        label: "Utilizzi",
+      },
+    },
+  });
+  assert.deepEqual(mapping.map(passiveItem, {
+    name: "Stile di combattimento",
+    uses: "Utilizzi",
+  }), {
+    name: "Stile di combattimento",
+  });
+});
+
 test("DocumentMappings provides a conservative default mapping for ActiveEffect", () => {
   game.babele = new Babel();
 
-  const mapping = game.babele.documentMappings.hierarchyFor("ActiveEffect").mappingFor();
+  const mapping = game.babele.documentMappings.mappingFor("ActiveEffect");
   const document = {
     _id: "effect-1",
     name: "Blessed",
@@ -210,7 +356,7 @@ test("DocumentMapping.extract omits tokenizedLookup-backed fields because they d
   });
 });
 
-test("DocumentMappingHierarchy resolves subtype mappings as an inheritance-like hierarchy", () => {
+test("DocumentMappings resolves legacy subtype mappings through variants", () => {
   const mappings = new DocumentMappings({
     Item: {
       description: "system.description.value",
@@ -231,15 +377,13 @@ test("DocumentMappingHierarchy resolves subtype mappings as an inheritance-like 
     },
   }]);
 
-  const hierarchy = layered.hierarchyFor("Item", {
+  const weaponMapping = layered.mappingFor("Item", {
     rarity: "system.rarity",
   });
 
-  assert.equal(hierarchy instanceof DocumentMappingHierarchy, true);
-  assert.equal(hierarchy.base() instanceof DocumentMapping, true);
-  const weaponMapping = hierarchy.mappingFor({
-    type: "weapon",
-  });
+  assert.equal(weaponMapping instanceof DocumentMapping, true);
+  assert.equal(layered.current()["Item.weapon"], undefined);
+  assert.equal(Array.isArray(layered.current().Item._variants), true);
 
   assert.equal(weaponMapping.extractField("description", {
     type: "weapon",
@@ -291,10 +435,8 @@ test("DocumentMappings materializes document mappings from effective loaded laye
     },
   }]);
 
-  const mapping = layered.hierarchyFor("Item", {
+  const mapping = layered.mappingFor("Item", {
     rarity: "system.rarity",
-  }).mappingFor({
-    type: "weapon",
   });
 
   assert.equal(mapping.extractField("description", {
@@ -386,8 +528,20 @@ test("DocumentMappings exposes inspectable effective mapping precedence", () => 
     description: "system.loadedDescription.value",
     source: "system.source",
     rarity: "system.rarity",
-    damage: "system.loadedDamage.value",
-    critical: "system.critical",
+    _variants: [
+      {
+        _when: {path: "type", equals: "weapon"},
+        damage: "system.damage.value",
+      },
+      {
+        _when: {path: "type", equals: "weapon"},
+        damage: "system.loadedDamage.value",
+      },
+      {
+        _when: {path: "type", equals: "weapon"},
+        critical: "system.critical",
+      },
+    ],
   });
 });
 

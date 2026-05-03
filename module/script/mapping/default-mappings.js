@@ -226,13 +226,15 @@ export const defaultMappings = {
         }
     },
     "RegionBehavior": {
-        "name": "name"
-    },
-    "RegionBehavior.displayScrollingText": {
-        "text": "system.text"
-    },
-    "RegionBehavior.teleportToken": {
-        "revealedDialog": "system.dialog.revealed",
-        "unrevealedDialog": "system.dialog.unrevealed"
+        "name": "name",
+        "_variants": [{
+                "_when": { "path": "type", "equals": "displayScrollingText" },
+                "text": "system.text"
+            }, {
+                "_when": { "path": "type", "equals": "teleportToken" },
+                "revealedDialog": "system.dialog.revealed",
+                "unrevealedDialog": "system.dialog.unrevealed"
+            }
+        ]
     }
 }

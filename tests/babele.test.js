@@ -150,6 +150,138 @@ test("Babel prefers mappings.json over deprecated mapping.json in the same direc
   assert.match(String(warnCalls[0][0]), /both 'mappings\.json' and deprecated 'mapping\.json'/);
 });
 
+test("Babel.sessionFor builds a headless session for a language different from the Foundry UI language", async () => {
+  const babele = new Babel();
+  babele.register({module: "module-one", dir: "translations/en", lang: "en"});
+  babele.register({module: "module-one", dir: "translations/fr", lang: "fr"});
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  game.data.packs = [{
+    type: "Item",
+    packageName: "module-one",
+    packageType: "module",
+    name: "items",
+  }];
+
+  foundry.applications.apps.FilePicker.browse = async (_source, dir) => {
+    if (dir === "modules/module-one/translations/en") {
+      return {files: ["modules/module-one/translations/en/module-one.items.json"]};
+    }
+    if (dir === "modules/module-one/translations/fr") {
+      return {files: ["modules/module-one/translations/fr/module-one.items.json"]};
+    }
+    return {files: []};
+  };
+  globalThis.fetch = async (url) => ({
+    async json() {
+      if (String(url).includes("/fr/")) {
+        return {
+          entries: {
+            sword: {name: "Épée"},
+          },
+        };
+      }
+
+      return {
+        entries: {
+          sword: {name: "Sword"},
+        },
+      };
+    },
+  });
+
+  const session = await babele.sessionFor({language: "fr"});
+
+  assert.equal(session.language, "fr");
+  assert.equal(babele.mappedCompendiums, null);
+  assert.equal(session.isTranslated("module-one.items"), true);
+  assert.deepEqual(session.translate("module-one.items", {
+    _id: "sword",
+    name: "Sword",
+  }), {
+    _id: "sword",
+    name: "Épée",
+    originalName: "Sword",
+    translated: true,
+    hasTranslation: true,
+    flags: {
+      babele: {
+        originalName: "Sword",
+        hasTranslation: true,
+        translated: true,
+        originalPayload: {
+          name: "Sword",
+        },
+      },
+    },
+  });
+});
+
+test("Babel.sessionFor materializes packs enabled by loaded language mappings", async () => {
+  const babele = new Babel();
+  babele.register({module: "module-one", dir: "translations/fr", lang: "fr"});
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  game.data.packs = [{
+    type: "CustomDoc",
+    packageName: "module-one",
+    packageType: "module",
+    name: "custom",
+  }];
+
+  foundry.applications.apps.FilePicker.browse = async (_source, dir) => {
+    if (dir === "modules/module-one/translations/fr") {
+      return {
+        files: [
+          "modules/module-one/translations/fr/module-one.custom.json",
+          "modules/module-one/translations/fr/mappings.json",
+        ],
+      };
+    }
+    return {files: []};
+  };
+  globalThis.fetch = async (url) => ({
+    async json() {
+      if (String(url).endsWith("mappings.json")) {
+        return {
+          CustomDoc: {
+            name: "name",
+          },
+        };
+      }
+
+      return {
+        entries: {
+          source: {name: "Source traduit"},
+        },
+      };
+    },
+  });
+
+  const session = await babele.sessionFor({language: "fr"});
+  const pack = session.mappedCompendiumFor("module-one.custom");
+
+  assert.notEqual(pack, null);
+  assert.deepEqual(session.translate("module-one.custom", {
+    _id: "source",
+    name: "Source",
+  }).name, "Source traduit");
+});
+
 test("Babel.init logs and skips invalid translation JSON files", async () => {
   const babele = new Babel();
   babele.register(

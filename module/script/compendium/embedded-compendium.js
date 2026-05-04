@@ -89,10 +89,6 @@ export class EmbeddedCompendium {
         return this.#delegate.mapping;
     }
 
-    mappingFor(data = {}) {
-        return this.#delegate.mappingFor(data);
-    }
-
     get reference() {
         return this.#delegate.reference;
     }

@@ -1,3 +1,5 @@
+import {cloneData} from "../utils/data-clone.js";
+
 /**
  * Loaded translation payload for one compendium collection.
  *
@@ -136,20 +138,6 @@ export class CompendiumTranslation {
     }
 
     #clone(value) {
-        if (typeof value === "undefined" || value === null) {
-            return value;
-        }
-
-        if (Array.isArray(value)) {
-            return value.map((item) => this.#clone(item));
-        }
-
-        if (typeof value === "object") {
-            return Object.fromEntries(
-                Object.entries(value).map(([key, item]) => [key, this.#clone(item)]),
-            );
-        }
-
-        return value;
+        return cloneData(value);
     }
 }

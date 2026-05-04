@@ -1,3 +1,5 @@
+import {cloneData} from "../utils/data-clone.js";
+
 /**
  * Synthetic package-scoped translations for compendium-directory folders.
  *
@@ -26,6 +28,6 @@ export class PackFolderTranslations {
     }
 
     #clone(value) {
-        return value == null ? value : foundry.utils.mergeObject({}, value);
+        return cloneData(value);
     }
 }

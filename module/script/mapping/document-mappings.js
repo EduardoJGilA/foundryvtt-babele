@@ -1,6 +1,7 @@
 import {defaultMappings} from "./default-mappings.js";
 import {DocumentMapping} from "./document-mapping.js";
 import {mergeIdentityDefinition} from "../identity/document-identity.js";
+import {cloneData} from "../utils/data-clone.js";
 
 /**
  * Aggregate of effective document-mapping layers.
@@ -15,8 +16,7 @@ import {mergeIdentityDefinition} from "../identity/document-identity.js";
  */
 export class DocumentMappings {
 
-    static DEFAULT_MAPPINGS = foundry.utils.deepClone?.(defaultMappings)
-        ?? foundry.utils.mergeObject({}, defaultMappings, {inplace: false});
+    static DEFAULT_MAPPINGS = cloneData(defaultMappings);
 
     /**
      * @param {object} [builtInMappings]
@@ -456,8 +456,7 @@ export class DocumentMappings {
     }
 
     #clone(value) {
-        return foundry.utils.deepClone?.(value)
-            ?? foundry.utils.mergeObject({}, value ?? {}, {inplace: false});
+        return cloneData(value ?? {});
     }
 
     #required(value, dependency) {

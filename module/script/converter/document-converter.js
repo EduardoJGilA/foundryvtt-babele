@@ -250,7 +250,7 @@ export class DocumentConverter {
         const keys = new ExportKeys();
 
         return this._documentValues(entities).reduce((out, entity) => {
-            const key = keys.keyFor(entity, "embedded", contextPack.mappingFor(entity));
+            const key = keys.keyFor(entity, "embedded", contextPack.mapping);
             out[key] = contextPack.extract(entity, activeRuntime);
             return out;
         }, {});
@@ -279,7 +279,7 @@ export class DocumentConverter {
         const currentCompendium = activeRuntime.currentCompendium();
 
         return entities.map((data) => {
-            const currentMapping = currentCompendium?.mappingFor?.(data);
+            const currentMapping = currentCompendium?.mapping;
             const documentType = currentCompendium?.metadata?.type ?? null;
             const hasCurrentTranslation = currentCompendium?.hasTranslation(data, documentType) === true;
             const shouldTranslateCurrent = hasCurrentTranslation || currentMapping?.usesConverters?.() === true;

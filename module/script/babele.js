@@ -16,12 +16,11 @@ import {PackFoldersExport} from "./export/pack-folders-export.js";
 import {DirectoryExport} from "./export/directory-export.js";
 import {TranslationExport} from "./export/translation-export.js";
 import {FolderTranslations} from "./compendium/folder-translations.js";
-import {MappedCompendiums} from "./compendium/mapped-compendiums.js";
 import {ConverterRegistry} from "./converter/converter-registry.js";
 import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
-import {PackFolderTranslationRegistry} from "./translation/pack-folder-translation-registry.js";
 import {TranslationRegistry} from "./translation/translation-registry.js";
 import {ActorTranslation} from "./actor/actor-translation.js";
+import {TranslationSession} from "./translation/translation-session.js";
 
 /****************
  * HOOKS
@@ -83,6 +82,7 @@ class Babel {
     #translationRegistry
     #catalog
     #actorTranslation
+    #session
 
     /**
      * Compatibility view of the currently published default mappings.
@@ -116,6 +116,7 @@ class Babel {
         this.mappedCompendiums = null;
         this.packFolderTranslations = null;
         this.folders = null;
+        this.#session = null;
         this.#initialized = null;
         this.#dataLoaded = false;
         this.#translationMatchStrategies = [];
@@ -349,6 +350,7 @@ class Babel {
         return {
             initialized: this.#initialized !== null,
             dataLoaded: this.#dataLoaded,
+            activeSession: this.#session?.cacheDiagnostics?.() ?? null,
             translationRegistry: this.#translationRegistry.cacheDiagnostics(),
             documentMappings: this.documentMappings.cacheDiagnostics(),
             mappedCompendiums: this.mappedCompendiums?.cacheDiagnostics?.() ?? {
@@ -370,6 +372,23 @@ class Babel {
      */
     async sourceDiagnostics(language = undefined) {
         return this.#translationRegistry.diagnostics(language);
+    }
+
+    /**
+     * Build a headless translation session for one language without applying
+     * it to the Foundry runtime.
+     *
+     * @param {object} [options]
+     * @param {string} [options.language]
+     * @returns {Promise<TranslationSession>}
+     */
+    async sessionFor({language = this.#language()} = {}) {
+        return TranslationSession.load({
+            language,
+            registry: this.#translationRegistry,
+            baseMappings: this.documentMappings,
+            translationStrategies: this.translationMatchStrategies(),
+        });
     }
 
     /**
@@ -531,38 +550,14 @@ class Babel {
      * This method does not mutate the facade runtime state. It only loads the
      * data required to do so safely in a later step.
      *
-     * @returns {Promise<{
-     *   translations: import("./translation/compendium-translations.js").CompendiumTranslations,
-     *   mappedCompendiums: import("./compendium/mapped-compendiums.js").MappedCompendiums,
-     *   packFolderTranslations: import("./translation/pack-folder-translation-registry.js").PackFolderTranslationRegistry,
-     *   documentMappings: import("./mapping/document-mappings.js").DocumentMappings,
-     *   folders: object[]|null
-     * }>}
+     * @returns {Promise<TranslationSession>}
      */
     async #loadState() {
         let step = "load translations";
 
         try {
-            const documentMappings = this.documentMappings.withLoaded(await this.#translationRegistry.loadMappings());
-            const translations = await this.#translationRegistry.loadTranslations();
-            step = "build mapped compendium registry";
-            const mappedCompendiums = await new MappedCompendiums({
-                catalog: this.#catalog,
-                documentMappings,
-                translations,
-                translationStrategies: this.translationMatchStrategies(),
-            }).load();
-            const packFolderTranslations = await new PackFolderTranslationRegistry({
-                translations,
-            }).load();
-
-            return {
-                translations,
-                mappedCompendiums,
-                packFolderTranslations,
-                documentMappings,
-                folders: game.data.folders,
-            };
+            step = "build translation session";
+            return await this.sessionFor({language: this.#language()});
         } catch (error) {
             console.error(`Babele | initialization failed during step: ${step}`, error);
             throw error;
@@ -573,12 +568,7 @@ class Babel {
      * Install one previously loaded Babele state into the live runtime and,
      * optionally, re-apply translated runtime views to Foundry collections.
      *
-     * @param {object} state
-     * @param {import("./translation/compendium-translations.js").CompendiumTranslations} state.translations
-     * @param {import("./compendium/mapped-compendiums.js").MappedCompendiums} state.mappedCompendiums
-     * @param {import("./translation/pack-folder-translation-registry.js").PackFolderTranslationRegistry} state.packFolderTranslations
-     * @param {import("./mapping/document-mappings.js").DocumentMappings} state.documentMappings
-     * @param {object[]|null} [state.folders]
+     * @param {TranslationSession} state
      * @param {object} [options]
      * @param {boolean} [options.applyRuntime]
      * @param {boolean} [options.shareSources]
@@ -932,6 +922,10 @@ class Babel {
         };
     }
 
+    #language() {
+        return game.settings.get("core", "language");
+    }
+
     /**
      * Re-apply imported compendium folder translations to a folder collection.
      *
@@ -951,13 +945,15 @@ class Babel {
         this.#folderTranslations.translateSystemPackFolders();
     }
 
-    #applyRuntimeState({translations, mappedCompendiums, packFolderTranslations, documentMappings, folders = null}) {
-        this.translations = translations;
-        this.mappedCompendiums = mappedCompendiums ?? null;
-        this.packFolderTranslations = packFolderTranslations ?? null;
-        this.folders = folders;
-        this.documentMappings = documentMappings ?? this.documentMappings;
+    #applyRuntimeState(session) {
+        this.#session = session;
+        this.translations = session.translations;
+        this.mappedCompendiums = session.mappedCompendiums ?? null;
+        this.packFolderTranslations = session.packFolderTranslations ?? null;
+        this.folders = game.data.folders;
+        this.documentMappings = session.documentMappings ?? this.documentMappings;
         this.documentMappings.publish();
+        this.#folderTranslations = session.folderTranslations;
     }
 
 }

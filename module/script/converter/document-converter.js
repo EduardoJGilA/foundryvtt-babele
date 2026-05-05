@@ -306,6 +306,7 @@ export class DocumentConverter {
                 hasTranslation,
                 originalPayload: this._sourcePayload(sourcePack, sourceData),
                 requiresPayload: true,
+                language: sourcePack?.language ?? currentCompendium?.language ?? null,
             }).apply();
         });
     }

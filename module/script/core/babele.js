@@ -334,6 +334,45 @@ export class Babele {
         return this.session(options);
     }
 
+    /**
+     * Restore the original mapped values of a translated document and strip
+     * Babele translation markers from the materialized payload.
+     *
+     * Callers may provide session-scoped `documentMappings` and/or a
+     * compendium-local `customMapping` when loaded mapping layers are needed
+     * to rebuild the original document shape.
+     *
+     * @param {string} documentType
+     * @param {object} data
+     * @param {object} [options]
+     * @param {import("../mapping/document-mappings.js").DocumentMappings|null} [options.documentMappings]
+     * @param {object|null} [options.customMapping]
+     * @param {object} [options.runtime]
+     * @returns {object|null}
+     */
+    rollbackDocument(documentType, data, {
+        documentMappings = null,
+        customMapping = null,
+        runtime = {},
+    } = {}) {
+        if (!data || typeof data !== "object") {
+            return null;
+        }
+
+        const originalPayload = data?.flags?.babele?.originalPayload ?? null;
+        let restored = foundry.utils.mergeObject({}, data, {inplace: false});
+
+        if (originalPayload && typeof documentType === "string" && documentType.length > 0) {
+            const mappings = documentMappings ?? this.documentMappings();
+            const mapping = mappings.mappingFor(documentType, customMapping);
+            mapping.prepare(data, originalPayload, runtime);
+            const payload = mapping.map(data, originalPayload, runtime);
+            restored = foundry.utils.mergeObject(restored, payload, {inplace: false});
+        }
+
+        return this.#withoutTranslationMarkers(restored);
+    }
+
     #sessionLanguage(languageOrOptions) {
         if (typeof languageOrOptions === "string") {
             return languageOrOptions;
@@ -349,6 +388,23 @@ export class Babele {
         }
 
         throw new Error("Babele.session requires a language when Foundry settings are not available.");
+    }
+
+    #withoutTranslationMarkers(data) {
+        const restored = foundry.utils.mergeObject({}, data ?? {}, {inplace: false});
+
+        delete restored.originalName;
+        delete restored.hasTranslation;
+        delete restored.translated;
+
+        if (restored.flags && typeof restored.flags === "object") {
+            delete restored.flags.babele;
+            if (Object.keys(restored.flags).length === 0) {
+                delete restored.flags;
+            }
+        }
+
+        return restored;
     }
 
 }

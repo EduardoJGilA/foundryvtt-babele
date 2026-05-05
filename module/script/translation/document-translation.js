@@ -12,6 +12,7 @@ export class DocumentTranslation {
     #hasTranslation;
     #originalPayload;
     #requiresPayload;
+    #language;
 
     /**
      * @param {object} options
@@ -20,13 +21,15 @@ export class DocumentTranslation {
      * @param {boolean} [options.hasTranslation] Whether a translation entry was matched.
      * @param {object|null} [options.originalPayload] Extracted source-language mapped payload.
      * @param {boolean} [options.requiresPayload] Whether empty payloads should leave the source untouched.
+     * @param {string|null} [options.language] Language used to materialize the translation.
      */
-    constructor({source, payload = {}, hasTranslation = false, originalPayload = null, requiresPayload = false} = {}) {
+    constructor({source, payload = {}, hasTranslation = false, originalPayload = null, requiresPayload = false, language = null} = {}) {
         this.#source = source;
         this.#payload = payload ?? {};
         this.#hasTranslation = hasTranslation === true;
         this.#originalPayload = originalPayload ?? null;
         this.#requiresPayload = requiresPayload === true;
+        this.#language = typeof language === "string" && language.trim().length > 0 ? language.trim() : null;
     }
 
     /**
@@ -75,6 +78,10 @@ export class DocumentTranslation {
 
         if (this.#originalPayload) {
             babele.originalPayload = this.#originalPayload;
+        }
+
+        if (this.#language) {
+            babele.lang = this.#language;
         }
 
         return {

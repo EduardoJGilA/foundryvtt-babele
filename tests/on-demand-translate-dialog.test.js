@@ -82,6 +82,8 @@ test("OnDemandTranslateDialog prepares translated and untranslated review entrie
     modified: 0,
     translated: 0,
     untranslated: 1,
+    review: 0,
+    missing: 1,
   });
   assert.equal(context.selectedCount, 2);
   assert.deepEqual(context.entries.map((entry) => ({
@@ -136,8 +138,6 @@ test("OnDemandTranslateDialog prepares translated and untranslated review entrie
   })), [
     {filter: "all", count: 3, active: true},
     {filter: "ready", count: 2, active: false},
-    {filter: "modified", count: 0, active: false},
-    {filter: "translated", count: 0, active: false},
     {filter: "missing", count: 1, active: false},
   ]);
 });
@@ -174,6 +174,7 @@ test("OnDemandTranslateDialog marks already translated entries without selecting
                 hasTranslation: true,
                 translated: true,
                 originalName: "Sword",
+                lang: "it",
               },
             },
           };
@@ -190,10 +191,13 @@ test("OnDemandTranslateDialog marks already translated entries without selecting
     modified: 0,
     translated: 1,
     untranslated: 0,
+    review: 0,
+    missing: 0,
   });
   assert.deepEqual(context.entries.map((entry) => ({
     originalName: entry.originalName,
     currentName: entry.currentName,
+    translationLanguage: entry.translationLanguage,
     hasCurrentTranslation: entry.hasCurrentTranslation,
     proposedName: entry.proposedName,
     proposedMissing: entry.proposedMissing,
@@ -206,11 +210,12 @@ test("OnDemandTranslateDialog marks already translated entries without selecting
   })), [{
     originalName: "Sword",
     currentName: "Spada",
+    translationLanguage: "it",
     hasCurrentTranslation: true,
     proposedName: "Spada",
     proposedMissing: false,
     alreadyTranslated: true,
-    applicable: false,
+    applicable: true,
     selected: false,
     cssClass: "is-already",
     status: "Translated",
@@ -236,6 +241,7 @@ test("OnDemandTranslateDialog shows already translated inline items without a pr
                 hasTranslation: true,
                 translated: true,
                 originalName: "Sword",
+                lang: "it",
               },
             },
           };
@@ -252,10 +258,13 @@ test("OnDemandTranslateDialog shows already translated inline items without a pr
     modified: 0,
     translated: 1,
     untranslated: 0,
+    review: 0,
+    missing: 0,
   });
   assert.deepEqual(context.entries.map((entry) => ({
     originalName: entry.originalName,
     currentName: entry.currentName,
+    translationLanguage: entry.translationLanguage,
     hasCurrentTranslation: entry.hasCurrentTranslation,
     proposedName: entry.proposedName,
     proposedMissing: entry.proposedMissing,
@@ -266,14 +275,83 @@ test("OnDemandTranslateDialog shows already translated inline items without a pr
   })), [{
     originalName: "Sword",
     currentName: "Spada",
+    translationLanguage: "it",
     hasCurrentTranslation: true,
-    proposedName: "Missing",
-    proposedMissing: true,
+    proposedName: "Spada",
+    proposedMissing: false,
     hasCandidates: false,
     candidateChoiceEnabled: false,
     filter: "translated",
     status: "Translated",
   }]);
+});
+
+test("OnDemandTranslateDialog exposes retranslate and rollback modes for already translated items", async () => {
+  game.babele.mappedCompendiums = new foundry.utils.Collection([
+    ["test.items", {
+      translated: true,
+      metadata: {
+        collection: "test.items",
+        type: "Item",
+        label: "Translated Items",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Sword";
+      },
+      translate() {
+        return {name: "Lama"};
+      },
+    }],
+  ]);
+  game.babele.rollbackDocument = () => ({
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.items.Item.sword",
+      },
+    },
+  });
+
+  const dialog = new OnDemandTranslateDialog({
+    name: "Goblin Warrior",
+    items: {
+      contents: [{
+        id: "item-1",
+        toObject() {
+          return {
+            _id: "item-1",
+            name: "Spada",
+            type: "weapon",
+            flags: {
+              core: {
+                sourceId: "Compendium.test.items.Item.sword",
+              },
+              babele: {
+                hasTranslation: true,
+                translated: true,
+                originalName: "Sword",
+                originalPayload: {
+                  name: "Sword",
+                },
+              },
+            },
+          };
+        },
+      }],
+    },
+  });
+  const context = await dialog._prepareContext({});
+  const [entry] = context.entries;
+
+  assert.equal(entry.filter, "translated");
+  assert.equal(entry.applicable, true);
+  assert.equal(entry.selected, false);
+  assert.equal(entry.showModeChoice, true);
+  assert.equal(entry.selectedMode, "retranslate");
+  assert.deepEqual(entry.modeChoices.map((mode) => mode.id), ["retranslate", "rollback"]);
+  assert.equal(entry.arrowIcon, "fa-arrow-right-long");
 });
 
 test("OnDemandTranslateDialog marks user-changed imported items as modified", async () => {
@@ -337,6 +415,8 @@ test("OnDemandTranslateDialog marks user-changed imported items as modified", as
       modified: 1,
       translated: 0,
       untranslated: 0,
+      review: 1,
+      missing: 0,
     });
     assert.deepEqual(context.entries.map((entry) => ({
       originalName: entry.originalName,
@@ -346,6 +426,7 @@ test("OnDemandTranslateDialog marks user-changed imported items as modified", as
       selected: entry.selected,
       cssClass: entry.cssClass,
       status: entry.status,
+      reviewReason: entry.reviewReason,
       candidateChoiceEnabled: entry.candidateChoiceEnabled,
     })), [{
       originalName: "Weapon Focus (Longsword)",
@@ -353,8 +434,9 @@ test("OnDemandTranslateDialog marks user-changed imported items as modified", as
       userChanged: true,
       applicable: true,
       selected: false,
-      cssClass: "is-modified",
-      status: "Modified",
+      cssClass: "is-review",
+      status: "Review",
+      reviewReason: "Local changes were detected in translated fields. Applying a translation may overwrite them.",
       candidateChoiceEnabled: false,
     }]);
   } finally {
@@ -399,6 +481,8 @@ test("OnDemandTranslateDialog marks no-op translations as unchanged", async () =
     modified: 0,
     translated: 1,
     untranslated: 0,
+    review: 0,
+    missing: 0,
   });
   assert.deepEqual(context.entries.map((entry) => ({
     originalName: entry.originalName,
@@ -436,22 +520,33 @@ test("OnDemandTranslateDialog exposes multiple translation candidates", async ()
     proposedName: entry.proposedName,
     packLabel: entry.packLabel,
     hasCandidateChoices: entry.hasCandidateChoices,
+    packChoices: entry.packChoices,
+    packChoiceEnabled: entry.packChoiceEnabled,
     candidates: entry.candidates,
   })), [{
     proposedName: "Coup à mains nues",
     packLabel: "2014 Items",
     hasCandidateChoices: true,
+    packChoices: [
+      {id: "dnd5e.items", label: "2014 Items", selected: true},
+      {id: "dnd5e.actions", label: "2024 Actions", selected: false},
+    ],
+    packChoiceEnabled: true,
     candidates: [
       {
         id: "dnd5e.items::0",
-        label: "2014 Items",
+        label: "Coup à mains nues · weapon · 100%",
         proposedName: "Coup à mains nues",
+        packKey: "dnd5e.items",
+        matchPercent: 100,
         selected: true,
       },
       {
         id: "dnd5e.actions::1",
-        label: "2024 Actions",
+        label: "Frappe à mains nues · weapon · 100%",
         proposedName: "Frappe à mains nues",
+        packKey: "dnd5e.actions",
+        matchPercent: 100,
         selected: false,
       },
     ],
@@ -473,16 +568,83 @@ test("OnDemandTranslateDialog exposes a disabled selector for a single candidate
   assert.deepEqual(context.entries.map((entry) => ({
     hasCandidates: entry.hasCandidates,
     hasCandidateChoices: entry.hasCandidateChoices,
+    packChoices: entry.packChoices,
+    packChoiceEnabled: entry.packChoiceEnabled,
     candidates: entry.candidates,
   })), [{
     hasCandidates: true,
     hasCandidateChoices: false,
+    packChoices: [{id: "dnd5e.items", label: "2014 Items", selected: true}],
+    packChoiceEnabled: false,
     candidates: [{
       id: "dnd5e.items::0",
-      label: "2014 Items",
+      label: "Coup à mains nues · weapon · 100%",
       proposedName: "Coup à mains nues",
+      packKey: "dnd5e.items",
+      matchPercent: 100,
       selected: true,
     }],
+  }]);
+});
+
+test("OnDemandTranslateDialog does not preselect fuzzy translation candidates", async () => {
+  game.babele.mappedCompendiums = new foundry.utils.Collection([
+    ["test.feats", {
+      translated: true,
+      metadata: {
+        type: "Item",
+        collection: "test.feats",
+        label: "Translated Feats",
+      },
+      translations: {
+        Bite: {
+          name: "Morsure",
+        },
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Bite";
+      },
+      translate(data) {
+        return this.translations[data.name] ?? {};
+      },
+    }],
+  ]);
+
+  const dialog = new OnDemandTranslateDialog(actorWithOneItem({
+    _id: "item-1",
+    name: "Bear Bite",
+    type: "feat",
+  }));
+  const context = await dialog._prepareContext({});
+
+  assert.equal(context.selectedCount, 0);
+  assert.deepEqual(context.summary, {
+    total: 1,
+    ready: 0,
+    modified: 0,
+    translated: 0,
+    untranslated: 1,
+    review: 1,
+    missing: 0,
+  });
+  assert.deepEqual(context.entries.map((entry) => ({
+    proposedName: entry.proposedName,
+    selected: entry.selected,
+    applicable: entry.applicable,
+    hasCandidates: entry.hasCandidates,
+    filter: entry.filter,
+    status: entry.status,
+    reviewReason: entry.reviewReason,
+    candidateChoiceEnabled: entry.candidateChoiceEnabled,
+  })), [{
+    proposedName: "Morsure",
+    selected: false,
+    applicable: true,
+    hasCandidates: true,
+    filter: "review",
+    status: "Review",
+    reviewReason: "No exact match found. Review similar candidates.",
+    candidateChoiceEnabled: false,
   }]);
 });
 
@@ -645,6 +807,88 @@ test("OnDemandTranslateDialog selection toolbar updates selected count and apply
   assert.equal(root.querySelector("[data-selected-count]").textContent, "2");
 });
 
+test("OnDemandTranslateDialog select all includes translated entries that are operable", async () => {
+  game.babele.mappedCompendiums = new foundry.utils.Collection([
+    ["test.items", {
+      translated: true,
+      metadata: {
+        collection: "test.items",
+        type: "Item",
+        label: "Translated Items",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Sword";
+      },
+      translate() {
+        return {name: "Lama"};
+      },
+    }],
+  ]);
+  game.babele.rollbackDocument = () => ({
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.items.Item.sword",
+      },
+    },
+  });
+
+  const dialog = new OnDemandTranslateDialog({
+    name: "Goblin Warrior",
+    items: {
+      contents: [{
+        id: "item-1",
+        toObject() {
+          return {
+            _id: "item-1",
+            name: "Spada",
+            type: "weapon",
+            flags: {
+              core: {
+                sourceId: "Compendium.test.items.Item.sword",
+              },
+              babele: {
+                hasTranslation: true,
+                translated: true,
+                originalName: "Sword",
+                originalPayload: {
+                  name: "Sword",
+                },
+                lang: "it",
+              },
+            },
+          };
+        },
+      }],
+    },
+  });
+  const root = actorTranslationRoot(["item-1"], {"item-1": "translated"});
+
+  await dialog._prepareContext({});
+  dialog.element = root;
+  await dialog._onRender({}, {});
+
+  assert.equal(root.querySelector("[data-selected-count]").textContent, "0");
+
+  await root.listeners.get("click")({
+    target: actionButton(root, "select-all"),
+    preventDefault() {},
+  });
+
+  assert.equal(selectorFor(root, "item-1").checked, true);
+  assert.equal(root.querySelector("[data-selected-count]").textContent, "1");
+
+  await root.listeners.get("click")({
+    target: actionButton(root, "select-none"),
+    preventDefault() {},
+  });
+
+  assert.equal(selectorFor(root, "item-1").checked, false);
+  assert.equal(root.querySelector("[data-selected-count]").textContent, "0");
+});
+
 test("OnDemandTranslateDialog filters entries by review state", async () => {
   game.babele.mappedCompendiums = new foundry.utils.Collection([
     ["test.items", translatedPack()],
@@ -654,12 +898,23 @@ test("OnDemandTranslateDialog filters entries by review state", async () => {
     "item-1": "ready",
     "item-2": "translated",
     "item-3": "missing",
-    "item-4": "modified",
+    "item-4": "review",
   });
 
   await dialog._prepareContext({});
   dialog.element = root;
   await dialog._onRender({}, {});
+
+  await root.listeners.get("click")({
+    target: filterButton(root, "review"),
+    preventDefault() {},
+  });
+
+  assert.equal(entryFor(root, "item-1").hidden, true);
+  assert.equal(entryFor(root, "item-2").hidden, true);
+  assert.equal(entryFor(root, "item-3").hidden, true);
+  assert.equal(entryFor(root, "item-4").hidden, false);
+  assert.equal(filterButton(root, "review").getAttribute("aria-pressed"), "true");
 
   await root.listeners.get("click")({
     target: filterButton(root, "missing"),
@@ -669,20 +924,8 @@ test("OnDemandTranslateDialog filters entries by review state", async () => {
   assert.equal(entryFor(root, "item-1").hidden, true);
   assert.equal(entryFor(root, "item-2").hidden, true);
   assert.equal(entryFor(root, "item-3").hidden, false);
-  assert.equal(entryFor(root, "item-4").hidden, true);
-  assert.equal(filterButton(root, "missing").getAttribute("aria-pressed"), "true");
-
-  await root.listeners.get("click")({
-    target: filterButton(root, "modified"),
-    preventDefault() {},
-  });
-
-  assert.equal(entryFor(root, "item-1").hidden, true);
-  assert.equal(entryFor(root, "item-2").hidden, true);
-  assert.equal(entryFor(root, "item-3").hidden, false);
   assert.equal(entryFor(root, "item-4").hidden, false);
   assert.equal(filterButton(root, "missing").getAttribute("aria-pressed"), "true");
-  assert.equal(filterButton(root, "modified").getAttribute("aria-pressed"), "true");
 
   await root.listeners.get("click")({
     target: filterButton(root, "all"),
@@ -711,7 +954,7 @@ function actorTranslationRoot(entryIds, filtersById = {}, candidateIdsByEntryId 
     root.appendChild(button);
   }
 
-  for (const filter of ["all", "ready", "modified", "translated", "missing"]) {
+  for (const filter of ["all", "ready", "review", "translated", "missing"]) {
     const button = new FakeElement("button");
     button.dataset.action = "filter";
     button.dataset.filter = filter;
@@ -720,11 +963,18 @@ function actorTranslationRoot(entryIds, filtersById = {}, candidateIdsByEntryId 
     root.appendChild(button);
   }
 
-  for (const summary of ["total", "ready", "modified", "translated", "untranslated"]) {
+  for (const summary of ["total", "ready", "review", "translated", "missing"]) {
     const count = new FakeElement("strong");
     count.dataset[`summary${summary[0].toUpperCase()}${summary.slice(1)}`] = "";
     count.setAttribute(`data-summary-${summary}`, "");
     root.appendChild(count);
+  }
+
+  for (const summaryStat of ["total", "ready", "review", "translated", "missing"]) {
+    const stat = new FakeElement("span");
+    stat.dataset.summaryStat = summaryStat;
+    stat.setAttribute("data-summary-stat", summaryStat);
+    root.appendChild(stat);
   }
 
   const list = new FakeElement("ol");
@@ -762,7 +1012,18 @@ function actorTranslationRoot(entryIds, filtersById = {}, candidateIdsByEntryId 
       candidateSelector.value = candidateIdsByEntryId[entryId];
       candidateSelector.setAttribute("data-candidate-selector", "");
       entry.appendChild(candidateSelector);
+
+      const packSelector = new FakeElement("select");
+      packSelector.dataset.packSelector = "";
+      packSelector.dataset.entryId = entryId;
+      packSelector.setAttribute("data-pack-selector", "");
+      entry.appendChild(packSelector);
     }
+
+    const reviewHint = new FakeElement("i");
+    reviewHint.dataset.reviewHint = "";
+    reviewHint.setAttribute("data-review-hint", "");
+    entry.appendChild(reviewHint);
 
     list.appendChild(entry);
   }

@@ -260,6 +260,7 @@ test("Babel.sessionFor builds a headless session for a language different from t
         originalName: "Sword",
         hasTranslation: true,
         translated: true,
+        lang: "fr",
         originalPayload: {
           name: "Sword",
         },
@@ -397,6 +398,7 @@ test("Babel.init logs and skips invalid translation JSON files", async () => {
         originalName: "Longsword",
         hasTranslation: true,
         translated: true,
+        lang: "en",
         originalPayload: {
           name: "Longsword",
         },
@@ -1750,6 +1752,7 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
           originalName: "Sword",
           hasTranslation: true,
           translated: true,
+          lang: "en",
         },
       },
     },
@@ -1768,6 +1771,7 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
             originalName: "Sword",
             hasTranslation: true,
             translated: true,
+            lang: "en",
           },
         },
       },
@@ -1902,6 +1906,132 @@ test("Babel.sourceDataForUuid rejects translated cached documents without origin
   const source = await babele.sourceDataForUuid("Compendium.test.items.Item.item-1");
 
   assert.equal(source, null);
+});
+
+test("Babel.sourceDataForUuid keeps the full translated document when original payload is available", async () => {
+  const babele = new Babel();
+  game.packs = new foundry.utils.Collection([[
+    "test.items",
+    {
+      collection: "test.items",
+      async getDocument() {
+        return {
+          toObject() {
+            return {
+              _id: "item-1",
+              name: "Epee",
+              type: "weapon",
+              translated: true,
+              flags: {
+                babele: {
+                  originalName: "Sword",
+                  translated: true,
+                  hasTranslation: true,
+                  originalPayload: {
+                    name: "Sword",
+                    description: "Original description",
+                  },
+                },
+              },
+              system: {
+                description: {value: "Description traduite"},
+                activation: {condition: "import-default"},
+              },
+            };
+          },
+        };
+      },
+    },
+  ]]);
+
+  const source = await babele.sourceDataForUuid("Compendium.test.items.Item.item-1");
+
+  assert.deepEqual(source, {
+    _id: "item-1",
+    name: "Epee",
+    type: "weapon",
+    translated: true,
+    flags: {
+      babele: {
+        originalName: "Sword",
+        translated: true,
+        hasTranslation: true,
+        originalPayload: {
+          name: "Sword",
+          description: "Original description",
+        },
+      },
+    },
+    system: {
+      description: {value: "Description traduite"},
+      activation: {condition: "import-default"},
+    },
+  });
+});
+
+test("Babel.rollbackDocument delegates to the engine with session mapping context", async () => {
+  const mappedCompendium = {
+    customMapping: {
+      description: "system.description.value",
+    },
+  };
+  const mappedCompendiums = new foundry.utils.Collection([
+    ["test.items", mappedCompendium],
+  ]);
+  const session = {
+    documentMappings: {name: "session-mappings"},
+    mappedCompendiums,
+    mappedCompendiumFor(collection) {
+      return this.mappedCompendiums.get(collection) ?? null;
+    },
+    folderTranslations: new FolderTranslations({
+      mappedCompendiums,
+      packFolderTranslations: mockPackFolderTranslations(),
+    }),
+    dispose() {},
+  };
+
+  let rollbackCall = null;
+  const babele = new Babel({
+    engine: {
+      translationSources: {
+        cacheDiagnostics: () => null,
+        shareTranslationFiles: async () => {},
+        shareGlobalMappingFiles: async () => {},
+      },
+      documentMappings: () => null,
+      session: async () => session,
+      rollbackDocument(documentType, data, options = {}) {
+        rollbackCall = {documentType, data, options};
+        return {name: "Sword"};
+      },
+    },
+  });
+
+  await babele.init();
+  const source = {
+    name: "Spada",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.items.Item.sword",
+      },
+      babele: {
+        originalPayload: {
+          name: "Sword",
+        },
+      },
+    },
+  };
+
+  const rolledBack = babele.rollbackDocument("Item", source);
+
+  assert.deepEqual(rolledBack, {name: "Sword"});
+  assert.equal(rollbackCall.documentType, "Item");
+  assert.equal(rollbackCall.data, source);
+  assert.equal(rollbackCall.options.documentMappings, session.documentMappings);
+  assert.deepEqual(rollbackCall.options.customMapping, mappedCompendium.customMapping);
+  assert.equal(typeof rollbackCall.options.runtime?.currentCompendium, "function");
+  assert.equal(rollbackCall.options.runtime.currentCompendium(), mappedCompendium);
 });
 
 test.after(() => {

@@ -833,6 +833,512 @@ test("ActorTranslation does not treat Babele-translated source lookup as a user 
     assert.equal(entry.proposedName(), "Spada");
 });
 
+test("ActorTranslation does not mark imported items as modified for mapped fields untouched by the translation", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-bite",
+      name: "Bear Bite",
+      type: "feat",
+      system: {
+        description: {value: "Original description"},
+        activation: {condition: "actor-imported"},
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.feats.Item.bear-bite",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        _id: "bear-bite",
+        name: "Bear Bite",
+        type: "feat",
+        system: {
+          description: {value: "Original description"},
+          activation: {condition: "compendium-default"},
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        label: "Translated Feats",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.feats.Item.bear-bite";
+      },
+      translate() {
+        return {
+          name: "Morsure d'ours",
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+          activationCondition: data.system?.activation?.condition,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, false);
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 1,
+    modified: 0,
+    translated: 0,
+    untranslated: 0,
+  });
+});
+
+test("ActorTranslation ignores import-time HTML normalization when checking user changes", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-cleric",
+      name: "Cleric",
+      type: "class",
+      system: {
+        description: {
+          value: "<p>Line one<br>Line two.</p><p>Use cover and Fireball.</p>",
+        },
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.classes.Item.cleric",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        _id: "cleric",
+        name: "Cleric",
+        type: "class",
+        system: {
+          description: {
+            value: "<p>Line one<br />Line two.</p><p>Use &amp;reference[cover] and @UUID[Compendium.test.spells.Item.fireball]{Fireball}.</p>",
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        collection: "test.classes",
+        label: "Translated Classes",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.classes.Item.cleric";
+      },
+      translate() {
+        return {
+          name: "Clerc",
+          system: {
+            description: {
+              value: "<p>Ligne un<br>Ligne deux.</p>",
+            },
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, false);
+  assert.equal(entry.proposedName(), "Clerc");
+});
+
+test("ActorTranslation ignores spell-description normalization differences when checking user changes", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-command",
+      name: "Command",
+      type: "spell",
+      system: {
+        description: {
+          value: "<p><strong>Higher Levels.</strong> When you cast this spell, the target falls prone and can't be charmed or frightened.</p>",
+        },
+      },
+      flags: {
+        core: {
+          sourceId: "Compendium.test.spells.Item.command",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        _id: "command",
+        name: "Command",
+        type: "spell",
+        system: {
+          description: {
+            value: "<p><strong>At Higher Levels.</strong> When you cast this spell, the target falls &amp;reference[prone] and can't be &amp;reference[charmed apply=false] or &amp;reference[frightened apply=false].</p>",
+          },
+        },
+      };
+    },
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        collection: "test.spells",
+        label: "Translated Spells",
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.flags?.core?.sourceId === "Compendium.test.spells.Item.command";
+      },
+      translate() {
+        return {
+          name: "Injonction",
+          system: {
+            description: {
+              value: "<p>Description traduite</p>",
+            },
+          },
+        };
+      },
+      extract(data) {
+        return {
+          name: data.name,
+          description: data.system?.description?.value,
+        };
+      },
+    }],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.userChanged, false);
+  assert.equal(entry.proposedName(), "Injonction");
+});
+
+test("ActorTranslation prefers exact candidates from the source compendium collection", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-command",
+      name: "Command",
+      type: "spell",
+      flags: {
+        core: {
+          sourceId: "Compendium.test.spells.Item.command",
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid() {
+      return {
+        _id: "command",
+        name: "Command",
+        type: "spell",
+      };
+    },
+    mappedCompendiums: [
+      {
+        translated: true,
+        metadata: {
+          type: "Item",
+          collection: "test.spells",
+          label: "Spells 2014",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.name === "Command";
+        },
+        translate() {
+          return {name: "Ordre"};
+        },
+      },
+      {
+        translated: true,
+        metadata: {
+          type: "Item",
+          collection: "test.spells24",
+          label: "Spells 2024",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.name === "Command";
+        },
+        translate() {
+          return {name: "Injonction"};
+        },
+      },
+    ],
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.equal(entry.candidates.length, 1);
+  assert.equal(entry.candidates[0].pack.metadata.collection, "test.spells");
+  assert.equal(entry.proposedName(), "Ordre");
+});
+
+test("ActorTranslation proposes fuzzy translation candidates for missing entries", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-bite",
+      name: "Bear Bite",
+      type: "feat",
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        collection: "test.feats",
+        label: "Translated Feats",
+      },
+      translations: {
+        Bite: {
+          name: "Morsure",
+        },
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Bite";
+      },
+      translate(data) {
+        return this.translations[data.name] ?? {};
+      },
+    }],
+    translatedPackFor() {
+      return null;
+    },
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 0,
+    translated: 0,
+    untranslated: 1,
+  });
+  assert.equal(entry.proposedName(), "Morsure");
+  assert.equal(entry.candidates.length, 1);
+  assert.equal(entry.candidates[0].suggested, true);
+  assert.equal(entry.reviewRequired(), true);
+});
+
+test("ActorTranslation proposes fuzzy translation candidates from translationEntries", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-bite",
+      name: "Bear Bite",
+      type: "feat",
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    mappedCompendiums: [{
+      translated: true,
+      metadata: {
+        type: "Item",
+        collection: "test.feats",
+        label: "Translated Feats",
+      },
+      translationEntries: {
+        entries() {
+          return [["Bite", {name: "Morsure"}]];
+        },
+      },
+      hasTranslation(data, documentType) {
+        return documentType === "Item" && data.name === "Bite";
+      },
+      translate(data) {
+        return data.name === "Bite" ? {name: "Morsure"} : {};
+      },
+    }],
+    translatedPackFor() {
+      return null;
+    },
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 0,
+    translated: 0,
+    untranslated: 1,
+  });
+  assert.equal(entry.proposedName(), "Morsure");
+  assert.equal(entry.candidates.length, 1);
+  assert.equal(entry.candidates[0].suggested, true);
+  assert.equal(entry.reviewRequired(), true);
+});
+
+test("ActorTranslation marks exact same-name duplicates in the source pack as review-required", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "embedded-spellcasting",
+      name: "Spellcasting",
+      type: "feat",
+      flags: {
+        core: {
+          sourceId: "Compendium.dnd5e.classfeatures.Item.cleric-spellcasting",
+        },
+      },
+    },
+  ]);
+
+  game.packs.set("dnd5e.classfeatures", {
+    index: [
+      {_id: "cleric-spellcasting", name: "Spellcasting", type: "feat"},
+      {_id: "wizard-spellcasting", name: "Spellcasting", type: "feat"},
+    ],
+    async getDocument(id) {
+      const source = id === "cleric-spellcasting"
+        ? {
+            _id: "cleric-spellcasting",
+            name: "Spellcasting",
+            type: "feat",
+            system: {
+              requirements: "Cleric 1",
+            },
+          }
+        : {
+            _id: "wizard-spellcasting",
+            name: "Spellcasting",
+            type: "feat",
+            system: {
+              requirements: "Wizard 1",
+            },
+          };
+
+      return {
+        toObject() {
+          return {...source};
+        },
+      };
+    },
+  });
+
+  const translations = {
+    "cleric-spellcasting": {name: "Sorts", system: {requirements: "Clerc 1"}},
+    "wizard-spellcasting": {name: "Sorts", system: {requirements: "Magicien 1"}},
+  };
+  const actorTranslation = new ActorTranslation({
+    async sourceDataForUuid(uuid) {
+      const id = String(uuid).split(".").pop();
+      if (id === "cleric-spellcasting") {
+        return {
+          _id: "cleric-spellcasting",
+          name: "Spellcasting",
+          type: "feat",
+          flags: {
+            core: {
+              sourceId: "Compendium.dnd5e.classfeatures.Item.cleric-spellcasting",
+            },
+          },
+          system: {
+            requirements: "Cleric 1",
+          },
+        };
+      }
+
+      if (id === "wizard-spellcasting") {
+        return {
+          _id: "wizard-spellcasting",
+          name: "Spellcasting",
+          type: "feat",
+          flags: {
+            core: {
+              sourceId: "Compendium.dnd5e.classfeatures.Item.wizard-spellcasting",
+            },
+          },
+          system: {
+            requirements: "Wizard 1",
+          },
+        };
+      }
+
+      return null;
+    },
+    translatedPacks() {
+      return [{
+        translated: true,
+        metadata: {
+          type: "Item",
+          collection: "dnd5e.classfeatures",
+          label: "Class Features",
+        },
+        hasTranslation(data, documentType) {
+          return documentType === "Item" && data.name === "Spellcasting";
+        },
+        translate(data) {
+          return translations[data._id] ?? {};
+        },
+      }];
+    },
+    translatedPackFor() {
+      return null;
+    },
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 0,
+    translated: 0,
+    untranslated: 1,
+  });
+  assert.equal(entry.reviewRequired(), true);
+  assert.equal(entry.proposedName(), "Sorts");
+  assert.deepEqual(entry.candidates.map((candidate) => ({
+    proposedName: candidate.proposedName(),
+    label: candidate.optionLabel(),
+    reviewRequired: candidate.reviewRequired(),
+    reason: candidate.reviewReason,
+  })), [
+    {
+      proposedName: "Sorts",
+      label: "Class Features · Cleric 1",
+      reviewRequired: true,
+      reason: "ambiguous-exact",
+    },
+    {
+      proposedName: "Sorts",
+      label: "Class Features · Wizard 1",
+      reviewRequired: true,
+      reason: "ambiguous-exact",
+    },
+  ]);
+});
+
 function translatedCandidatePack(collection, label, translatedName) {
   return {
     translated: true,
@@ -900,8 +1406,24 @@ test("ActorTranslation recognizes already translated items through Babele flags"
   assert.equal(entry.proposedName(), "Spada");
   assert.equal(entry.hasTranslation(), true);
   assert.equal(entry.alreadyTranslated, true);
-  assert.equal(entry.applicable(), false);
-  assert.deepEqual(proposal.updates(), []);
+  assert.equal(entry.applicable(), true);
+  assert.deepEqual(proposal.updates(), [
+    {
+      _id: "item-1",
+      name: "Spada",
+      type: "weapon",
+      originalName: "Sword",
+      hasTranslation: true,
+      translated: true,
+      flags: {
+        babele: {
+          originalName: "Sword",
+          hasTranslation: true,
+          translated: true,
+        },
+      },
+    },
+  ]);
 });
 
 test("ActorTranslation recognizes legacy on-demand translated items without Babele flags", async () => {
@@ -945,6 +1467,96 @@ test("ActorTranslation recognizes legacy on-demand translated items without Babe
   assert.equal(entry.alreadyTranslated, true);
   assert.equal(entry.applicable(), false);
   assert.deepEqual(proposal.updates(), []);
+});
+
+test("ActorTranslation supports rollback mode for already translated items", async () => {
+  const actor = actorWithItems([
+    {
+      _id: "item-1",
+      name: "Spada",
+      type: "weapon",
+      flags: {
+        core: {
+          sourceId: "Compendium.test.items.Item.sword",
+        },
+        babele: {
+          hasTranslation: true,
+          translated: true,
+          originalName: "Sword",
+          originalPayload: {
+            name: "Sword",
+          },
+        },
+      },
+    },
+  ]);
+
+  const actorTranslation = new ActorTranslation({
+    translatedPackFor(documentType, data) {
+      if (documentType !== "Item" || data.name !== "Sword") {
+        return null;
+      }
+
+      return {
+        metadata: {
+          collection: "test.items",
+          label: "Translated Items",
+        },
+        translate() {
+          return {name: "Lama"};
+        },
+      };
+    },
+    rollbackDocument(_documentType, source) {
+      return {
+        ...source,
+        name: "Sword",
+        flags: {
+          core: source.flags?.core ?? {},
+        },
+      };
+    },
+  });
+
+  const proposal = await actorTranslation.proposal(actor);
+  const [entry] = proposal.entries;
+
+  assert.deepEqual(proposal.summary(), {
+    total: 1,
+    ready: 0,
+    modified: 0,
+    translated: 1,
+    untranslated: 0,
+  });
+  assert.equal(entry.alreadyTranslated, true);
+  assert.deepEqual(entry.modeChoices(), ["retranslate", "rollback"]);
+  assert.equal(entry.currentMode, "retranslate");
+  assert.equal(entry.applicable(), true);
+  assert.equal(entry.proposedName(), "Lama");
+
+  assert.equal(entry.selectMode("rollback"), true);
+  assert.equal(entry.rollbackMode(), true);
+  assert.equal(entry.applicable(), true);
+  assert.equal(entry.rollbackName(), "Sword");
+  assert.deepEqual(entry.update, {
+    _id: "item-1",
+    name: "Sword",
+    type: "weapon",
+    flags: {
+      core: {
+        sourceId: "Compendium.test.items.Item.sword",
+      },
+    },
+    "-=originalName": null,
+    "-=hasTranslation": null,
+    "-=translated": null,
+    "flags.babele.-=originalName": null,
+    "flags.babele.-=hasTranslation": null,
+    "flags.babele.-=translated": null,
+    "flags.babele.-=originalPayload": null,
+    "flags.babele.-=lang": null,
+    "flags.-=babele": null,
+  });
 });
 
 test("ActorTranslation apply is a no-op when no proposal entry is translated", async () => {

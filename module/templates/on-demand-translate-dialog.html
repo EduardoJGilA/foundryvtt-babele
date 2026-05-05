@@ -7,26 +7,17 @@
         </div>
 
         <div class="babele-actor-translation__stats" aria-label="{{texts.total}}">
-            <span class="babele-actor-translation__stat is-total" title="{{texts.totalHint}}" aria-label="{{texts.total}}: {{texts.totalHint}}">
-                <strong data-summary-total>{{summary.total}}</strong>
-                <small>{{texts.total}}</small>
+            {{#each stats}}
+            <span
+                class="babele-actor-translation__stat {{cssClass}}"
+                data-summary-stat="{{key}}"
+                title="{{hint}}"
+                aria-label="{{label}}: {{hint}}"
+            >
+                <strong data-summary-{{key}}>{{count}}</strong>
+                <small>{{label}}</small>
             </span>
-            <span class="babele-actor-translation__stat is-ready" title="{{texts.readyHint}}" aria-label="{{texts.ready}}: {{texts.readyHint}}">
-                <strong data-summary-ready>{{summary.ready}}</strong>
-                <small>{{texts.ready}}</small>
-            </span>
-            <span class="babele-actor-translation__stat is-modified" title="{{texts.modifiedHint}}" aria-label="{{texts.modified}}: {{texts.modifiedHint}}">
-                <strong data-summary-modified>{{summary.modified}}</strong>
-                <small>{{texts.modified}}</small>
-            </span>
-            <span class="babele-actor-translation__stat is-translated" title="{{texts.translatedHint}}" aria-label="{{texts.translated}}: {{texts.translatedHint}}">
-                <strong data-summary-translated>{{summary.translated}}</strong>
-                <small>{{texts.translated}}</small>
-            </span>
-            <span class="babele-actor-translation__stat is-missing" title="{{texts.missingHint}}" aria-label="{{texts.missing}}: {{texts.missingHint}}">
-                <strong data-summary-untranslated>{{summary.untranslated}}</strong>
-                <small>{{texts.missing}}</small>
-            </span>
+            {{/each}}
         </div>
     </header>
 
@@ -77,7 +68,15 @@
                 >
 
                 <span class="babele-actor-translation__entry-body">
-                    <span class="babele-actor-translation__entry-state" data-entry-status>{{status}}</span>
+                    <span class="babele-actor-translation__entry-state">
+                        <span data-entry-status>{{status}}</span>
+                        <i
+                            class="fas fa-circle-info babele-actor-translation__review-hint"
+                            data-review-hint
+                            {{#unless reviewReason}}hidden{{/unless}}
+                            {{#if reviewReason}}title="{{reviewReason}}" aria-label="{{reviewReason}}"{{/if}}
+                        ></i>
+                    </span>
 
                     <span class="babele-actor-translation__comparison">
                         <span>
@@ -90,27 +89,64 @@
                             <em class="babele-actor-translation__current-name">
                                 <span>{{../texts.current}}:</span>
                                 <strong data-current-name>{{currentName}}</strong>
+                                {{#if translationLanguage}}
+                                <small class="babele-actor-translation__language-tag">{{translationLanguage}}</small>
+                                {{/if}}
                             </em>
                             {{/if}}
                         </span>
-                        <i class="fas fa-arrow-right-long" aria-hidden="true"></i>
+                        <i class="fas {{arrowIcon}}" aria-hidden="true" data-arrow></i>
                         <span>
-                            <small>{{../texts.proposed}}</small>
-                            <strong data-proposed-name class="{{#if proposedMissing}}is-missing{{/if}}">{{proposedName}}</strong>
-                            {{#if hasCandidates}}
-                            <em class="babele-actor-translation__candidate-line">
+                            {{#if showModeChoice}}
+                            <select
+                                class="babele-actor-translation__mode-selector"
+                                data-mode-selector
+                                data-entry-id="{{id}}"
+                                {{#unless modeChoiceEnabled}}disabled{{/unless}}
+                            >
+                                {{#each modeChoices}}
+                                <option value="{{id}}" {{#if selected}}selected{{/if}}>
+                                    {{label}}
+                                </option>
+                                {{/each}}
+                            </select>
+                            {{else}}
+                            <small data-proposed-label>{{proposedLabel}}</small>
+                            {{/if}}
+                            {{#if showCandidateChoice}}
+                            <select
+                                data-candidate-selector
+                                data-entry-id="{{id}}"
+                                {{#unless candidateChoiceEnabled}}disabled{{/unless}}
+                            >
+                                {{#each candidates}}
+                                <option value="{{id}}" {{#if selected}}selected{{/if}}>
+                                    {{label}}
+                                </option>
+                                {{/each}}
+                            </select>
+                            {{/if}}
+                            {{#if showProposedName}}
+                            <strong data-proposed-name class="{{#if proposedMissing}}is-missing{{/if}}" {{#unless showProposedName}}hidden{{/unless}}>{{proposedName}}</strong>
+                            {{/if}}
+                            {{#if showPackDetails}}
+                            <em class="babele-actor-translation__candidate-line" data-pack-line>
                                 <span>{{../texts.from}}:</span>
+                                {{#if showPackChoice}}
                                 <select
-                                    data-candidate-selector
+                                    data-pack-selector
                                     data-entry-id="{{id}}"
-                                    {{#unless candidateChoiceEnabled}}disabled{{/unless}}
+                                    {{#unless packChoiceEnabled}}disabled{{/unless}}
                                 >
-                                    {{#each candidates}}
+                                    {{#each packChoices}}
                                     <option value="{{id}}" {{#if selected}}selected{{/if}}>
                                         {{label}}
                                     </option>
                                     {{/each}}
                                 </select>
+                                {{else}}
+                                <strong data-pack-label {{#unless showPackLabelValue}}hidden{{/unless}}>{{showPackLabel}}</strong>
+                                {{/if}}
                             </em>
                             {{/if}}
                         </span>

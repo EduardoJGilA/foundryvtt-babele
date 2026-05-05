@@ -31,6 +31,7 @@ test("DocumentTranslation applies payloads and records Babele flags", () => {
       name: "Sword",
       description: "Original",
     },
+    language: "it",
   }).apply();
 
   assert.equal(translated.name, "Spada");
@@ -42,6 +43,7 @@ test("DocumentTranslation applies payloads and records Babele flags", () => {
     translated: true,
     hasTranslation: true,
     originalName: "Sword",
+    lang: "it",
     originalPayload: {
       name: "Sword",
       description: "Original",

@@ -26,11 +26,13 @@ export class MappedCompendium {
      * @param {object} [options]
      * @param {import("../translation/translation-entries.js").TranslationStrategy[]} [options.translationStrategies]
      * @param {import("../mapping/document-mappings.js").DocumentMappings} options.documentMappings
+     * @param {string|null} [options.language]
      */
-    constructor(metadata, translations, {translationStrategies, documentMappings} = {}) {
+    constructor(metadata, translations, {translationStrategies, documentMappings, language = null} = {}) {
         this.metadata = this.#clone(metadata);
         this.translation = this.#clone(translations);
         this.translated = false;
+        this.language = typeof language === "string" && language.trim().length > 0 ? language.trim() : null;
         this.customMapping = this.translation?.mapping ?? null;
         this.documentMappings = this.#documentMappings(documentMappings);
         this.documentMapping = this.documentMappings.mappingFor(metadata.type, this.customMapping);
@@ -340,6 +342,7 @@ export class MappedCompendium {
             payload: translatedData,
             hasTranslation,
             originalPayload: this.#sourcePayload(data),
+            language: this.language,
         }).apply();
     }
 

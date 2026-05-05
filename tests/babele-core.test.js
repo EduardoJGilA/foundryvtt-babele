@@ -66,9 +66,49 @@ test("Babele builds a headless translation session from framework registrations"
         originalName: "Sword",
         hasTranslation: true,
         translated: true,
+        lang: "fr",
         originalPayload: {
           name: "Sword",
         },
+      },
+    },
+  });
+});
+
+test("Babele.rollbackDocument restores original payload values and strips Babele markers", () => {
+  const babele = Babele.create();
+
+  const restored = babele.rollbackDocument("TestItem", {
+    _id: "sword",
+    name: "Epee",
+    originalName: "Sword",
+    translated: true,
+    hasTranslation: true,
+    flags: {
+      someModule: {
+        keep: true,
+      },
+      babele: {
+        originalName: "Sword",
+        hasTranslation: true,
+        translated: true,
+        originalPayload: {
+          name: "Sword",
+        },
+      },
+    },
+  }, {
+    customMapping: {
+      name: "name",
+    },
+  });
+
+  assert.deepEqual(restored, {
+    _id: "sword",
+    name: "Sword",
+    flags: {
+      someModule: {
+        keep: true,
       },
     },
   });

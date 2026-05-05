@@ -14,17 +14,20 @@ export class MappedCompendiums {
      * @param {import("../translation/compendium-translations.js").CompendiumTranslations|null} [options.translations]
      * @param {import("../translation/translation-entries.js").TranslationStrategy[]} [options.translationStrategies]
      * @param {foundry.utils.Collection} [options.packs]
+     * @param {string|null} [options.language]
      */
     constructor({
         documentMappings,
         translations = null,
         translationStrategies = [],
         packs = null,
+        language = null,
     }) {
         this.documentMappings = documentMappings;
         this.translations = translations;
         this.translationStrategies = [...translationStrategies];
         this.packs = packs ?? new foundry.utils.Collection();
+        this.language = typeof language === "string" && language.trim().length > 0 ? language.trim() : null;
     }
 
     /**
@@ -197,6 +200,7 @@ export class MappedCompendiums {
         const compendium = new MappedCompendium(metadata, translation, {
             translationStrategies: this.translationStrategies,
             documentMappings: this.documentMappings,
+            language: this.language,
         });
         this.packs.set(collection, compendium);
         return compendium;

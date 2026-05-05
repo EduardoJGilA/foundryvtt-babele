@@ -127,6 +127,8 @@ class BabeleFacade {
             sourceDataForUuid: (uuid, options = {}) => this.sourceDataForUuid(uuid, options),
             translatedPackFor: (documentType, data, options = {}) => this.#translatedPackFor(documentType, data, options),
             translatedPacks: () => this.#translatedPacks(),
+            rollbackDocument: (documentType, data, options = {}) => this.rollbackDocument(documentType, data, options),
+            translationLanguage: () => this.#language(),
         });
     }
 
@@ -721,6 +723,34 @@ class BabeleFacade {
     }
 
     /**
+     * Restore one translated document to its original mapped payload and strip
+     * Babele translation markers.
+     *
+     * The rollback logic itself lives in the core engine. The facade only
+     * enriches the call with session-scoped mapping layers and compendium
+     * context when available.
+     *
+     * @param {string} documentType
+     * @param {object} data
+     * @param {object} [options]
+     * @param {string|object|null} [options.pack]
+     * @param {object|null} [options.customMapping]
+     * @param {object|null} [options.documentMappings]
+     * @param {object} [options.runtime]
+     * @returns {object|null}
+     */
+    rollbackDocument(documentType, data, options = {}) {
+        const collection = this.#rollbackCollection(options.pack, data);
+        const mappedCompendium = collection ? this.#session?.mappedCompendiumFor?.(collection) ?? null : null;
+
+        return this.#engine.rollbackDocument(documentType, data, {
+            documentMappings: options.documentMappings ?? this.#session?.documentMappings ?? null,
+            customMapping: options.customMapping ?? mappedCompendium?.customMapping ?? null,
+            runtime: options.runtime ?? this.#rollbackRuntime(mappedCompendium),
+        });
+    }
+
+    /**
      * Apply a previously computed on-demand Actor translation proposal.
      *
      * @param {ActorTranslationProposal} proposal
@@ -875,13 +905,7 @@ class BabeleFacade {
 
         const originalPayload = data?.flags?.babele?.originalPayload;
         if (originalPayload) {
-            return foundry.utils.mergeObject(originalPayload, {
-                flags: {
-                    babele: {
-                        originalPayload,
-                    },
-                },
-            }, {inplace: false});
+            return foundry.utils.mergeObject({}, data, {inplace: false});
         }
 
         return this.#runtimeTranslatedData(data) ? null : data;
@@ -910,6 +934,26 @@ class BabeleFacade {
 
     #language() {
         return game.settings.get("core", "language");
+    }
+
+    #rollbackCollection(pack, data) {
+        if (typeof pack === "string" && pack.length > 0) {
+            return pack;
+        }
+
+        const collection = pack?.metadata?.collection ?? pack?.collection ?? null;
+        if (collection) {
+            return collection;
+        }
+
+        const sourceId = data?.flags?.core?.sourceId ?? data?.sourceId ?? null;
+        return this.#compendiumSourceFromUuid(sourceId)?.collection ?? null;
+    }
+
+    #rollbackRuntime(currentCompendium = null) {
+        const globalPacks = this.#session?.mappedCompendiums ?? new foundry.utils.Collection();
+        const runtime = CompendiumRuntime.from({globalPacks});
+        return currentCompendium ? runtime.child({currentCompendium}) : runtime;
     }
 
     #assertConfigurable(operation) {

@@ -45,6 +45,7 @@ export class TranslationSession {
             documentMappings,
             translations,
             translationStrategies,
+            language,
         }).load();
         const packFolderTranslations = await new PackFolderTranslationsCatalog({
             translations,

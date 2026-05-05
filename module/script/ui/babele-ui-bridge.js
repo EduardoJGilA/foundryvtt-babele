@@ -256,10 +256,6 @@ export class BabeleUiBridge {
  * @param {Set<string>} autoExpandIds
  */
 export function matchOriginalNameEntries(directory, query, entryIds, folderIds, autoExpandIds) {
-    if (!game.settings.get("babele", "showOriginalName")) {
-        return;
-    }
-
     if (!isNameOnlySearch(directory?.collection)) {
         return;
     }

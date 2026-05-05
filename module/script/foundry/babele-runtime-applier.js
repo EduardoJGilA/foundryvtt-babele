@@ -39,9 +39,30 @@ export async function applyRuntimeTranslationsToFoundry(
     restoreWorldFolders();
     folderTranslations?.translateSystemPackFolders?.();
     folderTranslations?.translateImportedCompendiumFolders?.();
+    await rebuildDocumentIndex(game.documentIndex);
 
     if (notify) {
         ui.notifications?.info?.(game.i18n.localize("BABELE.TranslationSourcesRefreshed"));
+    }
+}
+
+async function rebuildDocumentIndex(documentIndex) {
+    if (!documentIndex || typeof documentIndex.index !== "function") {
+        return;
+    }
+
+    await documentIndex.ready;
+    clearDocumentIndex(documentIndex);
+    await documentIndex.index();
+}
+
+function clearDocumentIndex(documentIndex) {
+    for (const key of Object.keys(documentIndex?.trees ?? {})) {
+        delete documentIndex.trees[key];
+    }
+
+    for (const key of Object.keys(documentIndex?.uuids ?? {})) {
+        delete documentIndex.uuids[key];
     }
 }
 

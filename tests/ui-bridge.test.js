@@ -320,6 +320,44 @@ test("BabeleUiBridge matches original names during directory name search and exp
   assert.deepEqual([...autoExpandIds], ["folder-a", "folder-root"]);
 });
 
+test("BabeleUiBridge matches original names during directory search even when original-name hints are hidden", () => {
+  globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = () => false;
+
+  const entryIds = new Set();
+  const folderIds = new Set();
+  const autoExpandIds = new Set();
+
+  matchOriginalNameEntries(
+    {
+      collection: {
+        searchMode: "name",
+        index: [
+          {
+            _id: "entry-8",
+            name: "Benediction",
+            originalName: "Bless",
+          },
+        ],
+      },
+    },
+    /bless/,
+    entryIds,
+    folderIds,
+    autoExpandIds,
+  );
+
+  assert.deepEqual([...entryIds], ["entry-8"]);
+});
+
 test("BabeleUiBridge original-name enrichment does not pull unrelated siblings from folders already matched by Foundry", () => {
   globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
   foundry.applications.ux = {

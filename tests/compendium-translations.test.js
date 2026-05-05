@@ -4,54 +4,58 @@ import {installFoundryStubs} from "./helpers/foundry-stubs.js";
 
 installFoundryStubs();
 
-const {TranslationRegistry} = await import("../module/script/translation/translation-registry.js");
+const {TranslationSources} = await import("../module/script/translation/translation-sources.js");
 const {CompendiumTranslations} = await import("../module/script/translation/compendium-translations.js");
-test("TranslationRegistry.loadTranslations merges multiple sources per collection and includes _packs-folders payloads", async () => {
+test("TranslationSources.loadTranslations merges multiple sources per collection and includes _packs-folders payloads", async () => {
   game.data.packs = [
     {type: "Item", packageName: "test", packageType: "module", name: "items"},
   ];
 
-  const sources = new TranslationRegistry();
-  sources.translationSources = async () => [
-    {file: "modules/a/test.items.json", baseName: "test.items.json"},
-    {file: "modules/b/test.items.json", baseName: "test.items.json"},
-    {file: "modules/a/test._packs-folders.json", baseName: "test._packs-folders.json"},
-  ];
-  sources.loadJsonFile = async (file) => {
-    if (file === "modules/a/test.items.json") {
-      return {
-        label: "Items A",
-        entries: {
-          sword: {name: "Sword"},
-        },
-        mapping: {
-          description: "system.description.value",
-        },
-      };
-    }
+  const sources = new TranslationSources({
+    discovery: {
+      translationSources: async () => [
+        {file: "modules/a/test.items.json", baseName: "test.items.json"},
+        {file: "modules/b/test.items.json", baseName: "test.items.json"},
+        {file: "modules/a/test._packs-folders.json", baseName: "test._packs-folders.json"},
+      ],
+      orderedSourcesFor: (_collection, translationSources) => translationSources,
+    },
+    jsonLoader: async (file) => {
+      if (file === "modules/a/test.items.json") {
+        return {
+          label: "Items A",
+          entries: {
+            sword: {name: "Sword"},
+          },
+          mapping: {
+            description: "system.description.value",
+          },
+        };
+      }
 
-    if (file === "modules/b/test.items.json") {
-      return {
-        label: "Items B",
-        entries: {
-          shield: {name: "Shield"},
-        },
-        folders: {
-          Equipment: "Equipaggiamento",
-        },
-      };
-    }
+      if (file === "modules/b/test.items.json") {
+        return {
+          label: "Items B",
+          entries: {
+            shield: {name: "Shield"},
+          },
+          folders: {
+            Equipment: "Equipaggiamento",
+          },
+        };
+      }
 
-    if (file === "modules/a/test._packs-folders.json") {
-      return {
-        entries: {
-          Rules: "Regole",
-        },
-      };
-    }
+      if (file === "modules/a/test._packs-folders.json") {
+        return {
+          entries: {
+            Rules: "Regole",
+          },
+        };
+      }
 
-    throw new Error(`Unexpected file ${file}`);
-  };
+      throw new Error(`Unexpected file ${file}`);
+    },
+  });
 
   const translations = await sources.loadTranslations("en");
 
@@ -91,42 +95,46 @@ test("CompendiumTranslations indexes loaded payloads by collection", () => {
   assert.equal(translations.empty(), false);
 });
 
-test("TranslationRegistry.loadTranslations resolves inherited payloads after per-collection merge", async () => {
-  const sources = new TranslationRegistry();
-  sources.translationSources = async () => [
-    {file: "modules/a/shared.base.json", baseName: "shared.base.json"},
-    {file: "modules/a/test.items.json", baseName: "test.items.json"},
-  ];
-  sources.loadJsonFile = async (file) => {
-    if (file === "modules/a/shared.base.json") {
-      return {
-        entries: {
-          sword: {name: "Sword"},
-        },
-        mapping: {
-          description: "system.description.value",
-        },
-        reference: ["shared.reference"],
-        types: ["weapon"],
-      };
-    }
+test("TranslationSources.loadTranslations resolves inherited payloads after per-collection merge", async () => {
+  const sources = new TranslationSources({
+    discovery: {
+      translationSources: async () => [
+        {file: "modules/a/shared.base.json", baseName: "shared.base.json"},
+        {file: "modules/a/test.items.json", baseName: "test.items.json"},
+      ],
+      orderedSourcesFor: (_collection, translationSources) => translationSources,
+    },
+    jsonLoader: async (file) => {
+      if (file === "modules/a/shared.base.json") {
+        return {
+          entries: {
+            sword: {name: "Sword"},
+          },
+          mapping: {
+            description: "system.description.value",
+          },
+          reference: ["shared.reference"],
+          types: ["weapon"],
+        };
+      }
 
-    if (file === "modules/a/test.items.json") {
-      return {
-        extends: "shared.base",
-        label: "Localized Items",
-        entries: {
-          sword: {name: "Spada"},
-          shield: {name: "Scudo"},
-        },
-        folders: {
-          Equipment: "Equipaggiamento",
-        },
-      };
-    }
+      if (file === "modules/a/test.items.json") {
+        return {
+          extends: "shared.base",
+          label: "Localized Items",
+          entries: {
+            sword: {name: "Spada"},
+            shield: {name: "Scudo"},
+          },
+          folders: {
+            Equipment: "Equipaggiamento",
+          },
+        };
+      }
 
-    throw new Error(`Unexpected file ${file}`);
-  };
+      throw new Error(`Unexpected file ${file}`);
+    },
+  });
 
   const translations = await sources.loadTranslations("en");
   const items = translations.for("test.items");

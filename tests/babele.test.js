@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {installFoundryStubs} from "./helpers/foundry-stubs.js";
-import {assignMappedCompendiums, assignPackFolderTranslations} from "./helpers/mapped-compendiums.js";
+import {assignMappedCompendiums, mockMappedCompendiums, mockPackFolderTranslations} from "./helpers/mapped-compendiums.js";
 
 installFoundryStubs();
 
@@ -19,7 +19,51 @@ console.error = (...args) => errorCalls.push(args);
 
 const {default: Babel} = await import("../module/script/babele.js");
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {FolderTranslations} = await import("../module/script/compendium/folder-translations.js");
 const {ExportTranslationsDialog} = await import("../module/script/ui/export-translations-dialog.js");
+
+async function babeleWithFolderSession({
+  mappedCompendiums = mockMappedCompendiums(),
+  packFolderTranslations = mockPackFolderTranslations(),
+} = {}) {
+  const session = {
+    translations: null,
+    documentMappings: null,
+    mappedCompendiums,
+    packFolderTranslations,
+    folderTranslations: new FolderTranslations({
+      mappedCompendiums,
+      packFolderTranslations,
+    }),
+    translatePackFolders(pack) {
+      this.folderTranslations.translatePackFolders(pack);
+    },
+    translateImportedCompendiumFolder(folder) {
+      this.folderTranslations.translateImportedCompendiumFolder(folder);
+    },
+    translateImportedCompendiumFolders(folders) {
+      this.folderTranslations.translateImportedCompendiumFolders(folders);
+    },
+    translateSystemPackFolders() {
+      this.folderTranslations.translateSystemPackFolders();
+    },
+    dispose() {},
+  };
+  const babele = new Babel({
+    engine: {
+      translationSources: {
+        cacheDiagnostics: () => null,
+        shareTranslationFiles: async () => {},
+        shareGlobalMappingFiles: async () => {},
+      },
+      documentMappings: () => null,
+      session: async () => session,
+    },
+  });
+
+  await babele.init();
+  return babele;
+}
 
 test.beforeEach(() => {
   logCalls.length = 0;
@@ -200,7 +244,7 @@ test("Babel.sessionFor builds a headless session for a language different from t
   const session = await babele.sessionFor({language: "fr"});
 
   assert.equal(session.language, "fr");
-  assert.equal(babele.mappedCompendiums, null);
+  assert.equal(babele.isTranslated("module-one.items"), false);
   assert.equal(session.isTranslated("module-one.items"), true);
   assert.deepEqual(session.translate("module-one.items", {
     _id: "sword",
@@ -338,11 +382,27 @@ test("Babel.init logs and skips invalid translation JSON files", async () => {
 
   await babele.init();
 
-  const translations = babele.translations.values();
-
-  assert.equal(translations.length, 1);
-  assert.equal(translations[0].collection, "module-one.items");
-  assert.deepEqual(translations[0].entries, {sword: {name: "Sword"}});
+  assert.equal(babele.isTranslated("module-one.items"), true);
+  assert.deepEqual(babele.translate("module-one.items", {
+    _id: "sword",
+    name: "Longsword",
+  }), {
+    _id: "sword",
+    name: "Sword",
+    originalName: "Longsword",
+    hasTranslation: true,
+    translated: true,
+    flags: {
+      babele: {
+        originalName: "Longsword",
+        hasTranslation: true,
+        translated: true,
+        originalPayload: {
+          name: "Longsword",
+        },
+      },
+    },
+  });
   assert.equal(errorCalls.length, 1);
   assert.match(String(errorCalls[0][0]), /failed to load translation file/);
   assert.equal(errorCalls[0][1].kind, "translation");
@@ -542,24 +602,23 @@ test("Babel.translate fails open for translated packs when a converter throws", 
   game.babele = originalGameBabele;
 });
 
-test("Babel.translateSystemPackFolders uses special _packs-folders translations from pack folders payload", () => {
-  const babele = new Babel();
+test("Babel.translateSystemPackFolders uses special _packs-folders translations from pack folders payload", async () => {
   const worldFolders = [
     {name: "Bestiary"},
     {name: "Rules"},
   ];
 
-  assignPackFolderTranslations(babele, [[
+  const babele = await babeleWithFolderSession({
+    packFolderTranslations: mockPackFolderTranslations([[
     "test-system._packs-folders",
     {
-      translations() {
-        return {
-          Bestiary: "Bestiario",
-          Rules: "Regole",
-        };
+      entries: {
+        Bestiary: "Bestiario",
+        Rules: "Regole",
       },
     },
-  ]]);
+    ]]),
+  });
 
   game.data.folders = worldFolders;
   game.collections.set("Folder", worldFolders);
@@ -570,8 +629,7 @@ test("Babel.translateSystemPackFolders uses special _packs-folders translations 
   assert.equal(worldFolders[1].name, "Regole");
 });
 
-test("Babel.translatePackFolders uses the compendium translation folders payload", () => {
-  const babele = new Babel();
+test("Babel.translatePackFolders uses the compendium translation folders payload", async () => {
   const pack = {
     metadata: {
       id: "test.items",
@@ -582,14 +640,16 @@ test("Babel.translatePackFolders uses the compendium translation folders payload
     ]),
   };
 
-  assignMappedCompendiums(babele, [[
+  const babele = await babeleWithFolderSession({
+    mappedCompendiums: mockMappedCompendiums([[
     "test.items",
     {
       folders: {
         Equipment: "Equipaggiamento",
       },
     },
-  ]]);
+    ]]),
+  });
 
   babele.translatePackFolders(pack);
 
@@ -597,8 +657,7 @@ test("Babel.translatePackFolders uses the compendium translation folders payload
   assert.equal(pack.folders.get("folder-b").name, "Treasure");
 });
 
-test("Babel.translateImportedCompendiumFolder uses the source pack folder translations", () => {
-  const babele = new Babel();
+test("Babel.translateImportedCompendiumFolder uses the source pack folder translations", async () => {
   const folder = {
     id: "folder-a",
     name: "Equipment",
@@ -607,14 +666,16 @@ test("Babel.translateImportedCompendiumFolder uses the source pack folder transl
     },
   };
 
-  assignMappedCompendiums(babele, [[
+  const babele = await babeleWithFolderSession({
+    mappedCompendiums: mockMappedCompendiums([[
     "test.items",
     {
       folders: {
         Equipment: "Equipaggiamento",
       },
     },
-  ]]);
+    ]]),
+  });
 
   babele.translateImportedCompendiumFolder(folder);
 
@@ -622,22 +683,23 @@ test("Babel.translateImportedCompendiumFolder uses the source pack folder transl
   assert.equal(folder.name, "Equipaggiamento");
 });
 
-test("Babel.translateImportedCompendiumFolder falls back to matching the imported folder id against source pack folders", () => {
-  const babele = new Babel();
+test("Babel.translateImportedCompendiumFolder falls back to matching the imported folder id against source pack folders", async () => {
   const folder = {
     id: "folder-a",
     name: "Equipment",
     type: "Item",
   };
 
-  assignMappedCompendiums(babele, [[
+  const babele = await babeleWithFolderSession({
+    mappedCompendiums: mockMappedCompendiums([[
     "test.items",
     {
       folders: {
         Equipment: "Equipaggiamento",
       },
     },
-  ]]);
+    ]]),
+  });
 
   game.packs = new foundry.utils.Collection([[
     "test.items",
@@ -658,8 +720,7 @@ test("Babel.translateImportedCompendiumFolder falls back to matching the importe
   assert.equal(folder.name, "Equipaggiamento");
 });
 
-test("Babel.translateImportedCompendiumFolders reapplies translations to imported world folders", () => {
-  const babele = new Babel();
+test("Babel.translateImportedCompendiumFolders reapplies translations to imported world folders", async () => {
   const worldFolders = new foundry.utils.Collection([
     ["folder-a", {
       name: "Equipment",
@@ -672,14 +733,16 @@ test("Babel.translateImportedCompendiumFolders reapplies translations to importe
     }],
   ]);
 
-  assignMappedCompendiums(babele, [[
+  const babele = await babeleWithFolderSession({
+    mappedCompendiums: mockMappedCompendiums([[
     "test.items",
     {
       folders: {
         Equipment: "Equipaggiamento",
       },
     },
-  ]]);
+    ]]),
+  });
 
   babele.translateImportedCompendiumFolders(worldFolders);
 
@@ -689,7 +752,15 @@ test("Babel.translateImportedCompendiumFolders reapplies translations to importe
 });
 
 test("Babel.exportTranslationsFile includes compendium folders using original names", async () => {
-  const babele = new Babel();
+  const mappedCompendiums = mockMappedCompendiums([[
+    "test.items",
+    {
+      folders: {
+        Equipment: "Equipaggiamento",
+      },
+    },
+  ]]);
+  const babele = await babeleWithFolderSession({mappedCompendiums});
   const originalPrompt = ExportTranslationsDialog.prototype.prompt;
   const originalZip = globalThis.JSZip;
   const originalSaveAs = globalThis.saveAs;
@@ -763,14 +834,6 @@ test("Babel.exportTranslationsFile includes compendium folders using original na
     babele.extract = () => ({
       name: "Sword",
     });
-    assignMappedCompendiums(babele, [[
-      "test.items",
-      {
-        folders: {
-          Equipment: "Equipaggiamento",
-        },
-      },
-    ]]);
     babele.translatePackFolders(pack);
 
     await babele.exportTranslationsFile(pack);
@@ -1303,6 +1366,37 @@ test("Babel.registerConverter normalizes function and OO converters to the inter
   }), "test oo");
 });
 
+test("Babel rejects configuration registrations after a session is installed", async () => {
+  const babele = new Babel();
+
+  game.settings.get = (_namespace, key) => {
+    if (key === "language") {
+      return "en";
+    }
+    if (key === "directory") {
+      return "";
+    }
+    return "";
+  };
+  game.data.packs = [];
+  foundry.applications.apps.FilePicker.browse = async () => ({files: []});
+
+  await babele.init();
+
+  assert.throws(
+    () => babele.registerConverter("late", () => null),
+    /must be called during the babele\.init hook/,
+  );
+  assert.throws(
+    () => babele.register({module: "late-module", dir: "translations", lang: "en"}),
+    /must be called during the babele\.init hook/,
+  );
+  assert.throws(
+    () => babele.registerMapping({Item: {name: "name"}}),
+    /must be called during the babele\.init hook/,
+  );
+});
+
 test("Babel.converters exposes a frozen compatibility view", () => {
   const babele = new Babel();
 
@@ -1549,17 +1643,28 @@ test("Babel exposes cache diagnostics and explicit cache invalidation", async ()
   babele.translateIndex([{_id: "item-1", name: "Sword"}], "module-one.items");
 
   const before = babele.cacheDiagnostics();
-  assert.equal(before.translationRegistry.translationSourcesCached, true);
-  assert.equal(before.translationRegistry.mappingSourcesCached, true);
-  assert.equal(before.mappedCompendiums.indexTranslationEntries, 1);
-  assert.equal(before.documentMappings.strategy, "immutable-rebuild");
+  assert.equal(before.boundary, "babele-facade");
+  assert.equal(before.language, "en");
+  assert.equal(before.translationSources.translationSourcesCached, true);
+  assert.equal(before.translationSources.mappingSourcesCached, true);
+  assert.equal(before.translationSources.translationFileCount, 1);
+  assert.equal(before.translationSources.mappingFileCount, 0);
+  assert.equal(before.translationSources.sourcePriorityConfigured, false);
+  assert.equal(before.session.mappedCompendiums.cachedIndexEntries, 1);
+  assert.equal(before.session.mappedCompendiums.indexTranslationEntries, 1);
+  assert.equal(before.session.mappedCompendiums.untranslatedPackCount, 0);
+  assert.equal(before.session.mappedCompendiums.byDocumentType.Item.packCount, 1);
+  assert.equal(before.session.documentMappings.strategy, "immutable-rebuild");
+  assert.equal(before.session.documentMappings.documentTypes.includes("Item"), true);
+  assert.equal(before.session.packFolderTranslations.packCount, 0);
 
   babele.invalidateCaches("test");
 
   const after = babele.cacheDiagnostics();
-  assert.equal(after.translationRegistry.translationSourcesCached, false);
-  assert.equal(after.translationRegistry.mappingSourcesCached, false);
-  assert.equal(after.mappedCompendiums.indexTranslationEntries, 0);
+  assert.equal(after.translationSources.translationSourcesCached, true);
+  assert.equal(after.translationSources.mappingSourcesCached, true);
+  assert.equal(after.session.mappedCompendiums.cachedIndexEntries, 0);
+  assert.equal(after.session.mappedCompendiums.indexTranslationEntries, 0);
 });
 
 test("Babel exposes source diagnostics and configurable source priority", async () => {
@@ -1619,10 +1724,12 @@ test("Babel exposes on-demand actor translation proposal and apply API", async (
     },
   };
 
-  babele.mappedCompendiums = [translatedPack];
+  const babeleWithSession = await babeleWithFolderSession({
+    mappedCompendiums: mockMappedCompendiums([["test.items", translatedPack]]),
+  });
 
-  const proposal = await babele.proposeActorTranslation(actor);
-  const updates = await babele.applyActorTranslation(proposal);
+  const proposal = await babeleWithSession.proposeActorTranslation(actor);
+  const updates = await babeleWithSession.applyActorTranslation(proposal);
 
   assert.deepEqual(proposal.summary(), {
     total: 1,

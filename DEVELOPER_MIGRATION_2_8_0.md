@@ -116,6 +116,16 @@ These methods still exist and delegate to the new internal model:
 - `mappedCompendiumFor(pack)`
 - `translatedCompendiumFor(pack)`
 
+The old public facade state mirrors are no longer part of the supported API:
+
+- `game.babele.translations`
+- `game.babele.mappedCompendiums`
+- `game.babele.packFolderTranslations`
+
+Use facade operations such as `translate(...)`, `extract(...)`,
+`mappedCompendiumFor(...)`, or explicit `TranslationSession` objects instead of
+reading or mutating those internal runtime aggregates.
+
 ### Registrations should happen before `init()`
 
 This is an important behavioral rule now documented more explicitly in the
@@ -134,7 +144,10 @@ The following registration APIs are intended to be used before `init()`:
 - `setSystemTranslationsDir()`
 
 If these are called after initialization, they do not mutate the already-built
-runtime state in place. They affect the next full rebuild instead.
+runtime state in place. Once a runtime session is installed, late calls are
+rejected. Register extension points during `Hooks.once("babele.init", ...)`;
+for runtime source changes use `setSourcePriority()`,
+`refreshTranslationSources()`, or `reinitialize()` as appropriate.
 
 This is deliberate: Babele now prefers rebuilding coherent state over mutating
 live state ad hoc.
@@ -448,9 +461,9 @@ logic to `CompendiumRuntime`.
 
 ## Translation Source Discovery
 
-### `TranslationRegistry` owns source discovery and precedence
+### `TranslationSources` owns source discovery and precedence
 
-`TranslationRegistry` is now the authoritative object for translation-source
+`TranslationSources` is now the authoritative object for translation-source
 discovery.
 
 It is responsible for:
@@ -597,6 +610,6 @@ The supported long-term direction is:
 - explicit runtime context
 - document-centric mappings
 - translation matching centralized in `TranslationEntries`
-- source precedence centralized in `TranslationRegistry`
+- source precedence centralized in `TranslationSources`
 - embedded document handling through `DocumentConverter`
 - UI integration aligned with modern Foundry APIs

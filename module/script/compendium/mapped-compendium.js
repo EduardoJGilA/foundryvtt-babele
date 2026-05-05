@@ -103,12 +103,15 @@ export class MappedCompendium {
      * @returns {object}
      */
     cacheDiagnostics() {
+        const cachedIndexEntries = this.#indexTranslationCache.size;
+
         return {
             boundary: "mapped-compendium",
             collection: this.metadata?.id ?? this.metadata?.name ?? null,
             documentType: this.metadata?.type ?? null,
             translated: this.translated,
-            indexTranslationEntries: this.#indexTranslationCache.size,
+            cachedIndexEntries,
+            indexTranslationEntries: cachedIndexEntries,
         };
     }
 

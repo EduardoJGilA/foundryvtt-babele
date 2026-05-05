@@ -1,7 +1,7 @@
 import {MappedCompendiums} from "../compendium/mapped-compendiums.js";
-import {PackFolderTranslationRegistry} from "./pack-folder-translation-registry.js";
+import {PackFolderTranslationsCatalog} from "./pack-folder-translations-catalog.js";
 import {FolderTranslations} from "../compendium/folder-translations.js";
-import {CompendiumCatalog} from "../compendium/compendium-catalog.js";
+import {DocumentMappings} from "../mapping/document-mappings.js";
 
 /**
  * Coherent Babele translation state for one language.
@@ -17,27 +17,36 @@ export class TranslationSession {
      *
      * @param {object} options
      * @param {string} options.language
-     * @param {import("./translation-registry.js").TranslationRegistry} options.registry
-     * @param {import("../mapping/document-mappings.js").DocumentMappings} options.baseMappings
+     * @param {import("./translation-sources.js").TranslationSources} options.sources
+     * @param {object} [options.builtInMappings]
+     * @param {object[]} [options.registeredMappings]
+     * @param {import("../identity/identity-extractor-registry.js").IdentityExtractorRegistry} options.identityExtractors
+     * @param {import("../converter/converter-registry.js").ConverterRegistry} options.converterRegistry
      * @param {import("./translation-entries.js").TranslationStrategy[]} [options.translationStrategies]
      * @returns {Promise<TranslationSession>}
      */
     static async load({
         language,
-        registry,
-        baseMappings,
+        sources,
+        builtInMappings = undefined,
+        registeredMappings = [],
+        identityExtractors,
+        converterRegistry,
         translationStrategies = [],
     }) {
-        const documentMappings = baseMappings.withLoaded(await registry.loadMappings(language));
-        const translations = await registry.loadTranslations(language);
-        const effectiveCatalog = new CompendiumCatalog({documentMappings});
+        const documentMappings = new DocumentMappings(builtInMappings, {
+            registeredMappings,
+            loadedMappings: await sources.loadMappings(language),
+            identityExtractors,
+            converterRegistry,
+        });
+        const translations = await sources.loadTranslations(language);
         const mappedCompendiums = await new MappedCompendiums({
-            catalog: effectiveCatalog,
             documentMappings,
             translations,
             translationStrategies,
         }).load();
-        const packFolderTranslations = await new PackFolderTranslationRegistry({
+        const packFolderTranslations = await new PackFolderTranslationsCatalog({
             translations,
         }).load();
 
@@ -47,7 +56,6 @@ export class TranslationSession {
             documentMappings,
             mappedCompendiums,
             packFolderTranslations,
-            catalog: effectiveCatalog,
         });
     }
 
@@ -57,7 +65,6 @@ export class TranslationSession {
         documentMappings,
         mappedCompendiums,
         packFolderTranslations,
-        catalog,
     }) {
         this.language = language;
         this.translations = translations;
@@ -67,7 +74,6 @@ export class TranslationSession {
         this.folderTranslations = new FolderTranslations({
             mappedCompendiums,
             packFolderTranslations,
-            catalog,
         });
     }
 
@@ -230,14 +236,38 @@ export class TranslationSession {
             boundary: "translation-session",
             language: this.language,
             documentMappings: this.documentMappings.cacheDiagnostics(),
+            packFolderTranslations: this.packFolderTranslations?.cacheDiagnostics?.() ?? {
+                boundary: "pack-folder-translations",
+                packCount: 0,
+                entryCount: 0,
+                packs: [],
+            },
             mappedCompendiums: this.mappedCompendiums?.cacheDiagnostics?.() ?? {
                 boundary: "mapped-compendiums",
                 packCount: 0,
                 translatedPackCount: 0,
+                untranslatedPackCount: 0,
+                cachedIndexEntries: 0,
                 indexTranslationEntries: 0,
+                byDocumentType: {},
                 packs: [],
             },
         };
+    }
+
+    /**
+     * Release references and clear runtime caches owned by this session.
+     *
+     * @param {string} [reason]
+     * @returns {void}
+     */
+    dispose(reason = "dispose") {
+        this.invalidateCaches(reason);
+        this.translations = null;
+        this.documentMappings = null;
+        this.mappedCompendiums = null;
+        this.packFolderTranslations = null;
+        this.folderTranslations = null;
     }
 
 }

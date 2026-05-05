@@ -41,37 +41,6 @@ export class DocumentMappings {
     }
 
     /**
-     * Return a detached aggregate enriched with one additional registered
-     * mapping layer.
-     *
-     * @param {object} mapping
-     * @returns {DocumentMappings}
-     */
-    withRegistered(mapping) {
-        return new DocumentMappings(this.builtInMappings, {
-            registeredMappings: [...this.registeredMappings, this.#clone(mapping)],
-            loadedMappings: this.loadedMappings,
-            identityExtractors: this.identityExtractors,
-            converterRegistry: this.converterRegistry,
-        });
-    }
-
-    /**
-     * Return a detached aggregate with the provided loaded mapping layers.
-     *
-     * @param {object[]} mappings
-     * @returns {DocumentMappings}
-     */
-    withLoaded(mappings = []) {
-        return new DocumentMappings(this.builtInMappings, {
-            registeredMappings: this.registeredMappings,
-            loadedMappings: mappings.map((mapping) => this.#clone(mapping)),
-            identityExtractors: this.identityExtractors,
-            converterRegistry: this.converterRegistry,
-        });
-    }
-
-    /**
      * Return the effective mappings as a detached object.
      *
      * @returns {object}
@@ -141,13 +110,16 @@ export class DocumentMappings {
      * @returns {object}
      */
     cacheDiagnostics() {
+        const documentTypes = Object.keys(this.effectiveMappings);
+
         return {
             boundary: "document-mappings",
             strategy: "immutable-rebuild",
             builtInLayerCount: 1,
             registeredLayerCount: this.registeredMappings.length,
             loadedLayerCount: this.loadedMappings.length,
-            effectiveDocumentTypes: Object.keys(this.effectiveMappings).length,
+            effectiveDocumentTypes: documentTypes.length,
+            documentTypes,
         };
     }
 
@@ -184,16 +156,6 @@ export class DocumentMappings {
             identityExtractors: this.identityExtractors,
             converterRegistry: this.converterRegistry,
         });
-    }
-
-    /**
-     * Publish the current effective defaults through the legacy static hook.
-     *
-     * @returns {object}
-     */
-    publish() {
-        DocumentMappings.DEFAULT_MAPPINGS = this.current();
-        return DocumentMappings.DEFAULT_MAPPINGS;
     }
 
     #layers() {

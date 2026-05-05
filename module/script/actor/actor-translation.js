@@ -3,8 +3,20 @@
  */
 export class ActorTranslation {
 
-    constructor(babele) {
-        this.babele = babele;
+    constructor({
+        sourceDataForUuid,
+        translatedPackFor,
+        translatedPacks,
+    } = {}) {
+        const babele = arguments[0];
+        this.sourceDataForUuid = sourceDataForUuid ?? ((uuid, options = {}) => babele?.sourceDataForUuid?.(uuid, options));
+        this.translatedPackFor = translatedPackFor ?? ((documentType, data, options = {}) => babele?.translatedPackFor?.(documentType, data, options));
+        this.translatedPacks = translatedPacks ?? (() => {
+            const registry = babele?.mappedCompendiums;
+            return registry?.values?.()
+                ? [...registry.values()]
+                : Array.isArray(registry) ? [...registry] : Object.values(registry ?? {});
+        });
     }
 
     /**
@@ -146,7 +158,7 @@ export class ActorTranslation {
             return null;
         }
 
-        const sourceData = await this.babele?.sourceDataForUuid?.(uuid, {data: source});
+        const sourceData = await this.sourceDataForUuid?.(uuid, {data: source});
         return sourceData ? this.#sourceLikeData(sourceData) : null;
     }
 
@@ -230,7 +242,7 @@ export class ActorTranslation {
             .filter((pack) => pack.hasTranslation?.(lookupSource, documentType) === true);
 
         if (packs.length === 0) {
-            const fallbackPack = this.babele?.translatedPackFor?.(documentType, lookupSource);
+            const fallbackPack = this.translatedPackFor?.(documentType, lookupSource);
             if (fallbackPack) {
                 packs.push(fallbackPack);
             }
@@ -309,11 +321,7 @@ export class ActorTranslation {
     }
 
     #translatedPacks(documentType, source) {
-        const registry = this.babele?.mappedCompendiums;
-        const packs = registry?.values?.()
-            ? [...registry.values()]
-            : Array.isArray(registry) ? [...registry] : Object.values(registry ?? {});
-        return packs.filter((pack) => {
+        return (this.translatedPacks?.() ?? []).filter((pack) => {
             if (pack?.translated !== true) {
                 return false;
             }

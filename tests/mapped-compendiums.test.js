@@ -7,14 +7,10 @@ installFoundryStubs();
 const {default: Babel} = await import("../module/script/babele.js");
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
 const {MappedCompendiums} = await import("../module/script/compendium/mapped-compendiums.js");
-const {PackFolderTranslationRegistry} = await import("../module/script/translation/pack-folder-translation-registry.js");
-const {CompendiumCatalog} = await import("../module/script/compendium/compendium-catalog.js");
+const {PackFolderTranslationsCatalog} = await import("../module/script/translation/pack-folder-translations-catalog.js");
 
 test("MappedCompendiums loads only supported compendium packs", async () => {
   const babele = new Babel();
-  const catalog = new CompendiumCatalog({
-    documentMappings: babele.documentMappings,
-  });
 
   game.data.packs = [
     {
@@ -77,7 +73,6 @@ test("MappedCompendiums loads only supported compendium packs", async () => {
   };
 
   const mappedCompendiums = await new MappedCompendiums({
-    catalog,
     documentMappings: babele.documentMappings,
     translations,
     translationStrategies: babele.translationMatchStrategies(),
@@ -91,7 +86,7 @@ test("MappedCompendiums loads only supported compendium packs", async () => {
   assert.equal(mappedCompendiums.get("test._packs-folders"), null);
 });
 
-test("PackFolderTranslationRegistry loads synthetic _packs-folders payloads separately from compendiums", async () => {
+test("PackFolderTranslationsCatalog loads synthetic _packs-folders payloads separately from compendiums", async () => {
   const translations = {
     values() {
       return [{
@@ -103,9 +98,15 @@ test("PackFolderTranslationRegistry loads synthetic _packs-folders payloads sepa
     },
   };
 
-  const registry = await new PackFolderTranslationRegistry({translations}).load();
+  const registry = await new PackFolderTranslationsCatalog({translations}).load();
 
-  assert.deepEqual(registry.get("test._packs-folders")?.translations(), {
+  assert.deepEqual(registry.get("test._packs-folders"), {
+    collection: "test._packs-folders",
+    entries: {
+      Bestiary: "Bestiario",
+    },
+  });
+  assert.deepEqual(registry.allTranslations(), {
     Bestiary: "Bestiario",
   });
 });

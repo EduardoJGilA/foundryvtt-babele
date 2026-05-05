@@ -1,26 +1,15 @@
 import {registerModuleSettings} from "./foundry/settings.js";
 import {initWrapper} from "./foundry/wrapper.js";
-import {Converters} from "./converter/converters.js";
 import {OnDemandTranslateDialog} from "./ui/on-demand-translate-dialog.js";
-import {DocumentMappings} from "./mapping/document-mappings.js";
-import {BabeleRuntimeApplier} from "./foundry/babele-runtime-applier.js";
+import {applyRuntimeTranslationsToFoundry} from "./foundry/babele-runtime-applier.js";
 import {BabeleUiBridge} from "./ui/babele-ui-bridge.js";
-import {DocumentConverter} from "./converter/document-converter.js";
-import {StructuredDataConverter} from "./converter/structured-data-converter.js";
-import {LookupConverter} from "./converter/lookup-converter.js";
-import {ReferencedDocumentFieldConverter} from "./converter/referenced-document-field-converter.js";
-import {TokenizedLookupConverter} from "./converter/tokenized-lookup-converter.js";
-import {IdentityExtractorRegistry} from "./identity/identity-extractor-registry.js";
 import {CompendiumRuntime} from "./compendium/compendium-runtime.js";
 import {PackFoldersExport} from "./export/pack-folders-export.js";
 import {DirectoryExport} from "./export/directory-export.js";
 import {TranslationExport} from "./export/translation-export.js";
-import {FolderTranslations} from "./compendium/folder-translations.js";
-import {ConverterRegistry} from "./converter/converter-registry.js";
-import {CompendiumCatalog} from "./compendium/compendium-catalog.js";
-import {TranslationRegistry} from "./translation/translation-registry.js";
 import {ActorTranslation} from "./actor/actor-translation.js";
-import {TranslationSession} from "./translation/translation-session.js";
+import {Babele} from "./core/babele.js";
+import {DocumentMappings} from "./mapping/document-mappings.js";
 
 /****************
  * HOOKS
@@ -29,8 +18,8 @@ import {TranslationSession} from "./translation/translation-session.js";
 const uiBridge = new BabeleUiBridge();
 
 Hooks.once('init', () => {
-    let babele = new Babel();
-    Babel.instance = babele;
+    let babele = new BabeleFacade();
+    BabeleFacade.instance = babele;
     game["babele"] = babele;
     registerModuleSettings();
     initWrapper();
@@ -40,16 +29,16 @@ Hooks.once('init', () => {
 
 Hooks.once('ready', async () => {
 
-    const initialized = await game.babele.init();
+    const initialized = await game.babele.init(async (babele) => {
+        await babele.applyRuntimeTranslations({
+            shareSources: true,
+        });
+    });
 
     if (!initialized) {
         return;
     }
 
-    // `init()` only loads and installs Babele state. Runtime application is
-    // deferred until Foundry is fully ready so compendium indexes, folders,
-    // and caches can be updated coherently.
-    await game.babele.applyRuntimeTranslations({shareSources: true, renderCompendium: false});
     Hooks.callAll('babele.ready');
     await ui.compendium.render();
 });
@@ -72,22 +61,18 @@ Hooks.on("createFolder", (folder) => {
 /**
  * Main facade class with init logic and on API for on demand translations based on loaded mapping files.
  */
-class Babel {
+class BabeleFacade {
     /** @type {Promise<boolean> | null} */
     #initialized
     #dataLoaded
-    #translationMatchStrategies
-    #identityExtractors
-    #folderTranslations
-    #translationRegistry
-    #catalog
+    #engine
     #actorTranslation
     #session
 
     /**
-     * Compatibility view of the currently published default mappings.
+     * Compatibility view of the built-in default mappings.
      *
-     * The authoritative state lives in `DocumentMappings`; this getter
+     * The built-in snapshot lives in `DocumentMappings`; this getter
      * remains as a stable public entry point for callers that still inspect
      * default mappings through the facade.
      *
@@ -98,84 +83,50 @@ class Babel {
     }
 
     /**
+     * Live converter registry used by the underlying framework.
+     *
+     * @returns {import("./converter/converter-registry.js").ConverterRegistry}
+     */
+    get converterRegistry() {
+        return this.#engine.converterRegistry;
+    }
+
+    /**
+     * Effective document mappings for the active runtime session.
+     *
+     * Before initialization this returns the framework mappings configured
+     * through registrations. After initialization it returns the mappings
+     * materialized for the active language session.
+     *
+     * @returns {import("./mapping/document-mappings.js").DocumentMappings}
+     */
+    get documentMappings() {
+        return this.#session?.documentMappings ?? this.#engine.documentMappings();
+    }
+
+    /**
      * Singleton implementation.
      *
      * @deprecated
-     * @returns {Babel}
+     * @returns {BabeleFacade}
      */
     static get() {
         foundry.utils.logCompatibilityWarning('Babele.get is deprecated, use game.babele instead', {since: "2.5.5", until: 4});
-        if (!Babel.instance) {
-            Babel.instance = new Babel();
+        if (!BabeleFacade.instance) {
+            BabeleFacade.instance = new BabeleFacade();
         }
-        return Babel.instance;
+        return BabeleFacade.instance;
     }
 
-    constructor() {
-        this.translations = null;
-        this.mappedCompendiums = null;
-        this.packFolderTranslations = null;
-        this.folders = null;
+    constructor({engine = Babele.createFoundryDefault()} = {}) {
+        this.#engine = engine;
         this.#session = null;
         this.#initialized = null;
         this.#dataLoaded = false;
-        this.#translationMatchStrategies = [];
-        this.#identityExtractors = new IdentityExtractorRegistry(IdentityExtractorRegistry.defaultExtractors());
-        this.converterRegistry = new ConverterRegistry();
-        this.registerDefaultIdentityExtractors();
-        this.documentMappings = new DocumentMappings(undefined, {
-            identityExtractors: this.#identityExtractors,
-            converterRegistry: this.converterRegistry,
-        });
-        this.documentMappings.publish();
-        this.#catalog = new CompendiumCatalog({
-            documentMappings: this.documentMappings,
-        });
-        this.#folderTranslations = new FolderTranslations({
-            mappedCompendiums: () => this.mappedCompendiums,
-            packFolderTranslations: () => this.packFolderTranslations,
-            catalog: this.#catalog,
-        });
-        this.#translationRegistry = new TranslationRegistry();
-        this.#translationRegistry.registerConfiguredDirectory();
-        this.#actorTranslation = new ActorTranslation(this);
-        this.registerDefaultConverters();
-    }
-
-    /**
-     * Register the built-in identity extractors exposed by Babele.
-     *
-     * This is invoked during facade construction and can also be reused by
-     * custom bootstrap code when replacing registries in tests or advanced
-     * integrations.
-     *
-     * @returns {void}
-     */
-    registerDefaultIdentityExtractors() {
-        this.registerIdentityExtractors({
-            range: (document) => {
-                const [start, end] = document?.range ?? [];
-                return Number.isInteger(start) && Number.isInteger(end) ? `${start}-${end}` : null;
-            },
-        });
-    }
-
-    /**
-     * Register the default converters shipped with Babele.
-     *
-     * This publishes both the OO first-class converters and the legacy named
-     * registrations kept for backward compatibility with existing mappings.
-     *
-     * @returns {void}
-     */
-    registerDefaultConverters() {
-        this.registerConverters({
-            ...Converters.legacyRegistrations(),
-            "document": new DocumentConverter(),
-            "structured": new StructuredDataConverter(),
-            "lookup": new LookupConverter(),
-            "tokenizedLookup": new TokenizedLookupConverter(),
-            "referencedDocumentField": new ReferencedDocumentFieldConverter(),
+        this.#actorTranslation = new ActorTranslation({
+            sourceDataForUuid: (uuid, options = {}) => this.sourceDataForUuid(uuid, options),
+            translatedPackFor: (documentType, data, options = {}) => this.#translatedPackFor(documentType, data, options),
+            translatedPacks: () => this.#translatedPacks(),
         });
     }
 
@@ -191,7 +142,8 @@ class Babel {
      * @returns {void}
      */
     register(module) {
-        this.#translationRegistry.registerModule(module);
+        this.#assertConfigurable("register");
+        this.#engine.register(module);
     }
 
     /**
@@ -200,8 +152,8 @@ class Babel {
      * Function-based legacy converters are normalized to the internal OO
      * converter contract at registration time.
      *
-     * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * Registrations must happen during the `babele.init` hook, before the
+     * runtime session is initialized.
      *
      * @param {string} name
      * @param {Function|object} converter
@@ -214,22 +166,23 @@ class Babel {
     /**
      * Register multiple named converters at once.
      *
-     * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * Registrations must happen during the `babele.init` hook, before the
+     * runtime session is initialized.
      *
      * @param {Record<string, Function|object>} converters
      * @returns {void}
      */
     registerConverters(converters) {
-        this.converterRegistry.registerAll(converters);
+        this.#assertConfigurable("registerConverters");
+        this.#engine.registerConverters(converters);
     }
 
     /**
      * Register an additional translation match strategy. Custom strategies are
      * evaluated before Babele built-ins.
      *
-     * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * Registrations must happen during the `babele.init` hook, before the
+     * runtime session is initialized.
      *
      * @param {import("./translation/translation-entries.js").TranslationStrategy} strategy
      */
@@ -241,13 +194,14 @@ class Babel {
      * Register additional translation match strategies. Custom strategies are
      * evaluated before Babele built-ins.
      *
-     * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * Registrations must happen during the `babele.init` hook, before the
+     * runtime session is initialized.
      *
      * @param {import("./translation/translation-entries.js").TranslationStrategy[]} strategies
      */
     registerTranslationMatchStrategies(strategies) {
-        this.#translationMatchStrategies.push(...(strategies ?? []).filter(Boolean));
+        this.#assertConfigurable("registerTranslationMatchStrategies");
+        this.#engine.registerTranslationMatchStrategies(strategies);
     }
 
     /**
@@ -256,8 +210,8 @@ class Babel {
      * Identity extractors can be referenced by document mappings when the
      * default `_id`/`name`/`sourceId` identity candidates are not sufficient.
      *
-     * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * Registrations must happen during the `babele.init` hook, before the
+     * runtime session is initialized.
      *
      * @param {string} name
      * @param {Function} extractor
@@ -271,13 +225,14 @@ class Babel {
      * Register multiple named identity extractors.
      *
      * Registrations are intended to happen before `init()`. When performed
-     * later, they only affect the next full state rebuild.
+     * later, they only affect the next full session rebuild.
      *
      * @param {Record<string, Function>} extractors
      * @returns {void}
      */
     registerIdentityExtractors(extractors = {}) {
-        this.#identityExtractors.registerAll(extractors);
+        this.#assertConfigurable("registerIdentityExtractors");
+        this.#engine.registerIdentityExtractors(extractors);
     }
 
     /**
@@ -289,7 +244,7 @@ class Babel {
      * @returns {IdentityExtractorRegistry}
      */
     identityExtractorRegistry() {
-        return this.#identityExtractors;
+        return this.#engine.identityExtractorRegistry();
     }
 
     /**
@@ -298,21 +253,22 @@ class Babel {
      * @returns {import("./translation/translation-entries.js").TranslationStrategy[]}
      */
     translationMatchStrategies() {
-        return [...this.#translationMatchStrategies];
+        return this.#engine.translationMatchStrategies();
     }
 
     /**
      * Register one global document mapping layer.
      *
-     * Registered mappings enrich or override the built-in defaults for the
-     * next full Babele state rebuild.
+     * Registered mappings enrich or override the built-in defaults for every
+     * session built after bootstrap. Runtime sessions reject late mapping
+     * registration to keep configuration and loaded data coherent.
      *
      * @param {object} mapping
      * @returns {void}
      */
     registerMapping(mapping) {
-        this.documentMappings = this.documentMappings.withRegistered(mapping);
-        this.documentMappings.publish();
+        this.#assertConfigurable("registerMapping");
+        this.#engine.registerMapping(mapping);
     }
 
     /**
@@ -327,18 +283,18 @@ class Babel {
     }
 
     /**
-     * Explicitly clear runtime/discovery caches owned by the current Babele
-     * state.
+     * Explicitly clear runtime caches owned by the current Babele session.
      *
-     * This does not rebuild the live translation state. Use `reinitialize()`
-     * or `refreshTranslationSources()` when source configuration changes.
+     * This only resets session-owned translated-index caches. It does not
+     * rebuild source discovery or the live translation session. Use
+     * `reinitialize()` or `refreshTranslationSources()` when source
+     * configuration changes.
      *
      * @param {string} [reason]
      * @returns {void}
      */
     invalidateCaches(reason = "manual") {
-        this.#translationRegistry.invalidate(reason);
-        this.mappedCompendiums?.invalidateCaches?.(reason);
+        this.#session?.invalidateCaches?.(reason);
     }
 
     /**
@@ -348,18 +304,12 @@ class Babel {
      */
     cacheDiagnostics() {
         return {
+            boundary: "babele-facade",
             initialized: this.#initialized !== null,
             dataLoaded: this.#dataLoaded,
-            activeSession: this.#session?.cacheDiagnostics?.() ?? null,
-            translationRegistry: this.#translationRegistry.cacheDiagnostics(),
-            documentMappings: this.documentMappings.cacheDiagnostics(),
-            mappedCompendiums: this.mappedCompendiums?.cacheDiagnostics?.() ?? {
-                boundary: "mapped-compendiums",
-                packCount: 0,
-                translatedPackCount: 0,
-                indexTranslationEntries: 0,
-                packs: [],
-            },
+            language: this.#session?.language ?? this.#language(),
+            translationSources: this.#engine.translationSources.cacheDiagnostics(this.#session?.language ?? this.#language()),
+            session: this.#session?.cacheDiagnostics?.() ?? null,
         };
     }
 
@@ -371,7 +321,7 @@ class Babel {
      * @returns {Promise<object>}
      */
     async sourceDiagnostics(language = undefined) {
-        return this.#translationRegistry.diagnostics(language);
+        return this.#engine.sourceDiagnostics(language);
     }
 
     /**
@@ -383,12 +333,7 @@ class Babel {
      * @returns {Promise<TranslationSession>}
      */
     async sessionFor({language = this.#language()} = {}) {
-        return TranslationSession.load({
-            language,
-            registry: this.#translationRegistry,
-            baseMappings: this.documentMappings,
-            translationStrategies: this.translationMatchStrategies(),
-        });
+        return this.#engine.session({language});
     }
 
     /**
@@ -397,11 +342,11 @@ class Babel {
      * @returns {{global: string[], collections: Record<string, string[]>}}
      */
     sourcePriority() {
-        return this.#translationRegistry.sourcePriority();
+        return this.#engine.sourcePriority();
     }
 
     /**
-     * Persist source priority for one collection and refresh runtime state.
+     * Persist source priority for one collection and refresh the runtime session.
      *
      * The provided array is merge order: listed sources are applied after
      * unlisted sources, and later listed sources override earlier listed
@@ -413,7 +358,7 @@ class Babel {
      * @returns {Promise<boolean>}
      */
     async setSourcePriority(collection, sources = [], {refresh = true} = {}) {
-        await this.#translationRegistry.setSourcePriority(collection, sources);
+        await this.#engine.setSourcePriority(collection, sources);
         if (!refresh) {
             return true;
         }
@@ -431,47 +376,50 @@ class Babel {
      * @returns {void}
      */
     setSystemTranslationsDir(dir) {
-        this.#translationRegistry.registerSystemTranslations(dir);
+        this.#assertConfigurable("setSystemTranslationsDir");
+        this.#engine.setSystemTranslationsDir(dir);
     }
 
     /**
-     * Initialize babele downloading the available translations files and instantiating the associated
-     * translated compendium class.
+     * Initialize or reload the active Babele session.
      *
+     * The wrapper can call this with no options before Foundry is ready: Babele
+     * loads a coherent session but does not mutate runtime UI/cache structures.
+     * Ready/settings flows can request runtime application explicitly.
+     *
+     * @param {Function|object} [callbackOrOptions]
+     * @param {Function} [callbackOrOptions.afterInitialized]
+     * @param {boolean} [callbackOrOptions.reload]
      * @returns {Promise<boolean>}
      */
-    async init() {
-        if (this.#initialized !== null) {
-            return await this.#initialized;
+    async init(callbackOrOptions = {}) {
+        const {
+            reload = false,
+            afterInitialized = null,
+        } = this.#initOptions(callbackOrOptions);
+
+        if (this.#initialized !== null && !reload) {
+            const initialized = await this.#initialized;
+            if (initialized && afterInitialized) {
+                await afterInitialized(this);
+            }
+            return initialized;
         }
 
-        const initializing = (async () => {
-            try {
-                const state = await this.#loadState();
-                await this.#installState(state);
-                this.#initialized = Promise.resolve(true);
-
-                if (!this.#dataLoaded) {
-                    this.#dataLoaded = true;
-                    Hooks.callAll("babele.dataLoaded");
-                }
-
-                return true;
-            } catch (error) {
-                this.#initialized = null;
-                return false;
-            }
-        })();
+        const initializing = this.#replaceSession({
+            afterInitialized,
+            emitReinitialized: reload,
+        });
 
         this.#initialized = initializing;
         return await initializing;
     }
 
     /**
-     * Reload the current Babele state from the registered sources and, by
-     * default, re-apply the translated runtime views exposed to Foundry.
+     * Reload the current Babele session and apply it to Foundry runtime views.
      *
-     * When the reload fails, the previously initialized state remains active.
+     * This remains as an explicit public alias for settings/UI flows whose
+     * intent is a refresh rather than first initialization.
      *
      * @param {object} [options]
      * @param {boolean} [options.shareSources]
@@ -479,24 +427,13 @@ class Babel {
      * @returns {Promise<boolean>}
      */
     async reinitialize({shareSources = false, notify = false} = {}) {
-        const previousInitialization = this.#initialized;
-
-        const reinitializing = (async () => {
-            try {
-                const state = await this.#loadState();
-                await this.#installState(state, {applyRuntime: true, shareSources, notify});
-                this.#initialized = Promise.resolve(true);
-                Hooks.callAll("babele.reinitialized", this);
-                return true;
-            } catch (error) {
-                this.#initialized = previousInitialization;
-                console.error("Babele | reinitialization failed", error);
-                return false;
-            }
-        })();
-
-        this.#initialized = reinitializing;
-        return await reinitializing;
+        return this.init({
+            reload: true,
+            afterInitialized: async (babele) => {
+                await babele.applyRuntimeTranslations({shareSources, notify});
+                await ui.compendium?.render?.();
+            },
+        });
     }
 
     /**
@@ -523,7 +460,7 @@ class Babel {
     }
 
     /**
-     * Re-apply the current loaded Babele state to Foundry runtime collections.
+     * Re-apply the current loaded Babele session to Foundry runtime collections.
      *
      * This updates translated indexes, imported folders, and the published
      * file lists used as fallback by clients that cannot browse the
@@ -532,79 +469,13 @@ class Babel {
      * @param {object} [options]
      * @param {boolean} [options.shareSources]
      * @param {boolean} [options.notify]
-     * @param {boolean} [options.renderCompendium]
      * @returns {Promise<void>}
      */
     async applyRuntimeTranslations(options = {}) {
-        await new BabeleRuntimeApplier({
-            registry: this.#translationRegistry,
-            folderTranslations: this.#folderTranslations,
-            mappedCompendiums: this.mappedCompendiums,
-        }).apply(options);
-    }
-
-    /**
-     * Build the next coherent Babele state from the currently registered
-     * translation sources.
-     *
-     * This method does not mutate the facade runtime state. It only loads the
-     * data required to do so safely in a later step.
-     *
-     * @returns {Promise<TranslationSession>}
-     */
-    async #loadState() {
-        let step = "load translations";
-
-        try {
-            step = "build translation session";
-            return await this.sessionFor({language: this.#language()});
-        } catch (error) {
-            console.error(`Babele | initialization failed during step: ${step}`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Install one previously loaded Babele state into the live runtime and,
-     * optionally, re-apply translated runtime views to Foundry collections.
-     *
-     * @param {TranslationSession} state
-     * @param {object} [options]
-     * @param {boolean} [options.applyRuntime]
-     * @param {boolean} [options.shareSources]
-     * @param {boolean} [options.notify]
-     * @returns {Promise<boolean>}
-     */
-    async #installState(state, {applyRuntime = false, shareSources = false, notify = false} = {}) {
-        let step = "install state";
-
-        try {
-            this.#applyRuntimeState(state);
-
-            if (applyRuntime) {
-                step = "apply runtime translations";
-                await this.applyRuntimeTranslations({shareSources, notify});
-            }
-
-            return true;
-        } catch (error) {
-            console.error(`Babele | initialization failed during step: ${step}`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Publish the effective source revision so non-GM clients can trigger a
-     * synchronized refresh when the GM changes translation directories.
-     *
-     * @returns {Promise<void>}
-     */
-    async #publishSourcesRevision() {
-        if (!game.user.isGM) {
-            return;
-        }
-
-        await game.settings.set("babele", "sourcesRevision", Date.now());
+        await applyRuntimeTranslationsToFoundry({
+            sources: this.#engine.translationSources,
+            session: this.#session,
+        }, options);
     }
 
     /**
@@ -641,8 +512,7 @@ class Babel {
      * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
      */
     translatedPackFor(documentType, data, options = {}) {
-        const registry = options.registry ?? this.mappedCompendiums ?? new foundry.utils.Collection();
-        return CompendiumRuntime.from({globalPacks: registry}).translatedPackFor(documentType, data);
+        return this.#translatedPackFor(documentType, data, options);
     }
 
     /**
@@ -653,7 +523,7 @@ class Babel {
      * @returns {object[]} the translated index
      */
     translateIndex(index, pack) {
-        return this.mappedCompendiums?.translateIndex(index, pack) ?? index;
+        return this.#session?.translateIndex?.(index, pack) ?? index;
     }
 
     /**
@@ -663,7 +533,7 @@ class Babel {
      * @returns {boolean} true if the compendium is translated.
      */
     isTranslated(pack) {
-        return !!this.mappedCompendiums?.translated(pack);
+        return this.#session?.isTranslated?.(pack) ?? false;
     }
 
     /**
@@ -678,7 +548,7 @@ class Babel {
      * @returns {*}
      */
     translate(pack, data, translationsOnly) {
-        return this.mappedCompendiums?.translate(pack, data, translationsOnly) ?? data;
+        return this.#session?.translate?.(pack, data, translationsOnly) ?? data;
     }
 
     /**
@@ -690,7 +560,7 @@ class Babel {
      * @returns {*}
      */
     translateField(field, pack, data) {
-        return this.mappedCompendiums?.translateField(pack, field, data) ?? null;
+        return this.#session?.translateField?.(field, pack, data) ?? null;
     }
 
     /**
@@ -702,7 +572,7 @@ class Babel {
      * @returns {*}
      */
     extract(pack, data, options = {}) {
-        return this.mappedCompendiums?.extract(pack, data, options);
+        return this.#session?.extract?.(pack, data, options);
     }
 
     /**
@@ -714,7 +584,7 @@ class Babel {
      * @returns {*}
      */
     extractField(pack, field, data) {
-        return this.mappedCompendiums?.extractField(pack, field, data);
+        return this.#session?.extractField?.(pack, field, data);
     }
 
     /**
@@ -724,7 +594,7 @@ class Babel {
      * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
      */
     translatedCompendiumFor(pack) {
-        return this.mappedCompendiums?.translated(pack) ?? null;
+        return this.#session?.translatedCompendiumFor?.(pack) ?? null;
     }
 
     /**
@@ -734,7 +604,7 @@ class Babel {
      * @returns {import("./compendium/mapped-compendium.js").MappedCompendium|null}
      */
     mappedCompendiumFor(pack) {
-        return this.mappedCompendiums?.get?.(pack) ?? null;
+        return this.#session?.mappedCompendiumFor?.(pack) ?? null;
     }
 
     /**
@@ -868,7 +738,7 @@ class Babel {
      * @returns {void}
      */
     translatePackFolders(pack) {
-        this.#folderTranslations.translatePackFolders(pack);
+        this.#session?.translatePackFolders?.(pack);
     }
 
     /**
@@ -879,7 +749,123 @@ class Babel {
      * @returns {void}
      */
     translateImportedCompendiumFolder(folder) {
-        this.#folderTranslations.translateImportedCompendiumFolder(folder);
+        this.#session?.translateImportedCompendiumFolder?.(folder);
+    }
+
+    /**
+     * Re-apply imported compendium folder translations to a folder collection.
+     *
+     * @param {Iterable<Folder>|object} [folders]
+     * @returns {void}
+     */
+    translateImportedCompendiumFolders(folders = game.collections.get("Folder")) {
+        this.#session?.translateImportedCompendiumFolders?.(folders);
+    }
+
+    /**
+     * Apply `_packs-folders` translations to top-level system/world folders.
+     *
+     * @returns {void}
+     */
+    translateSystemPackFolders() {
+        this.#session?.translateSystemPackFolders?.();
+    }
+
+    /**
+     * Build the next coherent Babele session from the currently registered
+     * translation sources.
+     *
+     * This method does not mutate the facade runtime session. It only loads the
+     * data required to do so safely in a later step.
+     *
+     * @returns {Promise<TranslationSession>}
+     */
+    async #loadSession() {
+        let step = "load translations";
+
+        try {
+            step = "build translation session";
+            return await this.sessionFor({language: this.#language()});
+        } catch (error) {
+            console.error(`Babele | initialization failed during step: ${step}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Publish the effective source revision so non-GM clients can trigger a
+     * synchronized refresh when the GM changes translation directories.
+     *
+     * @returns {Promise<void>}
+     */
+    async #publishSourcesRevision() {
+        if (!game.user.isGM) {
+            return;
+        }
+
+        await game.settings.set("babele", "sourcesRevision", Date.now());
+    }
+
+    async #replaceSession({
+        afterInitialized = null,
+        emitReinitialized = false,
+    } = {}) {
+        const previousInitialization = this.#initialized;
+        const previousSession = this.#session;
+
+        try {
+            const session = await this.#loadSession();
+            this.#installSession(session, {disposePrevious: false});
+
+            if (!this.#dataLoaded) {
+                this.#dataLoaded = true;
+                Hooks.callAll("babele.dataLoaded");
+            }
+
+            try {
+                if (afterInitialized) {
+                    await afterInitialized(this);
+                }
+                previousSession?.dispose?.("session-replaced");
+            } catch (error) {
+                const failedSession = this.#session;
+                if (previousSession) {
+                    this.#installSession(previousSession, {disposePrevious: false});
+                }
+                failedSession?.dispose?.("runtime-application-failed");
+                throw error;
+            }
+
+            this.#initialized = Promise.resolve(true);
+            if (emitReinitialized && previousSession) {
+                Hooks.callAll("babele.reinitialized", this);
+            }
+            return true;
+        } catch (error) {
+            this.#initialized = previousInitialization;
+            if (!previousSession) {
+                this.#session = null;
+                this.#initialized = null;
+            }
+            console.error("Babele | session initialization failed", error);
+            return false;
+        }
+    }
+
+    #initOptions(callbackOrOptions = {}) {
+        if (typeof callbackOrOptions === "function") {
+            return {
+                reload: false,
+                afterInitialized: callbackOrOptions,
+            };
+        }
+
+        return {
+            reload: callbackOrOptions?.reload === true,
+            afterInitialized: typeof callbackOrOptions?.afterInitialized === "function"
+                ? callbackOrOptions.afterInitialized
+                : null,
+        };
     }
 
     #sourceData(data) {
@@ -926,38 +912,43 @@ class Babel {
         return game.settings.get("core", "language");
     }
 
-    /**
-     * Re-apply imported compendium folder translations to a folder collection.
-     *
-     * @param {Iterable<Folder>|object} [folders]
-     * @returns {void}
-     */
-    translateImportedCompendiumFolders(folders = game.collections.get("Folder")) {
-        this.#folderTranslations.translateImportedCompendiumFolders(folders);
+    #assertConfigurable(operation) {
+        if (!this.#session) {
+            return;
+        }
+
+        throw new Error(
+            `Babele | ${operation} must be called during the babele.init hook, before the runtime session is initialized. `
+            + `Runtime source changes must use setSourcePriority(), refreshTranslationSources(), or reinitialize(); `
+            + `new modules, converters, identity extractors, match strategies, and mappings are bootstrap-only.`,
+        );
     }
 
-    /**
-     * Apply `_packs-folders` translations to top-level system/world folders.
-     *
-     * @returns {void}
-     */
-    translateSystemPackFolders() {
-        this.#folderTranslations.translateSystemPackFolders();
+    #translatedPackFor(documentType, data, options = {}) {
+        const registry = options.registry ?? this.#session?.mappedCompendiums ?? new foundry.utils.Collection();
+        return CompendiumRuntime.from({globalPacks: registry}).translatedPackFor(documentType, data);
     }
 
-    #applyRuntimeState(session) {
+    #translatedPacks() {
+        const registry = this.#session?.mappedCompendiums;
+        return registry?.values?.()
+            ? [...registry.values()]
+            : Array.isArray(registry) ? [...registry] : Object.values(registry ?? {});
+    }
+
+    #installSession(session, {disposePrevious = true} = {}) {
+        const previousSession = this.#session;
         this.#session = session;
-        this.translations = session.translations;
-        this.mappedCompendiums = session.mappedCompendiums ?? null;
-        this.packFolderTranslations = session.packFolderTranslations ?? null;
-        this.folders = game.data.folders;
-        this.documentMappings = session.documentMappings ?? this.documentMappings;
-        this.documentMappings.publish();
-        this.#folderTranslations = session.folderTranslations;
+
+        if (disposePrevious && previousSession !== session) {
+            previousSession?.dispose?.("session-replaced");
+        }
     }
 
 }
 
-export default Babel
+export {Babele, BabeleFacade};
 
-window.Babele = Babel;
+export default BabeleFacade
+
+window.Babele = BabeleFacade;

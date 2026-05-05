@@ -11,7 +11,7 @@ const originalDebug = console.debug;
 console.warn = (...args) => warnings.push(args);
 console.debug = (...args) => debugCalls.push(args);
 
-const {TranslationRegistry} = await import("../module/script/translation/translation-registry.js");
+const {TranslationSources} = await import("../module/script/translation/translation-sources.js");
 
 function createRegistry(overrides = {}) {
   game.settings.get = (_namespace, key) => {
@@ -42,7 +42,9 @@ function createRegistry(overrides = {}) {
   game.system.id = overrides.systemId ?? "test-system";
   foundry.applications.apps.FilePicker.browse = overrides.browse ?? (async () => ({files: []}));
 
-  const registry = new TranslationRegistry();
+  const registry = new TranslationSources({
+    jsonLoader: overrides.jsonLoader ?? null,
+  });
 
   for (const module of overrides.modules ?? []) {
     registry.registerModule(module);
@@ -51,7 +53,7 @@ function createRegistry(overrides = {}) {
   return registry;
 }
 
-test("TranslationRegistry deduplicates translation files and groups pack sources", async () => {
+test("TranslationSources deduplicates translation files and groups pack sources", async () => {
   const registry = createRegistry({
     modules: [
       {module: "module-one", dir: "translations", lang: "it"},
@@ -80,8 +82,8 @@ test("TranslationRegistry deduplicates translation files and groups pack sources
     },
   });
 
-  const files = (await registry.translationSources()).map((source) => source.file);
-  const itemSources = await registry.sourcesFor("test.items");
+  const files = (await registry.discovery.translationSources()).map((source) => source.file);
+  const itemSources = await registry.discovery.sourcesFor("test.items");
   const diagnostics = await registry.diagnostics();
 
   assert.deepEqual(files, [
@@ -100,7 +102,7 @@ test("TranslationRegistry deduplicates translation files and groups pack sources
   );
 });
 
-test("TranslationRegistry supports multiple directories from one module registration", async () => {
+test("TranslationSources supports multiple directories from one module registration", async () => {
   const registry = createRegistry({
     modules: [
       {module: "translation-suite", dirs: ["pf2e", "sf2e"], lang: "it"},
@@ -126,7 +128,7 @@ test("TranslationRegistry supports multiple directories from one module registra
     },
   });
 
-  const sources = await registry.translationSources();
+  const sources = await registry.discovery.translationSources();
 
   assert.deepEqual(sources.map((source) => source.file), [
     "modules/translation-suite/pf2e/pf2e.feats.json",
@@ -138,7 +140,7 @@ test("TranslationRegistry supports multiple directories from one module registra
   ]);
 });
 
-test("TranslationRegistry merges repeated module registrations into one multi-directory source", async () => {
+test("TranslationSources merges repeated module registrations into one multi-directory source", async () => {
   const registry = createRegistry({
     modules: [
       {module: "translation-suite", dir: "pf2e", lang: "it"},
@@ -165,7 +167,7 @@ test("TranslationRegistry merges repeated module registrations into one multi-di
     },
   });
 
-  const sources = await registry.translationSources();
+  const sources = await registry.discovery.translationSources();
 
   assert.deepEqual(sources.map((source) => source.file), [
     "modules/translation-suite/pf2e/pf2e.feats.json",
@@ -177,7 +179,7 @@ test("TranslationRegistry merges repeated module registrations into one multi-di
   ]);
 });
 
-test("TranslationRegistry prefers canonical mappings.json within the same directory", async () => {
+test("TranslationSources prefers canonical mappings.json within the same directory", async () => {
   warnings.length = 0;
 
   const registry = createRegistry({
@@ -199,7 +201,7 @@ test("TranslationRegistry prefers canonical mappings.json within the same direct
     },
   });
 
-  const mappingFiles = (await registry.mappingSources()).map((source) => source.file);
+  const mappingFiles = (await registry.discovery.mappingSources()).map((source) => source.file);
 
   assert.deepEqual(mappingFiles, [
     "modules/module-one/translations/mappings.json",
@@ -208,7 +210,7 @@ test("TranslationRegistry prefers canonical mappings.json within the same direct
   assert.match(String(warnings[0][0]), /both 'mappings\.json' and deprecated 'mapping\.json'/);
 });
 
-test("TranslationRegistry does not treat mapping files as compendium translation files", async () => {
+test("TranslationSources does not treat mapping files as compendium translation files", async () => {
   const registry = createRegistry({
     modules: [
       {module: "module-one", dir: "translations", lang: "it"},
@@ -228,14 +230,14 @@ test("TranslationRegistry does not treat mapping files as compendium translation
     },
   });
 
-  const translationFiles = (await registry.translationSources()).map((source) => source.file);
+  const translationFiles = (await registry.discovery.translationSources()).map((source) => source.file);
 
   assert.deepEqual(translationFiles, [
     "modules/module-one/translations/test.items.json",
   ]);
 });
 
-test("TranslationRegistry falls back to stored file lists when indexing is unavailable", async () => {
+test("TranslationSources falls back to stored file lists when indexing is unavailable", async () => {
   const registry = createRegistry({
     canIndexFiles: false,
     storedTranslationFiles: [
@@ -247,8 +249,8 @@ test("TranslationRegistry falls back to stored file lists when indexing is unava
     ],
   });
 
-  const translations = (await registry.translationSources()).map((source) => source.file);
-  const mappings = (await registry.mappingSources()).map((source) => source.file);
+  const translations = (await registry.discovery.translationSources()).map((source) => source.file);
+  const mappings = (await registry.discovery.mappingSources()).map((source) => source.file);
   const diagnostics = await registry.diagnostics();
 
   assert.deepEqual(translations, ["worlds/my-world/it/test.items.json"]);
@@ -257,7 +259,7 @@ test("TranslationRegistry falls back to stored file lists when indexing is unava
   assert.equal(diagnostics.mapping.fromSettings, true);
 });
 
-test("TranslationRegistry exposes and invalidates source discovery caches", async () => {
+test("TranslationSources clears source discovery caches when bootstrap sources change", async () => {
   debugCalls.length = 0;
   globalThis.CONFIG = {debug: {babele: true}};
   let browseCalls = 0;
@@ -282,22 +284,63 @@ test("TranslationRegistry exposes and invalidates source discovery caches", asyn
 
   assert.equal(registry.cacheDiagnostics().translationSourcesCached, false);
 
-  await registry.translationSources();
-  await registry.translationSources();
-  await registry.mappingSources();
+  await registry.discovery.translationSources();
+  await registry.discovery.translationSources();
+  await registry.discovery.mappingSources();
   assert.equal(browseCalls, 2);
   assert.equal(registry.cacheDiagnostics().translationSourcesCached, true);
   assert.equal(registry.cacheDiagnostics().mappingSourcesCached, true);
   assert.equal(debugCalls.some((call) => String(call[0]).includes("using cached translation source discovery")), true);
 
-  registry.invalidate("test");
+  registry.registerModule({module: "module-two", dir: "translations", lang: "it"});
   assert.equal(registry.cacheDiagnostics().translationSourcesCached, false);
   assert.equal(registry.cacheDiagnostics().mappingSourcesCached, false);
-  assert.equal(debugCalls.some((call) => String(call[0]).includes("invalidated translation registry discovery cache")), true);
+  assert.equal(debugCalls.some((call) => String(call[0]).includes("cleared translation sources discovery cache")), true);
   delete globalThis.CONFIG;
 });
 
-test("TranslationRegistry detects overlapping translation sources and applies configured collection priority", async () => {
+test("TranslationSources keeps discovery cache snapshots per language", async () => {
+  let browseCalls = 0;
+  const sources = createRegistry({
+    modules: [
+      {module: "module-it", dir: "translations", lang: "it"},
+      {module: "module-fr", dir: "translations", lang: "fr"},
+    ],
+    browse: async (_source, dir) => {
+      browseCalls += 1;
+      if (dir === "modules/module-it/translations") {
+        return {
+          files: ["modules/module-it/translations/test.items.json"],
+        };
+      }
+      if (dir === "modules/module-fr/translations") {
+        return {
+          files: ["modules/module-fr/translations/test.items.json"],
+        };
+      }
+
+      return {files: []};
+    },
+  });
+
+  const itSources = await sources.discovery.translationSources("it");
+  const frSources = await sources.discovery.translationSources("fr");
+  await sources.discovery.translationSources("it");
+  await sources.discovery.translationSources("fr");
+
+  assert.equal(browseCalls, 2);
+  assert.deepEqual(itSources.map((source) => source.file), [
+    "modules/module-it/translations/test.items.json",
+  ]);
+  assert.deepEqual(frSources.map((source) => source.file), [
+    "modules/module-fr/translations/test.items.json",
+  ]);
+  assert.equal(sources.cacheDiagnostics("it").translationSourcesCached, true);
+  assert.equal(sources.cacheDiagnostics("fr").translationSourcesCached, true);
+  assert.deepEqual(sources.cacheDiagnostics("it").cachedLanguages.sort(), ["fr", "it"]);
+});
+
+test("TranslationSources detects overlapping translation sources and applies configured collection priority", async () => {
   const loaded = [];
   const registry = createRegistry({
     sourcePriority: {
@@ -327,19 +370,19 @@ test("TranslationRegistry detects overlapping translation sources and applies co
 
       return {files: []};
     },
-  });
-  registry._jsonLoader = async (file) => {
-    loaded.push(file);
-    return {
-      entries: {
-        item: {
-          name: file.includes("module-one") ? "Module One" : "Module Two",
+    jsonLoader: async (file) => {
+      loaded.push(file);
+      return {
+        entries: {
+          item: {
+            name: file.includes("module-one") ? "Module One" : "Module Two",
+          },
         },
-      },
-    };
-  };
+      };
+    },
+  });
 
-  const sources = await registry.sourcesFor("test.items");
+  const sources = await registry.discovery.sourcesFor("test.items");
   const diagnostics = await registry.diagnostics();
   const translations = await registry.loadTranslations();
 
@@ -361,7 +404,7 @@ test("TranslationRegistry detects overlapping translation sources and applies co
   });
 });
 
-test("TranslationRegistry persists source priority settings", async () => {
+test("TranslationSources persists source priority settings", async () => {
   let storedPriority = {};
   const registry = createRegistry({
     sourcePriority: storedPriority,

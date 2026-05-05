@@ -24,7 +24,7 @@ export function mockMappedCompendiums(entries = []) {
     },
 
     extract(pack, data, options = {}) {
-      return this.get(pack)?.extract(data, options);
+      return this.get(pack)?.extract?.(data, options) ?? data;
     },
 
     extractField(pack, field, data) {
@@ -45,7 +45,41 @@ export function mockMappedCompendiums(entries = []) {
 
 export function assignMappedCompendiums(babele, entries = []) {
   const mappedCompendiums = mockMappedCompendiums(entries);
-  babele.mappedCompendiums = mappedCompendiums;
+  if (!Object.hasOwn(babele, "translateIndex")) {
+    babele.translateIndex = (index, pack) => mappedCompendiums.translateIndex(index, pack);
+  }
+  if (!Object.hasOwn(babele, "isTranslated")) {
+    babele.isTranslated = (pack) => !!mappedCompendiums.translated(pack);
+  }
+  if (!Object.hasOwn(babele, "translate")) {
+    babele.translate = (pack, data, translationsOnly) => mappedCompendiums.translate(pack, data, translationsOnly);
+  }
+  if (!Object.hasOwn(babele, "translateField")) {
+    babele.translateField = (field, pack, data) => mappedCompendiums.translateField(pack, field, data);
+  }
+  if (!Object.hasOwn(babele, "extract")) {
+    babele.extract = (pack, data, options = {}) => mappedCompendiums.extract(pack, data, options);
+  }
+  if (!Object.hasOwn(babele, "extractField")) {
+    babele.extractField = (pack, field, data) => mappedCompendiums.extractField(pack, field, data);
+  }
+  if (!Object.hasOwn(babele, "translatedCompendiumFor")) {
+    babele.translatedCompendiumFor = (pack) => mappedCompendiums.translated(pack);
+  }
+  if (!Object.hasOwn(babele, "mappedCompendiumFor")) {
+    babele.mappedCompendiumFor = (pack) => mappedCompendiums.get(pack);
+  }
+  if (!Object.hasOwn(babele, "translatedPackFor")) {
+    babele.translatedPackFor = (documentType, data) => {
+    const packs = [...mappedCompendiums.values()];
+    return packs.findLast((pack) => {
+      if (pack?.translated !== true) return false;
+      if (documentType && pack.metadata?.type && pack.metadata.type !== documentType) return false;
+      if (pack.types && !pack.types.includes(data?.type)) return false;
+      return pack.hasTranslation?.(data, documentType) !== false;
+    }) ?? null;
+    };
+  }
   return mappedCompendiums;
 }
 
@@ -63,6 +97,13 @@ export function mockPackFolderTranslations(entries = []) {
 
     matching(predicate) {
       return [...packs.values()].filter(predicate);
+    },
+
+    allTranslations() {
+      return [...packs.values()].reduce(
+        (translations, pack) => Object.assign(translations, pack.entries ?? {}),
+        {},
+      );
     },
   };
 }

@@ -13,7 +13,6 @@ export class FolderTranslations {
     constructor({
         mappedCompendiums = null,
         packFolderTranslations = null,
-        catalog,
     } = {}) {
         this._mappedCompendiums = typeof mappedCompendiums === "function"
             ? mappedCompendiums
@@ -21,7 +20,6 @@ export class FolderTranslations {
         this._packFolderTranslations = typeof packFolderTranslations === "function"
             ? packFolderTranslations
             : () => packFolderTranslations;
-        this.catalog = catalog;
     }
 
     translatePackFolders(pack) {
@@ -72,10 +70,7 @@ export class FolderTranslations {
             return;
         }
 
-        const translations = {};
-
-        (this.#packFolderTranslations()?.values?.() ?? [])
-            .forEach((pack) => Object.assign(translations, pack.translations()));
+        const translations = this.#packFolderTranslations()?.allTranslations?.() ?? {};
 
         game.collections.get("Folder").forEach((folder) => {
             const originalName = folder.originalName ?? folder.name;

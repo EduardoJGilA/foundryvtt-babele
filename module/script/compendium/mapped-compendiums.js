@@ -10,20 +10,17 @@ export class MappedCompendiums {
 
     /**
      * @param {object} options
-     * @param {import("./compendium-catalog.js").CompendiumCatalog} options.catalog
      * @param {import("../mapping/document-mappings.js").DocumentMappings} options.documentMappings
      * @param {import("../translation/compendium-translations.js").CompendiumTranslations|null} [options.translations]
      * @param {import("../translation/translation-entries.js").TranslationStrategy[]} [options.translationStrategies]
      * @param {foundry.utils.Collection} [options.packs]
      */
     constructor({
-        catalog,
         documentMappings,
         translations = null,
         translationStrategies = [],
         packs = null,
     }) {
-        this.catalog = catalog;
         this.documentMappings = documentMappings;
         this.translations = translations;
         this.translationStrategies = [...translationStrategies];
@@ -149,37 +146,73 @@ export class MappedCompendiums {
      */
     cacheDiagnostics() {
         const packs = [...this.values()].map((compendium) => compendium.cacheDiagnostics?.() ?? null).filter(Boolean);
+        const translatedPackCount = packs.filter((pack) => pack.translated).length;
+        const cachedIndexEntries = packs.reduce((total, pack) => total + (pack.cachedIndexEntries ?? pack.indexTranslationEntries ?? 0), 0);
 
         return {
             boundary: "mapped-compendiums",
             packCount: packs.length,
-            translatedPackCount: packs.filter((pack) => pack.translated).length,
-            indexTranslationEntries: packs.reduce((total, pack) => total + (pack.indexTranslationEntries ?? 0), 0),
+            translatedPackCount,
+            untranslatedPackCount: packs.length - translatedPackCount,
+            cachedIndexEntries,
+            indexTranslationEntries: cachedIndexEntries,
+            byDocumentType: this.#byDocumentType(packs),
             packs,
         };
+    }
+
+    #byDocumentType(packs) {
+        return packs.reduce((summary, pack) => {
+            const documentType = pack.documentType ?? "unknown";
+            const entry = summary[documentType] ?? {
+                packCount: 0,
+                translatedPackCount: 0,
+                untranslatedPackCount: 0,
+                cachedIndexEntries: 0,
+            };
+
+            entry.packCount += 1;
+            entry.translatedPackCount += pack.translated ? 1 : 0;
+            entry.untranslatedPackCount += pack.translated ? 0 : 1;
+            entry.cachedIndexEntries += pack.cachedIndexEntries ?? pack.indexTranslationEntries ?? 0;
+            summary[documentType] = entry;
+            return summary;
+        }, {});
     }
 
     #materialize() {
         this.packs = new foundry.utils.Collection();
 
-        for (const metadata of this.catalog.supportedPacks()) {
-            this.#register(metadata, this.translations?.for?.(this.catalog.collectionOf(metadata)) ?? null);
+        for (const metadata of this.#supportedPacks()) {
+            this.#register(metadata, this.translations?.for?.(this.#collectionOf(metadata)) ?? null);
         }
-
     }
 
     #register(metadata, translation = null) {
-        if (!this.catalog.supported(metadata)) {
+        if (!this.#supported(metadata)) {
             return null;
         }
 
-        const collection = this.catalog.collectionOf(metadata);
+        const collection = this.#collectionOf(metadata);
         const compendium = new MappedCompendium(metadata, translation, {
             translationStrategies: this.translationStrategies,
             documentMappings: this.documentMappings,
         });
         this.packs.set(collection, compendium);
         return compendium;
+    }
+
+    #supportedPacks(packs = game.data.packs ?? []) {
+        return [...packs].filter((metadata) => this.#supported(metadata));
+    }
+
+    #supported(metadata) {
+        return this.documentMappings?.supports?.(metadata?.type) ?? false;
+    }
+
+    #collectionOf(metadata) {
+        const collectionPrefix = metadata.packageType === "world" ? "world" : metadata.packageName;
+        return `${collectionPrefix}.${metadata.name}`;
     }
 
 }

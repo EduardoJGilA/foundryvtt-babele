@@ -357,25 +357,24 @@ test("DocumentMapping.extract omits tokenizedLookup-backed fields because they d
 });
 
 test("DocumentMappings resolves legacy subtype mappings through variants", () => {
-  const mappings = new DocumentMappings({
+  const layered = new DocumentMappings({
     Item: {
       description: "system.description.value",
     },
   }, {
+    registeredMappings: [{
+      Item: {
+        source: "system.source",
+      },
+    }],
+    loadedMappings: [{
+      "Item.weapon": {
+        damage: "system.damage.value",
+      },
+    }],
     identityExtractors: identityExtractors(),
     converterRegistry: converterRegistry(),
   });
-
-  const registered = mappings.withRegistered({
-    Item: {
-      source: "system.source",
-    },
-  });
-  const layered = registered.withLoaded([{
-    "Item.weapon": {
-      damage: "system.damage.value",
-    },
-  }]);
 
   const weaponMapping = layered.mappingFor("Item", {
     rarity: "system.rarity",
@@ -415,25 +414,24 @@ test("DocumentMappings resolves legacy subtype mappings through variants", () =>
 });
 
 test("DocumentMappings materializes document mappings from effective loaded layers", () => {
-  const mappings = new DocumentMappings({
+  const layered = new DocumentMappings({
     Item: {
       description: "system.description.value",
     },
   }, {
+    registeredMappings: [{
+      Item: {
+        source: "system.source",
+      },
+    }],
+    loadedMappings: [{
+      "Item.weapon": {
+        damage: "system.damage.value",
+      },
+    }],
     identityExtractors: identityExtractors(),
     converterRegistry: converterRegistry(),
   });
-
-  const registered = mappings.withRegistered({
-    Item: {
-      source: "system.source",
-    },
-  });
-  const layered = registered.withLoaded([{
-    "Item.weapon": {
-      damage: "system.damage.value",
-    },
-  }]);
 
   const mapping = layered.mappingFor("Item", {
     rarity: "system.rarity",
@@ -469,7 +467,7 @@ test("DocumentMappings materializes document mappings from effective loaded laye
 });
 
 test("DocumentMappings exposes inspectable effective mapping precedence", () => {
-  const mappings = new DocumentMappings({
+  const layered = new DocumentMappings({
     Item: {
       description: "system.description.value",
     },
@@ -477,24 +475,22 @@ test("DocumentMappings exposes inspectable effective mapping precedence", () => 
       damage: "system.damage.value",
     },
   }, {
-    identityExtractors: identityExtractors(),
-    converterRegistry: converterRegistry(),
-  });
-
-  const layered = mappings
-    .withRegistered({
+    registeredMappings: [{
       Item: {
         source: "system.source",
       },
-    })
-    .withLoaded([{
+    }],
+    loadedMappings: [{
       Item: {
         description: "system.loadedDescription.value",
       },
       "Item.weapon": {
         damage: "system.loadedDamage.value",
       },
-    }]);
+    }],
+    identityExtractors: identityExtractors(),
+    converterRegistry: converterRegistry(),
+  });
 
   const report = layered.inspect("Item", {
     data: {type: "weapon"},

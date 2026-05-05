@@ -10,24 +10,9 @@ Babele accomplishes this task by obtaining translation from configuration files 
 Make sure to read the complete documentation available at the following [link](https://gitlab.com/riccisi/foundryvtt-babele/-/wikis/Docs)
 
 ## Compatibility
+Babele `2.8.x` targets Foundry VTT `14`.
 Babele `2.7.x` targets Foundry VTT `13`.
 For Foundry `12`, stay on the last compatible `2.6.x` release line.
-
-## Release Automation
-Tagged GitLab pipelines can publish a release end-to-end.
-
-Required CI/CD variables:
-
-- `FOUNDRY_RELEASE_TOKEN`: Foundry package release token for the `babele` package
-- `GITLAB_API_TOKEN`: optional GitLab API token, only needed if `CI_JOB_TOKEN` is not sufficient for issues, releases, or milestone updates
-
-Workflow:
-
-1. Create and push a version tag such as `2.7.8`.
-2. CI prepares a release-specific `module.json` and builds `babele.zip`.
-3. CI generates release notes from the matching milestone, unless `release-notes/<tag>.md` exists.
-4. CI publishes the release manifest from the tagged build artifact, not from the repository blob at the tag.
-5. CI creates or updates the GitLab Release, validates the Foundry payload with a dry-run, publishes the Foundry release, and then closes the matching milestone.
 
 ## Example
 As a reference, see the Italian translation of the dnd5e compendium present in the IT translation module:

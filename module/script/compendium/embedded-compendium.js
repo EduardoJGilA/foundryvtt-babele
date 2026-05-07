@@ -60,7 +60,17 @@ export class EmbeddedCompendium {
         }
 
         this.#delegate = new MappedCompendium(
-            scopedPack?.metadata ? {...scopedPack.metadata} : {type: documentType},
+            scopedPack?.metadata
+                ? {
+                    ...scopedPack.metadata,
+                    ownerPackageName: scopedPack.metadata.ownerPackageName ?? currentCompendium?.metadata?.packageName ?? null,
+                    ownerPackageType: scopedPack.metadata.ownerPackageType ?? currentCompendium?.metadata?.packageType ?? null,
+                }
+                : {
+                    type: documentType,
+                    ownerPackageName: currentCompendium?.metadata?.packageName ?? null,
+                    ownerPackageType: currentCompendium?.metadata?.packageType ?? null,
+                },
             Object.keys(payload).length > 0 ? payload : null,
             {
                 translationStrategies: effectiveStrategies,

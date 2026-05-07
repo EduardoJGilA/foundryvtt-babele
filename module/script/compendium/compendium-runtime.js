@@ -117,9 +117,9 @@ export class CompendiumRuntime {
      * @param {object} data
      * @returns {*|null}
      */
-    translatedPackFor(documentType, data) {
-        return this.#translatedPackForRegistry(this.localPacks, documentType, data)
-            ?? this.#translatedPackForRegistry(this.globalPacks, documentType, data);
+    translatedPackFor(documentType, data, {predicate = null} = {}) {
+        return this.#translatedPackForRegistry(this.localPacks, documentType, data, predicate)
+            ?? this.#translatedPackForRegistry(this.globalPacks, documentType, data, predicate);
     }
 
     #childOptions(optionsOrLocalPacks) {
@@ -137,8 +137,12 @@ export class CompendiumRuntime {
         return {localPacks: optionsOrLocalPacks};
     }
 
-    #translatedPackForRegistry(registry, documentType, data) {
-        return this.#packFromRegistry(registry, (pack) => pack.translated && pack.hasTranslation(data, documentType));
+    #translatedPackForRegistry(registry, documentType, data, predicate = null) {
+        return this.#packFromRegistry(registry, (pack) =>
+            pack.translated
+            && pack.hasTranslation(data, documentType)
+            && (!predicate || predicate(pack)),
+        );
     }
 
     #packFromRegistry(registry, predicate) {

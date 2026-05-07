@@ -98,6 +98,38 @@ test("CompendiumRuntime translated pack lookups prefer the innermost child scope
   assert.equal(child.translatedPackFor("Item", data), childItemPack);
 });
 
+test("CompendiumRuntime translated pack lookups accept an optional pack predicate", () => {
+  const data = {_id: "shared-id", name: "Shared"};
+  const ignoredPack = {
+    translated: true,
+    metadata: {id: "ignored.items", type: "Item", packageName: "ignored"},
+    hasTranslation(document, documentType) {
+      return documentType === "Item" && document._id === "shared-id";
+    },
+  };
+  const matchingPack = {
+    translated: true,
+    metadata: {id: "matching.items", type: "Item", packageName: "matching"},
+    hasTranslation(document, documentType) {
+      return documentType === "Item" && document._id === "shared-id";
+    },
+  };
+  const runtime = new CompendiumRuntime({
+    globalPacks: new TestCollection([
+      ["ignored.items", ignoredPack],
+      ["matching.items", matchingPack],
+    ]),
+  });
+
+  const pack = runtime.translatedPackFor("Item", data, {
+    predicate(candidate) {
+      return candidate.metadata?.packageName === "matching";
+    },
+  });
+
+  assert.equal(pack, matchingPack);
+});
+
 test("CompendiumRuntime.from does not read implicit global state from game.babele", () => {
   game.babele = {
     mappedCompendiums: new TestCollection([["test.items", {id: "legacy-global-pack"}]]),

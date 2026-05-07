@@ -1952,6 +1952,131 @@ test("document converter prefers the exact compendium source and layers actor it
   }
 });
 
+test("document converter can prefer owner-package fallback over the exact source pack", () => {
+  const actorContext = runtimeCompendium("Actor", {
+    id: "test.actors",
+    name: "actors",
+    packageName: "test",
+    packageType: "module",
+  });
+  const item = {
+    _id: "actor-item-2",
+    name: "Spellcasting",
+    _stats: {
+      compendiumSource: "Compendium.ext.classfeatures.Item.source-spellcasting",
+    },
+    system: {
+      description: {
+        value: "Original embedded description",
+      },
+    },
+  };
+
+  const exactPack = mappedCompendium({
+    id: "ext.classfeatures",
+    name: "classfeatures",
+    type: "Item",
+    packageName: "ext",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "Wizard Spellcasting": {
+        name: "Sorts (Wizard)",
+        description: "Wizard description",
+      },
+    },
+  });
+  exactPack.index = new foundry.utils.Collection([[
+    "source-spellcasting",
+    {
+      _id: "source-spellcasting",
+      name: "Wizard Spellcasting",
+    },
+  ]]);
+
+  const ownerPack = mappedCompendium({
+    id: "test.classfeatures",
+    name: "classfeatures",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "Spellcasting": {
+        name: "Sorts (Owner)",
+        description: "Owner package description",
+      },
+    },
+  });
+
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = () => null;
+
+  try {
+    const runtime = new CompendiumRuntime({
+      globalPacks: new TestCollection([
+        ["ext.classfeatures", exactPack],
+        ["test.classfeatures", ownerPack],
+      ]),
+      currentCompendium: actorContext,
+    });
+
+    const defaultTranslated = new DocumentConverter().translate({
+      value: [item],
+      translation: undefined,
+      source: {name: "Actor"},
+      field: "items",
+      path: "items",
+      params: {
+        path: "items",
+        converter: "document",
+        documentType: "Item",
+        cardinality: "many",
+        mapping: {
+          description: "system.description.value",
+        },
+      },
+      allTranslations: {},
+      contextCompendium: actorContext,
+      runtime,
+    });
+
+    const ownerPreferred = new DocumentConverter().translate({
+      value: [item],
+      translation: undefined,
+      source: {name: "Actor"},
+      field: "items",
+      path: "items",
+      params: {
+        path: "items",
+        converter: "document",
+        documentType: "Item",
+        cardinality: "many",
+        fallbackPolicy: "owner-package-first",
+        mapping: {
+          description: "system.description.value",
+        },
+      },
+      allTranslations: {},
+      contextCompendium: actorContext,
+      runtime,
+    });
+
+    assert.equal(defaultTranslated[0].name, "Sorts (Wizard)");
+    assert.equal(defaultTranslated[0].system.description.value, "Wizard description");
+    assert.equal(ownerPreferred[0].name, "Sorts (Owner)");
+    assert.equal(ownerPreferred[0].system.description.value, "Owner package description");
+  } finally {
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
 test("document converter restores the source name from the exact pack index when the source document is not cached", () => {
   const actorContext = runtimeCompendium("Actor", {name: "Actor"});
   const item = {

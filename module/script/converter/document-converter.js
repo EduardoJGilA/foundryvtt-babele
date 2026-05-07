@@ -77,7 +77,7 @@ export class DocumentConverter {
         const prepared = this.prepare(configuredContext);
         const scope = DocumentTranslationScope.from(configuredContext.runtime);
         const values = this._documentValues(configuredContext.value, descriptor.cardinality);
-        const translated = this._fromPack(values, prepared.contextPack, scope.runtime());
+        const translated = this._fromPack(values, prepared.contextPack, scope.runtime(), descriptor.fallbackPolicy);
         const sorted = DocumentCollectionSort
             .from(descriptor.sort, this._translationSortPolicy(configuredContext))
             .apply(translated);
@@ -143,13 +143,14 @@ export class DocumentConverter {
      * mapping object shape used by root compendium definitions.
      *
      * @param {object} context
-     * @returns {{documentType: string, cardinality: string, expose: boolean, mapping: object|null, sort: object|string|boolean|null}}
+     * @returns {{documentType: string, cardinality: string, expose: boolean, fallbackPolicy: string|string[], mapping: object|null, sort: object|string|boolean|null}}
      */
     _descriptor(context) {
         return {
             documentType: context.params?.documentType,
             cardinality: context.params?.cardinality ?? "many",
             expose: context.params?.expose === true,
+            fallbackPolicy: context.params?.fallbackPolicy ?? "source-first",
             sort: context.params?.sort ?? null,
             mapping: context.params?.mapping
                 ?? context.contextCompendium?.customMapping?.[context.params?.path]
@@ -272,9 +273,10 @@ export class DocumentConverter {
      * @param {Array<object>} entities
      * @param {*} contextPack
      * @param {import("../compendium/compendium-runtime.js").CompendiumRuntime|object} [runtime]
+     * @param {string|string[]} [fallbackPolicy]
      * @returns {Array<object>}
      */
-    _fromPack(entities, contextPack, runtime = {}) {
+    _fromPack(entities, contextPack, runtime = {}, fallbackPolicy = "source-first") {
         const activeRuntime = this._runtimeWithContextCompendium(contextPack, runtime);
         const currentCompendium = activeRuntime.currentCompendium();
 
@@ -282,7 +284,7 @@ export class DocumentConverter {
             const currentMapping = currentCompendium?.mapping;
             const documentType = currentCompendium?.metadata?.type ?? null;
             const hasCurrentTranslation = currentCompendium?.hasTranslation(data, documentType) === true;
-            const fallback = this._fallbackTranslationSource(data, activeRuntime, currentCompendium, documentType);
+            const fallback = this._fallbackTranslationSource(data, activeRuntime, currentCompendium, documentType, fallbackPolicy);
             const fallbackPack = fallback?.pack ?? null;
             const fallbackData = fallback?.data ?? data;
             const hasFallbackTranslation = fallbackPack?.hasTranslation(fallbackData, documentType) === true;
@@ -297,7 +299,7 @@ export class DocumentConverter {
 
             const payload = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
             const hasTranslation = hasCurrentTranslation || hasFallbackTranslation;
-            const sourcePack = currentCompendium ?? fallbackPack;
+            const sourcePack = fallbackPack ?? currentCompendium;
             const sourceData = sourcePack === fallbackPack ? fallbackData : data;
 
             return new DocumentTranslation({
@@ -314,23 +316,67 @@ export class DocumentConverter {
     /**
      * Resolve the best fallback translation source for one embedded document.
      *
-     * This prefers the exact source compendium when the embedded document
-     * still exposes a stable source reference. When no exact pack can be used,
-     * it falls back to the generic translated-pack lookup for the same
-     * document type.
+     * Built-in fallback policies:
+     * - `source-first` (default): exact source pack, then generic translated
+     *   pack lookup
+     * - `owner-package-before-generic`: exact source pack, then translated
+     *   packs from the owner package/module, then generic translated pack
+     * - `owner-package-first`: owner package/module translated packs, then
+     *   exact source pack, then generic translated pack
      *
      * @param {object} data
      * @param {import("../compendium/compendium-runtime.js").CompendiumRuntime} runtime
      * @param {*} currentCompendium
      * @param {string|null} [documentType]
+     * @param {string|string[]} [fallbackPolicy]
      * @returns {{pack: *, data: object}|null}
      */
-    _fallbackTranslationSource(data, runtime, currentCompendium, documentType = currentCompendium?.metadata?.type ?? null) {
-        const exactSource = this._exactSourceTranslationSource(data, runtime, currentCompendium, documentType);
-        if (exactSource) {
-            return exactSource;
+    _fallbackTranslationSource(
+        data,
+        runtime,
+        currentCompendium,
+        documentType = currentCompendium?.metadata?.type ?? null,
+        fallbackPolicy = "source-first",
+    ) {
+        for (const step of this._fallbackPolicySteps(fallbackPolicy)) {
+            const resolved = this._fallbackTranslationSourceForStep(step, data, runtime, currentCompendium, documentType);
+            if (resolved) {
+                return resolved;
+            }
         }
 
+        return null;
+    }
+
+    _fallbackTranslationSourceForStep(step, data, runtime, currentCompendium, documentType) {
+        switch (step) {
+            case "owner-package":
+                return this._ownerPackageTranslationSource(data, runtime, currentCompendium, documentType);
+            case "generic":
+                return this._genericTranslationSource(data, runtime, currentCompendium, documentType);
+            case "exact-source":
+            default:
+                return this._exactSourceTranslationSource(data, runtime, currentCompendium, documentType);
+        }
+    }
+
+    _fallbackPolicySteps(fallbackPolicy = "source-first") {
+        if (Array.isArray(fallbackPolicy)) {
+            return fallbackPolicy.length > 0 ? [...fallbackPolicy] : ["exact-source", "generic"];
+        }
+
+        switch (fallbackPolicy) {
+            case "owner-package-first":
+                return ["owner-package", "exact-source", "generic"];
+            case "owner-package-before-generic":
+                return ["exact-source", "owner-package", "generic"];
+            case "source-first":
+            default:
+                return ["exact-source", "generic"];
+        }
+    }
+
+    _genericTranslationSource(data, runtime, currentCompendium, documentType = currentCompendium?.metadata?.type ?? null) {
         const sourceAwareData = this._sourceAwareData(data);
         const genericPack = runtime.translatedPackFor(documentType, sourceAwareData)
             ?? (sourceAwareData !== data ? runtime.translatedPackFor(documentType, data) : null);
@@ -342,6 +388,34 @@ export class DocumentConverter {
         return {
             pack: genericPack,
             data: sourceAwareData,
+        };
+    }
+
+    _ownerPackageTranslationSource(data, runtime, currentCompendium, documentType = currentCompendium?.metadata?.type ?? null) {
+        const ownerPackageName = currentCompendium?.metadata?.ownerPackageName ?? currentCompendium?.metadata?.packageName ?? null;
+        const ownerPackageType = currentCompendium?.metadata?.ownerPackageType ?? currentCompendium?.metadata?.packageType ?? null;
+        if (!ownerPackageName) {
+            return null;
+        }
+
+        const matchesOwnerPackage = (pack) =>
+            pack !== currentCompendium
+            && pack.metadata?.packageName === ownerPackageName
+            && (!ownerPackageType || pack.metadata?.packageType === ownerPackageType);
+
+        const sourceAwareData = this._sourceAwareData(data);
+        const ownerPack = runtime.translatedPackFor(documentType, data, {predicate: matchesOwnerPackage})
+            ?? (sourceAwareData !== data
+                ? runtime.translatedPackFor(documentType, sourceAwareData, {predicate: matchesOwnerPackage})
+                : null);
+
+        if (!ownerPack) {
+            return null;
+        }
+
+        return {
+            pack: ownerPack,
+            data: ownerPack.hasTranslation(data, documentType) ? data : sourceAwareData,
         };
     }
 

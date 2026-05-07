@@ -175,15 +175,25 @@ export class StructuredDataConverter {
             return value;
         }
 
+        const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
+        const mappingTranslation = this._mappingTranslation(translation, descriptor);
+
+        if (mappingTranslation && this._hasMapping(descriptor)) {
+            const mapped = this._mappedValue(value, mappingTranslation, descriptor, context, fieldRuntime);
+            if (Object.keys(mapped).length > 0) {
+                return foundry.utils.mergeObject(value, mapped, {inplace: false});
+            }
+        }
+
         if (descriptor.valuePath && !this._isPlainObject(translation)) {
             return this._translateScalarValue(value, translation, descriptor.valuePath);
         }
 
-        const fieldRuntime = this._fieldRuntime(runtime, sourceKey);
-        const block = this._mappingBlock(descriptor.mapping, context);
-        block.prepare(value, translation, fieldRuntime);
-        const mapped = block.map(value, translation, fieldRuntime);
+        if (!this._isPlainObject(translation)) {
+            return value;
+        }
 
+        const mapped = this._mappedValue(value, translation, descriptor, context, fieldRuntime);
         return foundry.utils.mergeObject(value, mapped, {inplace: false});
     }
 
@@ -320,6 +330,37 @@ export class StructuredDataConverter {
         return descriptor.keys
             .map((key) => this._normalizedEntryKey(entry.value, key))
             .filter((key, index, keys) => key !== null && keys.indexOf(key) === index);
+    }
+
+    _mappingTranslation(translation, descriptor) {
+        if (this._isPlainObject(translation)) {
+            return translation;
+        }
+
+        const scalarField = this._scalarTranslationField(descriptor);
+        return scalarField ? {[scalarField]: translation} : null;
+    }
+
+    _scalarTranslationField(descriptor) {
+        if (!descriptor.valuePath) {
+            return null;
+        }
+
+        const path = String(descriptor.valuePath ?? "")
+            .split(".")
+            .filter((segment) => segment.length);
+
+        return path.at(-1) ?? null;
+    }
+
+    _hasMapping(descriptor) {
+        return Object.keys(descriptor.mapping ?? {}).length > 0;
+    }
+
+    _mappedValue(value, translation, descriptor, context, runtime) {
+        const block = this._mappingBlock(descriptor.mapping, context);
+        block.prepare(value, translation, runtime);
+        return block.map(value, translation, runtime);
     }
 
     _translateScalarValue(value, translation, valuePath) {

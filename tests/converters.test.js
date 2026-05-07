@@ -8,6 +8,7 @@ const {Converters} = await import("../module/script/converter/converters.js");
 const {CompendiumRuntime} = await import("../module/script/compendium/compendium-runtime.js");
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
 const {DocumentConverter} = await import("../module/script/converter/document-converter.js");
+const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
 const {StructuredDataConverter} = await import("../module/script/converter/structured-data-converter.js");
 const {default: Babel} = await import("../module/script/babele.js");
 const defaultDocumentMappings = new Babel().documentMappings;
@@ -1318,6 +1319,69 @@ test("structured data converter maps scalar translations to valuePath for one st
     color: "red",
   });
   assert.equal(extracted, "Original label");
+});
+
+test("structured data converter lets valuePath scalar translations flow through mapping variants before raw fallback", () => {
+  const registry = new ConverterRegistry({
+    metricDelta: (value, translation) => `${translation} m`,
+  });
+  const contextCompendium = {
+    documentMappings: {
+      converterRegistry: registry,
+    },
+  };
+  const converter = new StructuredDataConverter({
+    path: "changes",
+    cardinality: "many",
+    container: "array",
+    key: "key",
+    valuePath: "value",
+    mapping: {
+      "_variants": [
+        {
+          "_when": {
+            "path": "key",
+            "in": [
+              "system.attributes.movement.walk",
+              "system.range.value",
+            ],
+          },
+          "value": {
+            "path": "value",
+            "converter": "metricDelta",
+          },
+        },
+      ],
+    },
+  });
+
+  const translated = converter.translate({
+    value: [
+      {
+        key: "system.attributes.movement.walk",
+        mode: "add",
+        value: "+30",
+      },
+      {
+        key: "system.description.value",
+        mode: "override",
+        value: "Original description",
+      },
+    ],
+    translation: {
+      "system.attributes.movement.walk": "+9",
+      "system.description.value": "Description traduite",
+    },
+    source: {_id: "effect-1", name: "Effect"},
+    field: "changes",
+    path: "changes",
+    params: {},
+    contextCompendium,
+    runtime: new CompendiumRuntime(),
+  });
+
+  assert.equal(translated[0].value, "+9 m");
+  assert.equal(translated[1].value, "Description traduite");
 });
 
 test("tableResults.extract prefers range keys and exports the canonical structured payload", () => {

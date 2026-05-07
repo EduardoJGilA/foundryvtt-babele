@@ -56,6 +56,8 @@
   "BABELE.ShowOriginalNameHint": "Affiche le nom d’origine de l’élément du compendium en plus de sa traduction. Cela vous permettra de filtrer par le nom d’origine ainsi que par sa traduction dans la barre de recherche.",
   "BABELE.ShowTranslateOption": "Montrer l’option de traduction",
   "BABELE.ShowTranslateOptionHint": "Active ou non l’option « Traduire » sur la feuille des acteurs.",
+  "BABELE.SyncImportedAdventureTokenNames": "Synchroniser les noms des jetons des aventures importées",
+  "BABELE.SyncImportedAdventureTokenNamesHint": "Lors de l’import d’une aventure, met à jour les noms des jetons uniquement dans les scènes importées et uniquement pour les jetons dont les acteurs ont été importés par cette même aventure.",
   "BABELE.WarnMissingPaths": "Signaler les chemins source inexistants",
   "BABELE.WarnMissingPathsHint": "Active les avertissements de diagnostic lorsqu’une traduction statique cible un chemin source inexistant dans les données du document d’origine.",
   "BABELE.requireLibWrapperMessage": "Babele nécessite le module « libWrapper ». Merci de l’installer et de l’activer.",

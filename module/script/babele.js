@@ -49,15 +49,24 @@ Hooks.once('ready', async () => {
     await ui.compendium.render();
 });
 
-Hooks.on('importAdventure', () => {
-    game.scenes.forEach(scene => {
-        scene.tokens.forEach(token => {
+Hooks.on('importAdventure', (_adventure, _options, created = {}) => {
+    if (game.settings.get("babele", "syncImportedAdventureTokenNames") === false) {
+        return;
+    }
+
+    const createdActors = new Set((created?.Actor ?? []).map((actor) => actor?.id).filter(Boolean));
+    for (const scene of created?.Scene ?? []) {
+        for (const token of scene.tokens ?? []) {
+            if (!createdActors.has(token.actorId) || token.delta?.name) {
+                continue;
+            }
+
             const actor = game.actors.get(token.actorId);
-            if (actor && !token.delta?.name && actor.prototypeToken?.name) {
+            if (actor?.prototypeToken?.name) {
                 token.update({name: actor.prototypeToken.name});
             }
-        });
-    });
+        }
+    }
 });
 
 Hooks.on("createFolder", (folder) => {

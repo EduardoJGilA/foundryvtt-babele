@@ -59,6 +59,18 @@ export function registerModuleSettings() {
         default: true
     });
 
+    game.settings.register('babele', 'syncImportedAdventureTokenNames', {
+        name: localizeWithFallback("BABELE.SyncImportedAdventureTokenNames", "Sync imported Adventure token names"),
+        hint: localizeWithFallback(
+            "BABELE.SyncImportedAdventureTokenNamesHint",
+            "When importing an Adventure, update token names only for tokens in imported Scenes whose Actors were imported by that same Adventure.",
+        ),
+        scope: 'world',
+        type: Boolean,
+        config: true,
+        default: true,
+    });
+
     game.settings.register('babele', 'warnMissingPaths', {
         name: game.i18n.localize("BABELE.WarnMissingPaths"),
         hint: game.i18n.localize("BABELE.WarnMissingPathsHint"),

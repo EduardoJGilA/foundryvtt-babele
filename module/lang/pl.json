@@ -56,6 +56,8 @@
   "BABELE.ShowOriginalNameHint": "Wyświetla nieprzetłumaczoną nazwę elementu kompendium oprócz przetłumaczonej. Umożliwi to również filtrowanie według oryginalnej nazwy wraz z przetłumaczoną w widżecie wyszukiwania.",
   "BABELE.ShowTranslateOption": "Pokaż opcję tłumaczenia",
   "BABELE.ShowTranslateOptionHint": "Włącza opcję tłumaczenia w kartach aktorów.",
+  "BABELE.SyncImportedAdventureTokenNames": "Synchronizuj nazwy tokenów importowanych przygód",
+  "BABELE.SyncImportedAdventureTokenNamesHint": "Podczas importu przygody aktualizuj nazwy tokenów tylko w importowanych scenach i tylko dla tokenów, których aktorzy zostali zaimportowani przez tę samą przygodę.",
   "BABELE.WarnMissingPaths": "Wyświetl ostrzeżenie o brakujących ścieżkach do plików źródłowych",
   "BABELE.WarnMissingPathsHint": "Włącza ostrzeżenia diagnostyczne, gdy tłumaczenie statyczne dotyczy ścieżki źródłowej, która nie występuje w oryginalnych danych dokumentu.",
   "BABELE.requireLibWrapperMessage": "Babele wymaga modułu „libWrapper”. Należy go zainstalować i aktywować.",

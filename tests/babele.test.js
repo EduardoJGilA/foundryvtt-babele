@@ -102,15 +102,22 @@ test("Babel.init fails open and can retry after a bootstrap failure", async () =
   });
 });
 
-test("importAdventure handles tokens with null delta and reuses prototype token names", () => {
+test("importAdventure updates only tokens in imported scenes whose actors were imported by that adventure", () => {
   const updates = [];
+  game.settings.get = (_namespace, key) => key === "syncImportedAdventureTokenNames" ? true : "";
 
-  game.scenes = [{
+  const importedScene = {
     tokens: [{
       actorId: "actor-1",
       delta: null,
       update(data) {
         updates.push(data);
+      },
+    }, {
+      actorId: "actor-2",
+      delta: null,
+      update() {
+        throw new Error("token whose actor was not imported should not be updated");
       },
     }, {
       actorId: "actor-1",
@@ -119,14 +126,49 @@ test("importAdventure handles tokens with null delta and reuses prototype token 
         throw new Error("token with explicit delta name should not be updated");
       },
     }],
-  }];
+  };
+  const untouchedScene = {
+    tokens: [{
+      actorId: "actor-1",
+      delta: null,
+      update() {
+        throw new Error("scene outside created.Scene should not be updated");
+      },
+    }],
+  };
+
+  game.scenes = [importedScene, untouchedScene];
 
   game.actors.get = (actorId) => actorId === "actor-1"
     ? {prototypeToken: {name: "Prototype Goblin"}}
     : null;
 
-  assert.doesNotThrow(() => Hooks.callAll("importAdventure"));
+  assert.doesNotThrow(() => Hooks.callAll("importAdventure", {}, {}, {
+    Actor: [{id: "actor-1"}],
+    Scene: [importedScene],
+  }));
   assert.deepEqual(updates, [{name: "Prototype Goblin"}]);
+});
+
+test("importAdventure token-name sync can be disabled by setting", () => {
+  game.settings.get = (_namespace, key) => key === "syncImportedAdventureTokenNames" ? false : "";
+
+  const importedScene = {
+    tokens: [{
+      actorId: "actor-1",
+      delta: null,
+      update() {
+        throw new Error("disabled token sync should not update imported adventure tokens");
+      },
+    }],
+  };
+
+  game.actors.get = () => ({prototypeToken: {name: "Prototype Goblin"}});
+
+  assert.doesNotThrow(() => Hooks.callAll("importAdventure", {}, {}, {
+    Actor: [{id: "actor-1"}],
+    Scene: [importedScene],
+  }));
 });
 
 test("Babel prefers mappings.json over deprecated mapping.json in the same directory", async () => {

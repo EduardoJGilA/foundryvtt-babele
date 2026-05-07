@@ -65,6 +65,15 @@ export class EmbeddedCompendium {
             {
                 translationStrategies: effectiveStrategies,
                 documentMappings: effectiveDocumentMappings,
+                runtimeFactory: (options = {}) => {
+                    const root = activeRuntime;
+                    return options?.currentCompendium || options?.localPacks
+                        ? root.child({
+                            currentCompendium: options.currentCompendium ?? undefined,
+                            localPacks: options.localPacks ?? undefined,
+                        })
+                        : root;
+                },
             },
         );
     }
@@ -101,8 +110,8 @@ export class EmbeddedCompendium {
         return this.#delegate.translationMatchStrategies();
     }
 
-    hasTranslation(data, documentType = this.metadata?.type ?? null) {
-        return this.#delegate.hasTranslation(data, documentType);
+    hasTranslation(data, documentType = this.metadata?.type ?? null, runtime) {
+        return this.#delegate.hasTranslation(data, documentType, runtime);
     }
 
     translationsFor(data, documentType = this.metadata?.type ?? null) {
@@ -113,27 +122,27 @@ export class EmbeddedCompendium {
         return this.#delegate.translationKeyFor(data, documentType);
     }
 
-    hasReferenceTranslations(data) {
-        return this.#delegate.hasReferenceTranslations(data);
+    hasReferenceTranslations(data, runtime) {
+        return this.#delegate.hasReferenceTranslations(data, runtime);
     }
 
     translateIndex(index) {
         return this.#delegate.translateIndex(index);
     }
 
-    extract(data, runtime = {}) {
+    extract(data, runtime) {
         return this.#delegate.extract(data, runtime);
     }
 
-    extractField(field, data, runtime = {}) {
+    extractField(field, data, runtime) {
         return this.#delegate.extractField(field, data, runtime);
     }
 
-    translateField(field, data, runtime = {}) {
+    translateField(field, data, runtime) {
         return this.#delegate.translateField(field, data, runtime);
     }
 
-    translate(data, translationsOnly = false, runtime = {}) {
+    translate(data, translationsOnly = false, runtime) {
         return this.#delegate.translate(data, translationsOnly, runtime);
     }
 }

@@ -27,9 +27,7 @@ export class CompendiumRuntime {
         }
 
         return new CompendiumRuntime({
-            globalPacks: runtime?.globalPacks
-                ?? game.babele?.mappedCompendiums
-                ?? new foundry.utils.Collection(),
+            globalPacks: runtime?.globalPacks ?? new foundry.utils.Collection(),
             localPacks: runtime?.localPacks ?? new foundry.utils.Collection(),
             currentCompendium: runtime?.currentCompendium ?? null,
         });

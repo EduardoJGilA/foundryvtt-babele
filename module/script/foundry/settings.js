@@ -6,6 +6,13 @@ function localizeWithFallback(key, fallback) {
     return localized === key ? fallback : localized;
 }
 
+/**
+ * Register Foundry module settings.
+ *
+ * This module is intentionally coupled to `game.babele` because it reacts to
+ * user-driven Foundry settings changes and delegates runtime refresh/reinit to
+ * the public facade.
+ */
 export function registerModuleSettings() {
 
     game.settings.register('babele', 'directory', {

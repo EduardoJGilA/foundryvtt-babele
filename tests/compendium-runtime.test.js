@@ -97,3 +97,13 @@ test("CompendiumRuntime translated pack lookups prefer the innermost child scope
 
   assert.equal(child.translatedPackFor("Item", data), childItemPack);
 });
+
+test("CompendiumRuntime.from does not read implicit global state from game.babele", () => {
+  game.babele = {
+    mappedCompendiums: new TestCollection([["test.items", {id: "legacy-global-pack"}]]),
+  };
+
+  const runtime = CompendiumRuntime.from({});
+
+  assert.equal(runtime.mappedCompendiumFor("test.items"), null);
+});

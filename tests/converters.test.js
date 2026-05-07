@@ -1425,12 +1425,19 @@ test("tableResults translates using the TableResult identity fallback order", ()
 
 test("tableResults falls back to the referenced compendium translation via documentUuid", () => {
   game.babele = new Babel();
-  game.babele.translateField = (field, pack, data) => {
-    assert.equal(field, "name");
-    assert.equal(pack, "Compendium.test.items.Item.item-1");
-    assert.deepEqual(data, {name: "Charging Quiver"});
-    return "Заряжающий Колчан";
-  };
+  const itemTc = new MappedCompendium({
+    id: "Compendium.test.items.Item.item-1",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "Charging Quiver": {
+        name: "Заряжающий Колчан",
+      },
+    },
+  }, {
+    documentMappings: game.babele.documentMappings,
+  });
 
   const tableTc = new MappedCompendium({
     id: "test.tables",
@@ -1438,6 +1445,10 @@ test("tableResults falls back to the referenced compendium translation via docum
     type: "RollTable",
   }, null, {
     documentMappings: game.babele.documentMappings,
+  });
+  const runtime = new CompendiumRuntime({
+    globalPacks: new TestCollection([["Compendium.test.items.Item.item-1", itemTc]]),
+    currentCompendium: tableTc,
   });
 
   const translated = Converters.tableResults()([
@@ -1451,7 +1462,7 @@ test("tableResults falls back to the referenced compendium translation via docum
   ], {}, {
     _id: "table-1",
     name: "Encounter Table",
-  }, tableTc);
+  }, tableTc, {}, runtime);
 
   assert.equal(translated[0].name, "Заряжающий Колчан");
   assert.equal(translated[0].translated, true);
@@ -1460,9 +1471,23 @@ test("tableResults falls back to the referenced compendium translation via docum
 test("tableResults keeps explicit RollTable result name translations over the documentUuid fallback", () => {
   game.babele = new Babel();
   let fallbackCalls = 0;
-  game.babele.translateField = () => {
+  const itemTc = new MappedCompendium({
+    id: "Compendium.test.items.Item.item-1",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "Charging Quiver": {
+        name: "Should Not Be Used",
+      },
+    },
+  }, {
+    documentMappings: game.babele.documentMappings,
+  });
+  const originalTranslateField = itemTc.translateField.bind(itemTc);
+  itemTc.translateField = (...args) => {
     fallbackCalls += 1;
-    return "Should Not Be Used";
+    return originalTranslateField(...args);
   };
 
   const tableTc = new MappedCompendium({
@@ -1471,6 +1496,10 @@ test("tableResults keeps explicit RollTable result name translations over the do
     type: "RollTable",
   }, null, {
     documentMappings: game.babele.documentMappings,
+  });
+  const runtime = new CompendiumRuntime({
+    globalPacks: new TestCollection([["Compendium.test.items.Item.item-1", itemTc]]),
+    currentCompendium: tableTc,
   });
 
   const translated = Converters.tableResults()([
@@ -1488,7 +1517,7 @@ test("tableResults keeps explicit RollTable result name translations over the do
   }, {
     _id: "table-1",
     name: "Encounter Table",
-  }, tableTc);
+  }, tableTc, {}, runtime);
 
   assert.equal(translated[0].name, "Translated In RollTable");
   assert.equal(fallbackCalls, 0);
@@ -1918,6 +1947,173 @@ test("document converter prefers the exact compendium source and layers actor it
     assert.equal(translated[0].system.description.value, "Exact pack description");
     assert.equal(translated[0].translated, true);
     assert.equal(translated[0].hasTranslation, true);
+  } finally {
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
+test("document converter restores the source name from the exact pack index when the source document is not cached", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
+  const item = {
+    _id: "actor-item-2",
+    name: "Localized Runtime Name",
+    _stats: {
+      compendiumSource: "Compendium.test.exact.Item.source-axe",
+    },
+    system: {
+      description: {
+        value: "Original embedded description",
+      },
+    },
+  };
+
+  const exactPack = mappedCompendium({
+    id: "test.exact",
+    name: "exact",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {
+      "Original Axe": {
+        name: "Ascia Tradotta",
+        description: "Descrizione ascia",
+      },
+    },
+  });
+  exactPack.index = new foundry.utils.Collection([[
+    "source-axe",
+    {
+      _id: "source-axe",
+      name: "Original Axe",
+    },
+  ]]);
+
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = () => null;
+
+  try {
+    const translated = new DocumentConverter().translate({
+      value: [item],
+      translation: undefined,
+      source: {name: "Actor"},
+      field: "items",
+      path: "items",
+      params: {
+        path: "items",
+        converter: "document",
+        documentType: "Item",
+        cardinality: "many",
+        mapping: null,
+      },
+      allTranslations: {},
+      contextCompendium: actorContext,
+      runtime: new CompendiumRuntime({
+        globalPacks: new TestCollection([["test.exact", exactPack]]),
+        currentCompendium: actorContext,
+      }),
+    });
+
+    assert.equal(translated[0].name, "Ascia Tradotta");
+    assert.equal(translated[0].system.description.value, "Descrizione ascia");
+    assert.equal(translated[0].translated, true);
+    assert.equal(translated[0].hasTranslation, true);
+  } finally {
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
+test("document converter does not let converter-only local mappings override fallback pack translations without local entries", () => {
+  const actorContext = runtimeCompendium("Actor", {name: "Actor"});
+  const item = {
+    _id: "actor-item-3",
+    name: "Runtime Sword",
+    _stats: {
+      compendiumSource: "Compendium.test.exact.Item.source-sword-2",
+    },
+    system: {
+      description: {
+        value: "Original embedded description",
+      },
+      damage: {
+        value: "weapon skill bonus",
+      },
+    },
+  };
+
+  const exactPack = mappedCompendium({
+    id: "test.exact",
+    name: "exact",
+    type: "Item",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    mapping: {
+      description: "system.description.value",
+      damage: {
+        path: "system.damage.value",
+        converter: "lookup",
+        normalize: "trim-lowercase",
+        values: {
+          "weapon skill bonus": "Bonificador HA",
+        },
+      },
+    },
+    entries: {
+      "Original Sword 2": {
+        name: "Espada Tradotta",
+        description: "Descrizione tradotta",
+      },
+    },
+  });
+  exactPack.index = new foundry.utils.Collection([[
+    "source-sword-2",
+    {
+      _id: "source-sword-2",
+      name: "Original Sword 2",
+    },
+  ]]);
+
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  globalThis.fromUuidSync = () => null;
+
+  try {
+    const translated = new DocumentConverter().translate({
+      value: [item],
+      translation: undefined,
+      source: {name: "Actor"},
+      field: "items",
+      path: "items",
+      params: {
+        path: "items",
+        converter: "document",
+        documentType: "Item",
+        cardinality: "many",
+        mapping: {
+          damage: {
+            path: "system.damage.value",
+            converter: "lookup",
+            normalize: "trim-lowercase",
+            values: {
+              "weapon skill bonus": "Bonificador HA local",
+            },
+          },
+        },
+      },
+      allTranslations: {},
+      contextCompendium: actorContext,
+      runtime: new CompendiumRuntime({
+        globalPacks: new TestCollection([["test.exact", exactPack]]),
+        currentCompendium: actorContext,
+      }),
+    });
+
+    assert.equal(translated[0].name, "Espada Tradotta");
+    assert.equal(translated[0].system.description.value, "Descrizione tradotta");
+    assert.equal(translated[0].system.damage.value, "Bonificador HA");
   } finally {
     globalThis.fromUuidSync = previousFromUuidSync;
   }

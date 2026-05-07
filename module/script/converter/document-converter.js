@@ -282,17 +282,17 @@ export class DocumentConverter {
             const currentMapping = currentCompendium?.mapping;
             const documentType = currentCompendium?.metadata?.type ?? null;
             const hasCurrentTranslation = currentCompendium?.hasTranslation(data, documentType) === true;
-            const shouldTranslateCurrent = hasCurrentTranslation || currentMapping?.usesConverters?.() === true;
-            const currentPayload = shouldTranslateCurrent
-                ? this._pruneUnchangedPayload(currentCompendium.translate(data, true, activeRuntime) ?? {}, data)
-                : {};
-
             const fallback = this._fallbackTranslationSource(data, activeRuntime, currentCompendium, documentType);
             const fallbackPack = fallback?.pack ?? null;
             const fallbackData = fallback?.data ?? data;
             const hasFallbackTranslation = fallbackPack?.hasTranslation(fallbackData, documentType) === true;
             const fallbackPayload = fallbackPack
                 ? (fallbackPack.translate(fallbackData, true, activeRuntime) ?? {})
+                : {};
+            const shouldTranslateCurrent = hasCurrentTranslation
+                || (!fallbackPack && currentMapping?.usesConverters?.() === true);
+            const currentPayload = shouldTranslateCurrent
+                ? this._pruneUnchangedPayload(currentCompendium.translate(data, true, activeRuntime) ?? {}, data)
                 : {};
 
             const payload = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
@@ -370,8 +370,9 @@ export class DocumentConverter {
             return null;
         }
 
-        const sourceAwareData = this._sourceAwareData(data);
-        if (!pack.hasTranslation(sourceAwareData, documentType)) {
+        const sourceAwareData = this._sourceAwareData(data, pack);
+        const hasTranslation = pack.hasTranslation(sourceAwareData, documentType);
+        if (!hasTranslation) {
             return null;
         }
 
@@ -388,8 +389,8 @@ export class DocumentConverter {
      * @param {object} data
      * @returns {object}
      */
-    _sourceAwareData(data) {
-        const sourceName = this._sourceDocumentName(data);
+    _sourceAwareData(data, sourcePack = null) {
+        const sourceName = this._sourceDocumentName(data, sourcePack);
         if (!sourceName || sourceName === data?.name) {
             return data;
         }
@@ -404,10 +405,11 @@ export class DocumentConverter {
      * @param {object} data
      * @returns {string|null}
      */
-    _sourceDocumentName(data) {
+    _sourceDocumentName(data, sourcePack = null) {
         const sourceDocument = this._sourceDocument(data);
         return sourceDocument?.flags?.babele?.originalName
             ?? sourceDocument?.name
+            ?? this._sourceIndexName(data, sourcePack)
             ?? null;
     }
 
@@ -429,6 +431,27 @@ export class DocumentConverter {
         } catch (_error) {
             return null;
         }
+    }
+
+    /**
+     * Resolve the original source document name from the source pack index
+     * when the full source document is not synchronously available.
+     *
+     * This keeps exact source-pack fallback working for embedded documents
+     * whose `sourceId` points to a compendium entry not currently cached by
+     * Foundry.
+     *
+     * @param {object} data
+     * @param {*} sourcePack
+     * @returns {string|null}
+     */
+    _sourceIndexName(data, sourcePack = null) {
+        const sourceId = foundry.utils.parseUuid(this._sourceUuid(data))?.id ?? null;
+        if (!sourceId || !sourcePack?.index?.get) {
+            return null;
+        }
+
+        return sourcePack.index.get(sourceId)?.name ?? null;
     }
 
     /**
@@ -531,4 +554,5 @@ export class DocumentConverter {
     _isPlainObject(value) {
         return !!value && typeof value === "object" && !Array.isArray(value);
     }
+
 }

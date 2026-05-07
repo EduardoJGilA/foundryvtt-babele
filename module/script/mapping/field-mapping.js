@@ -357,7 +357,7 @@ class NamedFieldConverter {
 
         throw new Error(
             `Converter '${this.converterName}' is not a supported OO converter. ` +
-            `Register converters through game.babele.registerConverter().`,
+            `Register converters through the Foundry facade with game.babele.registerConverter().`,
         );
     }
 

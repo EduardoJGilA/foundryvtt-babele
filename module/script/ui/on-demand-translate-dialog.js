@@ -6,7 +6,11 @@ function localizeWithFallback(key, fallback) {
 }
 
 /**
- * ApplicationV2 review UI for on-demand Actor translation.
+ * Foundry ApplicationV2 review UI for on-demand Actor translation.
+ *
+ * This class is intentionally facade-coupled: it talks to `game.babele`
+ * because it is part of the interactive Foundry UI surface, not the headless
+ * translation framework.
  */
 export class OnDemandTranslateDialog extends foundry.applications.api.ApplicationV2 {
     static DEFAULT_OPTIONS = {

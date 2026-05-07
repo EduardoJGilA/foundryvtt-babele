@@ -8,6 +8,8 @@ const {DocumentMapping} = await import("../module/script/mapping/document-mappin
 const {DocumentMappings} = await import("../module/script/mapping/document-mappings.js");
 const {IdentityExtractorRegistry} = await import("../module/script/identity/identity-extractor-registry.js");
 const {ConverterRegistry} = await import("../module/script/converter/converter-registry.js");
+const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {CompendiumRuntime} = await import("../module/script/compendium/compendium-runtime.js");
 const {default: Babel} = await import("../module/script/babele.js");
 
 function identityExtractors() {
@@ -91,19 +93,31 @@ test("DocumentMapping uses the default TableResult range identity when Babele re
 
 test("DocumentMapping resolves TableResult.name through the referenced document field fallback", () => {
   game.babele = new Babel();
-  game.babele.translateField = (field, pack, data) => {
-    assert.equal(field, "name");
-    assert.equal(pack, "Compendium.test.items.Item.item-1");
-    assert.deepEqual(data, {name: "Charging Quiver"});
-    return "Заряжающий Колчан";
-  };
+  const referencedPack = new MappedCompendium({
+    id: "Compendium.test.items.Item.item-1",
+    name: "items",
+    type: "Item",
+  }, {
+    entries: {
+      "Charging Quiver": {
+        name: "Заряжающий Колчан",
+      },
+    },
+  }, {
+    documentMappings: game.babele.documentMappings,
+  });
+  const runtime = new CompendiumRuntime({
+    globalPacks: new foundry.utils.Collection([
+      ["Compendium.test.items.Item.item-1", referencedPack],
+    ]),
+  });
 
   const mapping = game.babele.documentMappings.mappingFor("TableResult");
   const translated = mapping.translateField("name", {
     _id: "result-1",
     name: "Charging Quiver",
     documentUuid: "Compendium.test.items.Item.item-1",
-  }, {});
+  }, {}, runtime);
 
   assert.equal(translated, "Заряжающий Колчан");
 });

@@ -1,4 +1,5 @@
 import {MappedCompendium} from "./mapped-compendium.js";
+import {CompendiumRuntime} from "./compendium-runtime.js";
 
 /**
  * Aggregate of Babele-managed compendiums.
@@ -122,6 +123,17 @@ export class MappedCompendiums {
         return this.get(pack)?.extractField(field, data);
     }
 
+    runtime({currentCompendium = null, localPacks = null} = {}) {
+        const runtime = CompendiumRuntime.from({
+            globalPacks: this.packs,
+            localPacks: localPacks ?? new foundry.utils.Collection(),
+        });
+
+        return currentCompendium || localPacks
+            ? runtime.child({currentCompendium, localPacks})
+            : runtime;
+    }
+
     values() {
         return this.packs.values();
     }
@@ -201,6 +213,7 @@ export class MappedCompendiums {
             translationStrategies: this.translationStrategies,
             documentMappings: this.documentMappings,
             language: this.language,
+            runtimeFactory: (options = {}) => this.runtime(options),
         });
         this.packs.set(collection, compendium);
         return compendium;

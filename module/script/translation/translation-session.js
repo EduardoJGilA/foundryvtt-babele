@@ -98,6 +98,10 @@ export class TranslationSession {
         return this.mappedCompendiums?.translated?.(collection) ?? null;
     }
 
+    runtime(options = {}) {
+        return this.mappedCompendiums?.runtime?.(options);
+    }
+
     /**
      * Determine whether one collection has an active translation payload.
      *

@@ -19,6 +19,7 @@ export class MappedCompendium {
     static #warnedMissingReferences = new Set();
     static #warnedTranslationFailures = new Set();
     #indexTranslationCache = new Map();
+    #runtimeFactory;
 
     /**
      * @param {object} metadata Foundry pack metadata or equivalent runtime-local metadata.
@@ -27,12 +28,14 @@ export class MappedCompendium {
      * @param {import("../translation/translation-entries.js").TranslationStrategy[]} [options.translationStrategies]
      * @param {import("../mapping/document-mappings.js").DocumentMappings} options.documentMappings
      * @param {string|null} [options.language]
+     * @param {function(object=): import("./compendium-runtime.js").CompendiumRuntime|null} [options.runtimeFactory]
      */
-    constructor(metadata, translations, {translationStrategies, documentMappings, language = null} = {}) {
+    constructor(metadata, translations, {translationStrategies, documentMappings, language = null, runtimeFactory = null} = {}) {
         this.metadata = this.#clone(metadata);
         this.translation = this.#clone(translations);
         this.translated = false;
         this.language = typeof language === "string" && language.trim().length > 0 ? language.trim() : null;
+        this.#runtimeFactory = typeof runtimeFactory === "function" ? runtimeFactory : null;
         this.customMapping = this.translation?.mapping ?? null;
         this.documentMappings = this.#documentMappings(documentMappings);
         this.documentMapping = this.documentMappings.mappingFor(metadata.type, this.customMapping);
@@ -145,7 +148,7 @@ export class MappedCompendium {
      * @param {string|null} [documentType]
      * @returns {boolean}
      */
-    hasTranslation(data, documentType = this.metadata?.type ?? null) {
+    hasTranslation(data, documentType = this.metadata?.type ?? null, runtime) {
         if (!this.translated) {
             return false;
         }
@@ -159,7 +162,7 @@ export class MappedCompendium {
         }
 
         const resolution = this.#resolutionFor(data, documentType);
-        return resolution.matched || this.hasReferenceTranslations(data);
+        return resolution.matched || this.hasReferenceTranslations(data, runtime);
     }
 
     /**
@@ -204,8 +207,8 @@ export class MappedCompendium {
      * @param data
      * @returns {boolean}
      */
-    hasReferenceTranslations(data) {
-        return this.#hasReferenceTranslations(data);
+    hasReferenceTranslations(data, runtime) {
+        return this.#hasReferenceTranslations(data, runtime);
     }
 
     /**
@@ -216,7 +219,7 @@ export class MappedCompendium {
      * visible compendiums during extraction.
      * @returns {*}
      */
-    extract(data, runtime = {}) {
+    extract(data, runtime) {
         const scope = this.#documentScope(data, {}, runtime);
         return this.mapping.extract(data, scope);
     }
@@ -244,7 +247,7 @@ export class MappedCompendium {
      * @param {CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    extractField(field, data, runtime = {}) {
+    extractField(field, data, runtime) {
         const scope = this.#documentScope(data, {}, runtime);
         return this.mapping.extractField(field, data, scope);
     }
@@ -259,7 +262,7 @@ export class MappedCompendium {
      * @param {CompendiumRuntime|object} [runtime]
      * @returns {*}
      */
-    translateField(field, data, runtime = {}) {
+    translateField(field, data, runtime) {
         if (data == null) {
             return data;
         }
@@ -300,7 +303,7 @@ export class MappedCompendium {
      * scoped entries before delegating here.
      * @returns {*}
      */
-    translate(data, translationsOnly = false, runtime = {}) {
+    translate(data, translationsOnly = false, runtime) {
         if (data == null) {
             return data;
         }
@@ -354,8 +357,8 @@ export class MappedCompendium {
         let mergedTranslations = translatedData;
 
         for (const ref of this.reference) {
-            const referencePack = this.#resolveReferencePack(ref);
-            if (referencePack?.hasTranslation(data)) {
+            const referencePack = this.#resolveReferencePack(ref, runtime);
+            if (referencePack?.hasTranslation(data, undefined, runtime)) {
                 const fromReference = referencePack.translate(data, true, runtime);
                 mergedTranslations = foundry.utils.mergeObject(fromReference, mergedTranslations);
             }
@@ -364,14 +367,14 @@ export class MappedCompendium {
         return mergedTranslations;
     }
 
-    #hasReferenceTranslations(data) {
+    #hasReferenceTranslations(data, runtime) {
         if (!this.reference) {
             return false;
         }
 
         for (const ref of this.reference) {
-            const referencePack = this.#resolveReferencePack(ref);
-            if (referencePack?.hasTranslation(data)) {
+            const referencePack = this.#resolveReferencePack(ref, runtime);
+            if (referencePack?.hasTranslation(data, undefined, runtime)) {
                 return true;
             }
         }
@@ -379,8 +382,8 @@ export class MappedCompendium {
         return false;
     }
 
-    #resolveReferencePack(ref) {
-        const referencePack = game.babele?.mappedCompendiumFor?.(ref);
+    #resolveReferencePack(ref, runtime) {
+        const referencePack = this.#normalizeRuntime(runtime).mappedCompendiumFor(ref);
         if (referencePack) {
             return referencePack;
         }
@@ -432,8 +435,16 @@ export class MappedCompendium {
         }
     }
 
-    #normalizeRuntime(runtime = {}) {
-        return CompendiumRuntime.from(runtime);
+    #normalizeRuntime(runtime) {
+        return (arguments.length === 0
+            || runtime === undefined
+            || runtime === null || (typeof runtime === "object" && true && Object.keys(runtime).length === 0))
+            ? this.#rootRuntime()
+            : CompendiumRuntime.from(runtime);
+    }
+
+    #rootRuntime() {
+        return this.#runtimeFactory?.() ?? new CompendiumRuntime();
     }
 
     #resolutionFor(data, documentType = this.metadata?.type ?? null) {
@@ -506,14 +517,14 @@ export class MappedCompendium {
         console.debug(`Babele | ${message}`, data);
     }
 
-    #activeRuntime(runtime = {}) {
+    #activeRuntime(runtime) {
         const activeRuntime = this.#normalizeRuntime(runtime);
         return activeRuntime.currentCompendium() === this
             ? activeRuntime
             : activeRuntime.child({currentCompendium: this});
     }
 
-    #documentScope(data, translations = {}, runtime = {}) {
+    #documentScope(data, translations = {}, runtime) {
         const scope = DocumentTranslationScope.from(this.#activeRuntime(runtime));
         this.mapping.prepare(data, translations, scope);
         return scope;

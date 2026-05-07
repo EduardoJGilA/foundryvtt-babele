@@ -16,6 +16,7 @@ console.error = (...args) => {
 };
 
 const {MappedCompendium} = await import("../module/script/compendium/mapped-compendium.js");
+const {CompendiumRuntime} = await import("../module/script/compendium/compendium-runtime.js");
 const {default: Babel} = await import("../module/script/babele.js");
 const defaultDocumentMappings = new Babel().documentMappings;
 
@@ -23,15 +24,11 @@ function translatedCompendium(metadata, translations, options = {}) {
   return new MappedCompendium(metadata, translations, {
     documentMappings: options.documentMappings ?? defaultDocumentMappings,
     translationStrategies: options.translationStrategies,
+    runtimeFactory: options.runtimeFactory,
   });
 }
 
 test("invalid reference packs do not throw and warn only once per target", () => {
-  game.babele = {
-    mappedCompendiumFor() {
-      return null;
-    },
-  };
   warnings.length = 0;
 
   const tc = translatedCompendium({
@@ -58,6 +55,52 @@ test("invalid reference packs do not throw and warn only once per target", () =>
   assert.doesNotThrow(() => tc.translate(data));
   assert.equal(warnings.length, 1);
   assert.match(String(warnings[0][0]), /invalid reference pack 'missing\.pack'/);
+});
+
+test("reference packs are resolved from the pack runtime instead of game.babele", () => {
+  const referencePack = translatedCompendium({
+    id: "test.reference",
+    name: "reference",
+    type: "Item",
+  }, {
+    entries: {
+      "item-1": {
+        description: "Description from reference",
+      },
+    },
+  });
+
+  const withRuntime = translatedCompendium({
+    id: "test.items",
+    name: "items",
+    type: "Item",
+  }, {
+    reference: "test.reference",
+    mapping: {
+      description: "system.description.value",
+    },
+    entries: {},
+  }, {
+    runtimeFactory: () => new CompendiumRuntime({
+      globalPacks: new foundry.utils.Collection([
+        ["test.reference", referencePack],
+      ]),
+    }),
+  });
+
+  const data = {
+    _id: "item-1",
+    name: "Item One",
+    system: {
+      description: {
+        value: "Original description",
+      },
+    },
+  };
+
+  assert.equal(withRuntime.hasReferenceTranslations(data), true);
+  const translated = withRuntime.translate(data);
+  assert.equal(translated.system.description.value, "Description from reference");
 });
 
 test("MappedCompendium resolves entries with _id, then name, then sourceId precedence", () => {

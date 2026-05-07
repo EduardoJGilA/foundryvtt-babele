@@ -1,3 +1,5 @@
+import {CompendiumRuntime} from "../compendium/compendium-runtime.js";
+
 /**
  * Built-in converter for fields whose translation can fall back to a field of
  * another referenced document resolved via UUID.
@@ -26,9 +28,15 @@ export class ReferencedDocumentFieldConverter {
             return undefined;
         }
 
-        return game.babele.translateField(referencedField, pack, {
+        const runtime = CompendiumRuntime.from(context.runtime);
+        const referencedPack = runtime.mappedCompendiumFor(pack);
+        if (!referencedPack) {
+            return undefined;
+        }
+
+        return referencedPack.translateField(referencedField, {
             [referencedField]: context.value,
-        });
+        }, runtime);
     }
 
     extract(context) {

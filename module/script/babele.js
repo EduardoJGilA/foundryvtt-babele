@@ -12,7 +12,13 @@ import {Babele} from "./core/babele.js";
 import {DocumentMappings} from "./mapping/document-mappings.js";
 
 /****************
- * HOOKS
+ * FOUNDRY RUNTIME BOOTSTRAP
+ *
+ * This file is the Foundry-facing facade/adapter layer. It is expected to
+ * interact with `game.babele`, Hooks, settings, and UI integration points.
+ *
+ * Headless/framework-safe translation logic lives under `core/`,
+ * `compendium/`, `translation/`, `mapping/`, and `converter/`.
  ***************/
 
 const uiBridge = new BabeleUiBridge();
@@ -59,7 +65,12 @@ Hooks.on("createFolder", (folder) => {
 });
 
 /**
- * Main facade class with init logic and on API for on demand translations based on loaded mapping files.
+ * Foundry runtime facade.
+ *
+ * This adapter exposes Babele through `game.babele` and bridges the headless
+ * framework to Foundry-specific lifecycle hooks, settings, wrappers, and UI.
+ * Framework consumers that need a headless API should use `core/babele.js`
+ * and `TranslationSession` directly instead of depending on this facade.
  */
 class BabeleFacade {
     /** @type {Promise<boolean> | null} */
@@ -951,9 +962,14 @@ class BabeleFacade {
     }
 
     #rollbackRuntime(currentCompendium = null) {
-        const globalPacks = this.#session?.mappedCompendiums ?? new foundry.utils.Collection();
-        const runtime = CompendiumRuntime.from({globalPacks});
-        return currentCompendium ? runtime.child({currentCompendium}) : runtime;
+        return this.#session?.runtime?.({currentCompendium})
+            ?? this.#session?.mappedCompendiums?.runtime?.({currentCompendium})
+            ?? new CompendiumRuntime({
+                globalPacks: this.#session?.mappedCompendiums instanceof foundry.utils.Collection
+                    ? this.#session.mappedCompendiums
+                    : new foundry.utils.Collection(),
+                currentCompendium,
+            });
     }
 
     #assertConfigurable(operation) {
@@ -969,8 +985,13 @@ class BabeleFacade {
     }
 
     #translatedPackFor(documentType, data, options = {}) {
-        const registry = options.registry ?? this.#session?.mappedCompendiums ?? new foundry.utils.Collection();
-        return CompendiumRuntime.from({globalPacks: registry}).translatedPackFor(documentType, data);
+        if (options.registry) {
+            return CompendiumRuntime.from({globalPacks: options.registry}).translatedPackFor(documentType, data);
+        }
+
+        return this.#session?.runtime?.()?.translatedPackFor(documentType, data)
+            ?? this.#session?.mappedCompendiums?.runtime?.()?.translatedPackFor(documentType, data)
+            ?? null;
     }
 
     #translatedPacks() {

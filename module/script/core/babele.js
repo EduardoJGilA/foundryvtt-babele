@@ -118,6 +118,17 @@ export class Babele {
     }
 
     /**
+     * Register or replace one translation source by name.
+     *
+     * @param {{name?: string}} source
+     * @returns {TranslationSources}
+     */
+    registerSource(source) {
+        this.translationSources.register(source);
+        return this;
+    }
+
+    /**
      * Register one module translation source.
      *
      * @param {{module: string, dir: string, lang?: string}} module

@@ -10,7 +10,7 @@ export class BabeleUiBridge {
         Hooks.on("getActorSheetHeaderButtons", (app, buttons) => this.extendLegacyActorSheetHeaderButtons(app, buttons));
         Hooks.on("getHeaderControlsActorSheetV2", (sheet, controls) => this.extendActorSheetHeaderControls(sheet, controls));
         Hooks.on("getHeaderControlsCompendium", (app, controls) => this.extendCompendiumHeaderControls(app, controls));
-        Hooks.on("renderCompendiumDirectory", (app, html) => this.extendCompendiumDirectoryControls(app, html));
+        Hooks.on("renderCompendiumDirectory", (app, html) => this.renderCompendiumDirectory(app, html));
         Hooks.on("renderCompendium", (app, html, data) => this.renderCompendium(app, html, data));
     }
 
@@ -29,6 +29,36 @@ export class BabeleUiBridge {
             function (wrapped, query, entryIds, folderIds, autoExpandIds, options = {}) {
                 wrapped(query, entryIds, folderIds, autoExpandIds, options);
                 matchOriginalNameEntries(this, query, entryIds, folderIds, autoExpandIds);
+            },
+            "WRAPPER",
+        );
+
+        libWrapper.register(
+            "babele",
+            "foundry.applications.sidebar.tabs.CompendiumDirectory.prototype._matchSearchCompendiums",
+            function (wrapped, query, packIds, folderIds, autoExpandIds, options = {}) {
+                wrapped(query, packIds, folderIds, autoExpandIds, options);
+                matchOriginalPackTitles(this, query, packIds, folderIds, autoExpandIds);
+            },
+            "WRAPPER",
+        );
+
+        libWrapper.register(
+            "babele",
+            "foundry.applications.sidebar.tabs.CompendiumDirectory.prototype._matchSearchDocuments",
+            function (wrapped, query, documents) {
+                wrapped(query, documents);
+                matchOriginalDocumentEntries(this, query, documents);
+            },
+            "WRAPPER",
+        );
+
+        libWrapper.register(
+            "babele",
+            "foundry.applications.sidebar.tabs.CompendiumDirectory.prototype._onMatchSearchDocuments",
+            function (wrapped, indexEntries, listEl) {
+                wrapped(indexEntries, listEl);
+                appendOriginalNamesToDocumentMatches(listEl);
             },
             "WRAPPER",
         );
@@ -113,13 +143,9 @@ export class BabeleUiBridge {
      * @param {HTMLElement|jQuery} html
      */
     extendCompendiumDirectoryControls(app, html) {
-        if (!this.#canExportCompendium()) {
-            return;
-        }
-
         const root = this.#element(html);
         const actions = root?.querySelector?.(".header-actions");
-        if (!actions) {
+        if (!this.#canExportCompendium() || !actions) {
             return;
         }
 
@@ -142,6 +168,32 @@ export class BabeleUiBridge {
 
         button.addEventListener("click", () => game.babele.exportDirectoryTranslations(app));
         actions.appendChild(button);
+    }
+
+    renderCompendiumDirectory(app, html) {
+        this.extendCompendiumDirectoryControls(app, html);
+
+        const root = this.#element(html);
+        if (!root || !game.settings.get("babele", "showOriginalName")) {
+            return;
+        }
+
+        root.querySelectorAll?.("[data-pack]").forEach((row) => {
+            const pack = game.packs?.get?.(row.dataset.pack);
+            const originalName = pack?.metadata?.originalLabel ?? null;
+            if (!originalName) {
+                return;
+            }
+
+            const target = row.querySelector?.(".entry-name, .document-name, h4, a[data-pack], a");
+            if (!target) {
+                return;
+            }
+
+            this.#appendOriginalName(target, originalName);
+        });
+
+        appendOriginalNamesToDocumentMatches(root);
     }
 
     /**
@@ -197,28 +249,7 @@ export class BabeleUiBridge {
     }
 
     #appendOriginalName(target, text) {
-        if (!target || !text) {
-            return;
-        }
-
-        target.querySelector(".babele-original-name")?.remove();
-        target.style.display = "flex";
-        target.style.flexDirection = "column";
-        target.style.alignItems = "flex-start";
-        target.style.lineHeight = "normal";
-        target.style.paddingTop = "2px";
-        target.style.whiteSpace = "normal";
-        target.style.overflow = "visible";
-        target.style.textOverflow = "initial";
-
-        const label = document.createElement("span");
-        label.className = "babele-original-name";
-        label.style.display = "block";
-        label.style.lineHeight = "normal";
-        label.style.fontSize = "12px";
-        label.style.color = "gray";
-        label.textContent = text;
-        target.appendChild(label);
+        appendOriginalNameLabel(target, text);
     }
 
     #canTranslateActorSheet(editable) {
@@ -256,7 +287,7 @@ export class BabeleUiBridge {
  * @param {Set<string>} autoExpandIds
  */
 export function matchOriginalNameEntries(directory, query, entryIds, folderIds, autoExpandIds) {
-    if (!isNameOnlySearch(directory?.collection)) {
+    if (!canSearchOriginalNames() || !isNameOnlySearch(directory?.collection)) {
         return;
     }
 
@@ -280,15 +311,200 @@ export function matchOriginalNameEntries(directory, query, entryIds, folderIds, 
     }
 }
 
+export function matchOriginalPackTitles(directory, query, packIds, folderIds, autoExpandIds) {
+    if (!canSearchOriginalNames()) {
+        return;
+    }
+
+    for (const pack of game.packs ?? []) {
+        const originalTitle = pack?.metadata?.originalLabel ?? null;
+        if (!originalTitle) {
+            continue;
+        }
+
+        if (query.test(cleanSearchQuery(originalTitle))) {
+            packIds.add(pack.collection);
+            includeMatchedFolder(game.packs, pack.folder, folderIds, autoExpandIds, {autoExpand: false});
+        }
+    }
+}
+
+export function matchOriginalDocumentEntries(directory, query, documents) {
+    if (!canSearchOriginalNames()) {
+        return;
+    }
+
+    const terms = searchTermsForQuery(query);
+    if (!terms.length) {
+        return;
+    }
+
+    const activeFilters = directory?.activeFilters instanceof Set
+        ? directory.activeFilters
+        : new Set(directory?.activeFilters ?? []);
+    const existingUuids = new Set(
+        [...documents]
+            .map((entry) => entry?.uuid)
+            .filter(Boolean),
+    );
+
+    for (const pack of game.packs ?? []) {
+        if (activeFilters.size && !activeFilters.has(pack?.documentName)) {
+            continue;
+        }
+
+        for (const entry of indexEntriesFor(pack?.index ?? [])) {
+            const originalName = entry?.originalName ?? entry?.flags?.babele?.originalName;
+            if (!originalName) {
+                continue;
+            }
+
+            if (!matchesOriginalNameQuery(originalName, terms)) {
+                continue;
+            }
+
+            const uuid = entry?.uuid ?? compendiumEntryUuid(pack, entry);
+            if (!uuid || existingUuids.has(uuid)) {
+                continue;
+            }
+
+            existingUuids.add(uuid);
+            documents.add({
+                ...entry,
+                uuid,
+                pack: pack.collection,
+                originalName,
+            });
+        }
+    }
+}
+
+export function appendOriginalNamesToDocumentMatches(root) {
+    if (!root || !game.settings.get("babele", "showOriginalName")) {
+        return;
+    }
+
+    root.querySelectorAll?.("[data-document-match]").forEach((row) => {
+        const originalName = originalNameForDocumentUuid(row.dataset?.uuid);
+        if (!originalName) {
+            return;
+        }
+
+        const target = row.querySelector?.("[data-name]");
+        if (!target) {
+            return;
+        }
+
+        appendOriginalNameLabel(target, originalName);
+    });
+}
+
 function isNameOnlySearch(collection) {
     const nameMode = globalThis.DIRECTORY_SEARCH_MODES?.NAME ?? "name";
     const searchMode = collection?.searchMode;
     return !searchMode || searchMode === nameMode;
 }
 
+function canSearchOriginalNames() {
+    return game.settings.get("babele", "searchOriginalName") !== false;
+}
+
 function cleanSearchQuery(text) {
     const clean = foundry.applications?.ux?.SearchFilter?.cleanQuery;
     return typeof clean === "function" ? clean(text) : text;
+}
+
+function searchTermsForQuery(query) {
+    const stopWords = globalThis.CONFIG?.i18n?.searchStopWords;
+    const cleaned = cleanSearchQuery(query)
+        ?.toLocaleLowerCase?.(game.i18n?.lang)
+        ?? String(query ?? "").toLocaleLowerCase();
+
+    return String(cleaned)
+        .split(/\s+/)
+        .map((term) => term.trim())
+        .filter((term) => term.length > 1 && !stopWords?.has?.(term));
+}
+
+function matchesOriginalNameQuery(originalName, terms) {
+    if (!terms.length) {
+        return false;
+    }
+
+    const words = String(cleanSearchQuery(originalName) ?? "")
+        .toLocaleLowerCase(game.i18n?.lang)
+        .split(/\s+/)
+        .map((word) => word.trim())
+        .filter((word) => word.length > 1);
+
+    if (!words.length) {
+        return false;
+    }
+
+    return terms.every((term) => words.some((word) => word.startsWith(term)));
+}
+
+function appendOriginalNameLabel(target, text) {
+    if (!target || !text) {
+        return;
+    }
+
+    target.querySelector(".babele-original-name")?.remove();
+    target.style.display = "flex";
+    target.style.flexDirection = "column";
+    target.style.alignItems = "flex-start";
+    target.style.lineHeight = "normal";
+    target.style.paddingTop = "2px";
+    target.style.whiteSpace = "normal";
+    target.style.overflow = "visible";
+    target.style.textOverflow = "initial";
+
+    const label = document.createElement("span");
+    label.className = "babele-original-name";
+    label.style.display = "block";
+    label.style.lineHeight = "normal";
+    label.style.fontSize = "12px";
+    label.style.color = "gray";
+    label.textContent = text;
+    target.appendChild(label);
+}
+
+function originalNameForDocumentUuid(uuid) {
+    const {pack, id} = compendiumUuidParts(uuid);
+    if (!pack || !id) {
+        return null;
+    }
+
+    const entry = indexEntriesFor(game.packs?.get?.(pack)?.index ?? []).find(
+        (candidate) => (candidate?._id ?? candidate?.id) === id,
+    );
+
+    return entry?.originalName ?? entry?.flags?.babele?.originalName ?? null;
+}
+
+function compendiumEntryUuid(pack, entry) {
+    const collection = pack?.collection ?? pack?.metadata?.id ?? null;
+    const documentName = pack?.documentName ?? pack?.metadata?.type ?? null;
+    const id = entry?._id ?? entry?.id ?? null;
+
+    if (!collection || !documentName || !id) {
+        return null;
+    }
+
+    return `Compendium.${collection}.${documentName}.${id}`;
+}
+
+function compendiumUuidParts(uuid) {
+    const match = String(uuid ?? "").match(/^Compendium\.([^.]+\.[^.]+)\.([^.]+)\.(.+)$/);
+    if (!match) {
+        return {pack: null, documentType: null, id: null};
+    }
+
+    return {
+        pack: match[1],
+        documentType: match[2],
+        id: match[3],
+    };
 }
 
 function includeMatchedFolder(collection, folder, folderIds, autoExpandIds, {autoExpand = true} = {}) {

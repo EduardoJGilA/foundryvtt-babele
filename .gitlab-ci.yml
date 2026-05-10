@@ -1,22 +1,104 @@
-image: python:3-alpine
+image: node:22-alpine
 
 before_script:
   - apk update
   - apk add zip
 
 stages:
+  - test
   - build
+  - release
+  - publish
+  - finalize
+
+test:
+  stage: test
+  script:
+    - npm test
+  when: on_success
+  only:
+    - tags
 
 build:
   stage: build
+  needs:
+    - test
   script:
+    - node scripts/prepare-release-manifest.mjs
     - zip babele.zip -r module -x ".*"
   artifacts:
     name: babele
     when: on_success
     expire_in: never
     paths:
+      - module/module.json
       - babele.zip
+  when: on_success
+  only:
+    - tags
+
+release_notes:
+  stage: release
+  needs:
+    - test
+  script:
+    - node scripts/generate-release-notes.mjs
+  artifacts:
+    name: babele-release-notes
+    when: on_success
+    expire_in: never
+    paths:
+      - .release/release-notes.md
+      - .release/release-context.json
+  when: on_success
+  only:
+    - tags
+
+gitlab_release:
+  stage: release
+  needs:
+    - job: build
+      artifacts: true
+    - job: release_notes
+      artifacts: true
+  script:
+    - node scripts/publish-gitlab-release.mjs
+  when: on_success
+  only:
+    - tags
+
+foundry_release_dry_run:
+  stage: publish
+  needs:
+    - job: build
+      artifacts: true
+    - job: gitlab_release
+  variables:
+    FOUNDRY_DRY_RUN: "true"
+  script:
+    - node scripts/publish-foundry-release.mjs
+  when: on_success
+  only:
+    - tags
+
+foundry_release:
+  stage: publish
+  needs:
+    - job: build
+      artifacts: true
+    - job: foundry_release_dry_run
+  script:
+    - node scripts/publish-foundry-release.mjs
+  when: on_success
+  only:
+    - tags
+
+close_milestone:
+  stage: finalize
+  needs:
+    - job: foundry_release
+  script:
+    - node scripts/close-gitlab-milestone.mjs
   when: on_success
   only:
     - tags

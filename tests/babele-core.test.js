@@ -113,3 +113,57 @@ test("Babele.rollbackDocument restores original payload values and strips Babele
     },
   });
 });
+
+test("Babele.rollbackDocument restores translated items with embedded effects without requiring a current runtime compendium", () => {
+  const babele = Babele.create();
+
+  const restored = babele.rollbackDocument("Item", {
+    _id: "item-1",
+    name: "Objet enchante",
+    system: {
+      description: {
+        value: "Texte traduit",
+      },
+    },
+    effects: [
+      {
+        _id: "effect-1",
+        name: "Effet traduit",
+        description: "Description traduite",
+        changes: [
+          {
+            key: "system.foo",
+            value: "Barre",
+          },
+        ],
+      },
+    ],
+    flags: {
+      babele: {
+        translated: true,
+        hasTranslation: true,
+        lang: "fr",
+        originalPayload: {
+          name: "Enchanted Item",
+          description: "Original description",
+          effects: {
+            "effect-1": {
+              name: "Original Effect",
+              description: "Original effect description",
+              changes: {
+                "system.foo": "Bar",
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(restored.name, "Enchanted Item");
+  assert.equal(restored.system.description.value, "Original description");
+  assert.equal(restored.effects[0].name, "Original Effect");
+  assert.equal(restored.effects[0].description, "Original effect description");
+  assert.equal(restored.effects[0].changes[0].value, "Bar");
+  assert.equal(restored.flags?.babele, undefined);
+});

@@ -294,7 +294,7 @@ export class DocumentConverter {
             const shouldTranslateCurrent = hasCurrentTranslation
                 || (!fallbackPack && currentMapping?.usesConverters?.() === true);
             const currentPayload = shouldTranslateCurrent
-                ? this._pruneUnchangedPayload(currentCompendium.translate(data, true, activeRuntime) ?? {}, data)
+                ? this._pruneUnchangedPayload(currentCompendium.translate(data, true, activeRuntime) ?? {}, fallbackPayload)
                 : {};
 
             const payload = foundry.utils.mergeObject(fallbackPayload, currentPayload, {inplace: false});
@@ -552,23 +552,24 @@ export class DocumentConverter {
 
     /**
      * Remove entries from a local translated payload that are identical to the
-     * source payload.
+     * fallback payload.
      *
      * This keeps local derived fields from reapplying untranslated source
-     * values on top of a real fallback translation.
+     * values on top of a real fallback translation, while preserving explicit
+     * local overrides that intentionally restore source-language values.
      *
      * @param {*} payload
-     * @param {*} sourcePayload
+     * @param {*} fallbackPayload
      * @returns {*}
      */
-    _pruneUnchangedPayload(payload, sourcePayload) {
+    _pruneUnchangedPayload(payload, fallbackPayload) {
         if (!this._isPlainObject(payload)) {
-            return this._sameValue(payload, sourcePayload) ? undefined : payload;
+            return this._sameValue(payload, fallbackPayload) ? undefined : payload;
         }
 
         const pruned = {};
         for (const [key, value] of Object.entries(payload)) {
-            const filtered = this._pruneUnchangedPayload(value, sourcePayload?.[key]);
+            const filtered = this._pruneUnchangedPayload(value, fallbackPayload?.[key]);
             if (typeof filtered !== "undefined") {
                 pruned[key] = filtered;
             }

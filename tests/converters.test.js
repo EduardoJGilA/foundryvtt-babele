@@ -2369,6 +2369,68 @@ test("adventure actors translate tokenName through the embedded actor context", 
   assert.equal(translated[0].prototypeToken.name, "Goblin IT");
 });
 
+test("mappedField keeps explicit local translations before deriving from another field", () => {
+  game.babele = new Babel();
+  game.babele.registerConverters({
+    name: Converters.mappedField("name"),
+    fromPack: Converters.fromPack(),
+  });
+  const converter = Converters.fromDefaultMapping("Actor", "actors");
+  const adventure = new MappedCompendium({
+    id: "test.adventure",
+    name: "adventure",
+    type: "Adventure",
+    packageName: "test",
+    packageType: "module",
+  }, {
+    entries: {
+      adventureA: {
+        actors: {
+          "actor-a": {
+            name: "Gobelin",
+            tokenName: "Chef gobelin",
+          },
+        },
+      },
+    },
+  }, {
+    documentMappings: game.babele.documentMappings,
+  });
+  const adventureData = {
+    _id: "adventureA",
+    name: "Adventure A",
+  };
+  const translated = converter(
+    [
+      {
+        _id: "actor-a",
+        name: "Goblin",
+        prototypeToken: {
+          name: "Goblin",
+        },
+        system: {
+          details: {
+            biography: {
+              value: "Original biography",
+            },
+          },
+        },
+        items: [],
+      },
+    ],
+    adventure.translationsFor(adventureData).actors,
+    adventureData,
+    adventure,
+    null,
+    new CompendiumRuntime({
+      globalPacks: new TestCollection([["test.adventure", adventure]]),
+    }),
+  );
+
+  assert.equal(translated[0].name, "Gobelin");
+  assert.equal(translated[0].prototypeToken.name, "Chef gobelin");
+});
+
 test("adventure deep translation keeps nested actor items inside the adventure-local scope", () => {
   game.babele = new Babel();
   game.babele.registerConverters({

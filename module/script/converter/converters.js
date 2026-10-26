@@ -90,7 +90,11 @@ class FunctionalConverterFactory {
     }
 
     mappedField(field) {
-        return (_value, _translation, data, tc, _allTranslations, runtime = {}) => {
+        return (_value, translation, data, tc, _allTranslations, runtime = {}) => {
+            if (typeof translation !== "undefined" && translation !== null) {
+                return translation;
+            }
+
             const contextCompendium = this.currentCompendium(tc, runtime);
             return contextCompendium?.translateField(field, data, runtime);
         };

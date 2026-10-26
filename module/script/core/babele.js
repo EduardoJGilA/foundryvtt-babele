@@ -10,6 +10,8 @@ import {IdentityExtractorRegistry} from "../identity/identity-extractor-registry
 import {TranslationSources} from "../translation/translation-sources.js";
 import {TranslationSession} from "../translation/translation-session.js";
 import {cloneData} from "../utils/data-clone.js";
+import {CompendiumRuntime} from "../compendium/compendium-runtime.js";
+import {MappedCompendium} from "../compendium/mapped-compendium.js";
 
 /**
  * Headless Babele translation framework.
@@ -376,8 +378,14 @@ export class Babele {
         if (originalPayload && typeof documentType === "string" && documentType.length > 0) {
             const mappings = documentMappings ?? this.documentMappings();
             const mapping = mappings.mappingFor(documentType, customMapping);
-            mapping.prepare(data, originalPayload, runtime);
-            const payload = mapping.map(data, originalPayload, runtime);
+            const rollbackRuntime = this.#rollbackRuntime(documentType, {
+                runtime,
+                customMapping,
+                documentMappings: mappings,
+                language: data?.flags?.babele?.lang ?? null,
+            });
+            mapping.prepare(data, originalPayload, rollbackRuntime);
+            const payload = mapping.map(data, originalPayload, rollbackRuntime);
             restored = foundry.utils.mergeObject(restored, payload, {inplace: false});
         }
 
@@ -416,6 +424,34 @@ export class Babele {
         }
 
         return restored;
+    }
+
+    #rollbackRuntime(documentType, {
+        runtime = {},
+        customMapping = null,
+        documentMappings,
+        language = null,
+    } = {}) {
+        const activeRuntime = CompendiumRuntime.from(runtime);
+        if (activeRuntime.currentCompendium()) {
+            return activeRuntime;
+        }
+
+        const rollbackCompendium = new MappedCompendium(
+            {
+                id: `__rollback__.${documentType}`,
+                name: `__rollback__.${documentType}`,
+                label: `Rollback ${documentType}`,
+                type: documentType,
+            },
+            customMapping ? {mapping: customMapping} : null,
+            {
+                documentMappings,
+                language,
+            },
+        );
+
+        return activeRuntime.child({currentCompendium: rollbackCompendium});
     }
 
 }

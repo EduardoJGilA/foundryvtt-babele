@@ -42,12 +42,27 @@ export function registerModuleSettings() {
     });
 
     game.settings.register('babele', 'showOriginalName', {
-        name: game.i18n.localize("BABELE.ShowOriginalName"),
-        hint: game.i18n.localize("BABELE.ShowOriginalNameHint"),
+        name: localizeWithFallback("BABELE.ShowOriginalName", "Show Original Name"),
+        hint: localizeWithFallback(
+            "BABELE.ShowOriginalNameVisualHint",
+            "Show the original source-language name next to the translated one in compendium UIs.",
+        ),
         scope: 'client',
         type: Boolean,
         config: true,
         default: false
+    });
+
+    game.settings.register('babele', 'searchOriginalName', {
+        name: localizeWithFallback("BABELE.SearchOriginalName", "Search by Original Name"),
+        hint: localizeWithFallback(
+            "BABELE.SearchOriginalNameHint",
+            "Allow compendium searches to match original source-language names in both the sidebar and opened compendium windows.",
+        ),
+        scope: 'client',
+        type: Boolean,
+        config: true,
+        default: true,
     });
 
     game.settings.register('babele', 'showTranslateOption', {

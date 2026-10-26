@@ -201,6 +201,7 @@ export const defaultMappings = {
     },
     "Scene": {
         "name": "name",
+        "navName": "navName",
         "drawings": {
             "path": "drawings",
             "converter": "textCollection"
@@ -214,6 +215,10 @@ export const defaultMappings = {
             "converter": "document",
             "documentType": "Region",
             "cardinality": "many"
+        },
+        "levels": {
+            "path": "levels",
+            "converter": "nameCollection"
         }
     },
     "Region": {

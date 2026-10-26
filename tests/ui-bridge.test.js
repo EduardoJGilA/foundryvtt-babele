@@ -8,7 +8,10 @@ installFakeDom();
 
 const {
   BabeleUiBridge,
+  appendOriginalNamesToDocumentMatches,
   matchOriginalNameEntries,
+  matchOriginalDocumentEntries,
+  matchOriginalPackTitles,
 } = await import("../module/script/ui/babele-ui-bridge.js");
 
 function createCompendiumRoot() {
@@ -96,6 +99,32 @@ test("BabeleUiBridge injects a single compendium-directory export button", () =>
 
   buttons[0].listeners.get("click")();
   assert.equal(calls, 1);
+});
+
+test("BabeleUiBridge decorates compendium sidebar pack titles with original names", () => {
+  const bridge = new BabeleUiBridge();
+  const root = new FakeElement("section");
+  const row = root.appendChild(new FakeElement("li"));
+  row.dataset.pack = "test.pack";
+
+  const name = row.appendChild(new FakeElement("h4"));
+  name.className = "entry-name";
+  name.textContent = "Compendio Tradotto";
+
+  game.packs = new foundry.utils.Collection([[
+    "test.pack",
+    {
+      collection: "test.pack",
+      metadata: {
+        originalLabel: "Original Compendium",
+      },
+    },
+  ]]);
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+
+  bridge.renderCompendiumDirectory({}, root);
+
+  assert.equal(name.querySelector(".babele-original-name")?.textContent, "Original Compendium");
 });
 
 test("BabeleUiBridge decorates compendium entries by entry id without duplicating original-name labels", () => {
@@ -286,7 +315,7 @@ test("BabeleUiBridge matches original names during directory name search and exp
     },
   };
 
-  game.settings.get = (_namespace, key) => key === "showOriginalName";
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
 
   const entryIds = new Set();
   const folderIds = new Set();
@@ -330,7 +359,7 @@ test("BabeleUiBridge matches original names during directory search even when or
     },
   };
 
-  game.settings.get = () => false;
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
 
   const entryIds = new Set();
   const folderIds = new Set();
@@ -368,7 +397,7 @@ test("BabeleUiBridge original-name enrichment does not pull unrelated siblings f
     },
   };
 
-  game.settings.get = (_namespace, key) => key === "showOriginalName";
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
 
   const entryIds = new Set(["entry-translated"]);
   const folderIds = new Set(["folder-a"]);
@@ -415,7 +444,7 @@ test("BabeleUiBridge ignores original-name search enrichment outside name-only m
     },
   };
 
-  game.settings.get = (_namespace, key) => key === "showOriginalName";
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
 
   const entryIds = new Set();
   const folderIds = new Set();
@@ -467,4 +496,222 @@ test("BabeleUiBridge shows the translate control to trusted players and up on ed
   assert.equal(controlsFor(2, false), 0);
 
   game.user.role = 4;
+});
+
+test("BabeleUiBridge skips original-name search enrichment when the dedicated setting is disabled", () => {
+  globalThis.DIRECTORY_SEARCH_MODES = {NAME: "name", FULL: "full"};
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = () => false;
+
+  const entryIds = new Set();
+  const folderIds = new Set();
+  const autoExpandIds = new Set();
+
+  matchOriginalNameEntries(
+    {
+      collection: {
+        searchMode: "name",
+        index: [
+          {
+            _id: "entry-9",
+            name: "Benediction",
+            originalName: "Bless",
+          },
+        ],
+      },
+    },
+    /bless/,
+    entryIds,
+    folderIds,
+    autoExpandIds,
+  );
+
+  assert.equal(entryIds.size, 0);
+});
+
+test("BabeleUiBridge matches original compendium titles in the sidebar when enabled", () => {
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
+  game.packs = [
+    {
+      collection: "test.pack",
+      metadata: {
+        originalLabel: "Original Compendium",
+      },
+      folder: "folder-a",
+    },
+  ];
+
+  const packIds = new Set();
+  const folderIds = new Set();
+  const autoExpandIds = new Set();
+
+  matchOriginalPackTitles({}, /original compendium/, packIds, folderIds, autoExpandIds);
+
+  assert.deepEqual([...packIds], ["test.pack"]);
+});
+
+test("BabeleUiBridge matches original names for compendium sidebar document results", () => {
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
+  game.packs = [
+    {
+      collection: "dnd5e.spells",
+      documentName: "Item",
+      index: [
+        {
+          _id: "spell-1",
+          name: "Bagou",
+          originalName: "Friends",
+          img: "icons/svg/book.svg",
+        },
+      ],
+    },
+  ];
+
+  const documents = new Set();
+  matchOriginalDocumentEntries({activeFilters: new Set()}, "friends", documents);
+
+  const [entry] = [...documents];
+  assert.equal(entry?.uuid, "Compendium.dnd5e.spells.Item.spell-1");
+  assert.equal(entry?.originalName, "Friends");
+});
+
+test("BabeleUiBridge matches more than one original-name sidebar document result", () => {
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
+  game.packs = [
+    {
+      collection: "dnd5e.spells",
+      documentName: "Item",
+      index: [
+        {
+          _id: "spell-1",
+          name: "Bagou",
+          originalName: "Friends",
+        },
+        {
+          _id: "spell-2",
+          name: "Amitie renforcee",
+          originalName: "Friendly Word",
+        },
+      ],
+    },
+  ];
+
+  const documents = new Set();
+  matchOriginalDocumentEntries({activeFilters: new Set()}, "fri", documents);
+
+  assert.equal(documents.size, 2);
+  assert.deepEqual(
+    [...documents].map((entry) => entry.uuid),
+    [
+      "Compendium.dnd5e.spells.Item.spell-1",
+      "Compendium.dnd5e.spells.Item.spell-2",
+    ],
+  );
+});
+
+test("BabeleUiBridge sidebar original-name search uses word-prefix matching", () => {
+  foundry.applications.ux = {
+    SearchFilter: {
+      cleanQuery(text) {
+        return String(text).toLowerCase();
+      },
+    },
+  };
+
+  game.settings.get = (_namespace, key) => key === "searchOriginalName";
+  game.packs = [
+    {
+      collection: "dnd5e.items",
+      documentName: "Item",
+      index: [
+        {
+          _id: "wand-1",
+          name: "Baguette des merveilles",
+          originalName: "Wand of Wonder",
+        },
+        {
+          _id: "wand-2",
+          name: "Baguette de feu",
+          originalName: "Wand of Fireballs",
+        },
+        {
+          _id: "swan-1",
+          name: "Bateau-cygne",
+          originalName: "Swan Boat",
+        },
+      ],
+    },
+  ];
+
+  const documents = new Set();
+  matchOriginalDocumentEntries({activeFilters: new Set()}, "wand", documents);
+
+  assert.deepEqual(
+    [...documents].map((entry) => entry.uuid),
+    [
+      "Compendium.dnd5e.items.Item.wand-1",
+      "Compendium.dnd5e.items.Item.wand-2",
+    ],
+  );
+});
+
+test("BabeleUiBridge decorates compendium sidebar document matches with original names", () => {
+  const root = new FakeElement("section");
+  const row = root.appendChild(new FakeElement("li"));
+  row.dataset.documentMatch = "";
+  row.dataset.uuid = "Compendium.dnd5e.spells.Item.spell-1";
+
+  const name = row.appendChild(new FakeElement("a"));
+  name.dataset.name = "";
+  name.className = "name";
+  name.textContent = "Bagou";
+
+  game.settings.get = (_namespace, key) => key === "showOriginalName";
+  game.packs = new foundry.utils.Collection([[
+    "dnd5e.spells",
+    {
+      index: [
+        {
+          _id: "spell-1",
+          name: "Bagou",
+          originalName: "Friends",
+        },
+      ],
+    },
+  ]]);
+
+  appendOriginalNamesToDocumentMatches(root);
+
+  assert.equal(name.querySelector(".babele-original-name")?.textContent, "Friends");
 });

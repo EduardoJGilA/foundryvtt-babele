@@ -1,12 +1,1 @@
-{
-  "name": "foundryvtt-babele",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test tests/**/*.test.js",
-    "release:notes": "node scripts/generate-release-notes.mjs",
-    "release:gitlab": "node scripts/publish-gitlab-release.mjs",
-    "release:foundry": "node scripts/publish-foundry-release.mjs",
-    "release:close-milestone": "node scripts/close-gitlab-milestone.mjs"
-  }
-}
+{"name":"foundryvtt-babele","private":true,"type":"module","scripts":{"test":"node --test tests/**/*.test.js"}}

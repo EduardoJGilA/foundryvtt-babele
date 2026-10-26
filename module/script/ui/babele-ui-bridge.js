@@ -222,7 +222,7 @@ export class BabeleUiBridge {
     }
 
     #canTranslateActorSheet(editable) {
-        return game.settings.get("babele", "showTranslateOption") && editable; // mgk: editable already limits to sheet owners
+        return game.settings.get("babele", "showTranslateOption") && game.user.hasRole("TRUSTED") && editable; // mgk: trusted players and up
     }
 
     #canExportCompendium() {

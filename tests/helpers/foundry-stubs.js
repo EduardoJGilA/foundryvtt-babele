@@ -208,6 +208,10 @@ export function installFoundryStubs() {
     },
     user: {
       isGM: true,
+      role: 4,
+      hasRole(role) {
+        return this.role >= ({PLAYER: 1, TRUSTED: 2, ASSISTANT: 3, GAMEMASTER: 4}[role] ?? role);
+      },
       hasPermission() {
         return true;
       },

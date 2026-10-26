@@ -1,5 +1,8 @@
 # FoundryVTT - Babele
 
+> **MGK fork** of [riccisi/foundryvtt-babele](https://gitlab.com/riccisi/foundryvtt-babele) 2.9.1, released on GitHub. Change: Trusted Players and above can use the actor sheet "Translate" control.
+> Install: `https://github.com/EduardoJGilA/foundryvtt-babele/releases/latest/download/module.json`
+
 Babele is a module for runtime translation of Compendium packs.
 
 The use of Babele therefore allows you to avoid making copies of the compendiums for the sole purpose of translating the contents, thus losing the possibility of receiving updates of the compendium when the module/system that provides the contents is itself updated.

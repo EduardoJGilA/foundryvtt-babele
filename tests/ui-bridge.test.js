@@ -448,3 +448,16 @@ test("BabeleUiBridge ignores original-name search enrichment outside name-only m
   assert.equal(folderIds.size, 0);
   assert.equal(autoExpandIds.size, 0);
 });
+
+test("BabeleUiBridge shows the translate control to non-GM owners of an editable sheet", () => {
+  const bridge = new BabeleUiBridge();
+  const controls = [];
+
+  game.user.isGM = false;
+  game.settings.get = (_namespace, key) => key === "showTranslateOption";
+
+  bridge.extendActorSheetHeaderControls({isEditable: true, actor: {name: "Actor"}}, controls);
+  bridge.extendActorSheetHeaderControls({isEditable: false, actor: {name: "Other"}}, []);
+
+  assert.equal(controls.length, 1);
+});
